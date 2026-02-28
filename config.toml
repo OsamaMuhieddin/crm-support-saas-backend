@@ -1,0 +1,12 @@
+﻿[project]
+name = "crm-support-saas-backend"
+
+[codex]
+include = [
+  "AGENTS.md",
+  "docs/AI_GUIDE.md",
+  "docs/architecture.md",
+  "docs/api.md",
+  "docs/response-shape.md",
+  "docs/seeding.md"
+]

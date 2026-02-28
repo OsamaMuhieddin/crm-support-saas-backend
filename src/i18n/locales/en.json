@@ -1,0 +1,12 @@
+﻿{
+  "success": {
+    "ok": "Request completed successfully."
+  },
+  "errors": {
+    "notFound": "Route not found.",
+    "unknown": "Something went wrong.",
+    "validation": {
+      "failed": "Validation failed."
+    }
+  }
+}
