@@ -1,306 +1,257 @@
-🚀 CRM Support SaaS Platform
+# 🚀 CRM Support SaaS Platform
 
-A scalable multi-tenant Support CRM / Helpdesk platform designed for B2B customer support operations.
+<p align="center">
+  <strong>Multi-Tenant Support CRM / Helpdesk SaaS for Modern B2B Operations</strong>
+</p>
 
-This system provides structured ticket management, real-time collaboration, SLA monitoring, subscription-aware plan enforcement, secure integrations, and a dedicated platform administration layer.
+<p align="center">
+  <img src="https://img.shields.io/badge/Architecture-Multi--Tenant-blue" />
+  <img src="https://img.shields.io/badge/Realtime-Socket.IO-green" />
+  <img src="https://img.shields.io/badge/Billing-Stripe-purple" />
+  <img src="https://img.shields.io/badge/Backend-Node.js-black" />
+  <img src="https://img.shields.io/badge/Frontend-React-61DAFB" />
+</p>
 
-📌 Overview
+---
 
-CRM Support SaaS enables organizations to manage customer support workflows within isolated workspaces while maintaining centralized platform governance.
+## 📌 Overview
 
-The platform includes:
+CRM Support SaaS is a scalable, enterprise-ready multi-tenant support platform designed for B2B environments.
 
-Multi-tenant workspace architecture
+It enables organizations to manage customer support workflows within isolated workspaces while maintaining centralized platform governance.
 
-Role-based access control (RBAC)
+### Key Capabilities
 
-Structured ticket lifecycle management
+- Multi-tenant workspace architecture
+- Role-based access control (RBAC)
+- Structured ticket lifecycle management
+- Shared inbox operations
+- SLA monitoring and tracking
+- Customer context and timeline
+- Real-time collaboration
+- API-first integrations with secure Webhooks
+- Subscription-aware plan enforcement
+- Super Admin governance layer
 
-Shared inbox operations
+---
 
-SLA monitoring and tracking
-
-Customer context and timeline
-
-Real-time collaboration between agents
-
-API-first integrations with secure Webhooks
-
-Subscription plan enforcement
-
-Super Admin platform dashboard
-
-🏗 System Architecture
+## 🏗 System Architecture
 
 The system is structured into three logical layers:
 
-1️⃣ Platform Layer (Super Admin)
+1. **Platform Layer (Super Admin)**
+2. **Workspace Layer (Tenant)**
+3. **Agent Layer (Users)**
 
-Responsible for:
+### Architectural Principles
 
-Managing workspaces
+- Strict tenant isolation
+- Platform vs Tenant separation
+- Scoped routes and guards
+- Modular backend design
+- API-first integration model
 
-Plan configuration
+---
 
-Subscription visibility
+## 🎫 Core Features
 
-Usage monitoring
+### Ticket Management
 
-Global system insights
+- Ticket creation, assignment, and lifecycle transitions
+- Priority levels
+- Categories and subcategories
+- Tags
+- Internal notes and external replies
+- Attachment support (S3 / MinIO compatible storage)
 
-This layer operates independently from tenant-scoped logic.
+Tickets follow structured workflows for operational clarity.
 
-2️⃣ Workspace Layer (Tenant)
+---
 
-Each organization operates within an isolated workspace.
+### 👤 Customer Context & Timeline
 
-Features include:
+Each ticket provides:
 
-Ticket management
+- Customer profile
+- Historical tickets
+- Timeline of events
+- Operational activity logs
+- Billing portal access
 
-Team management
+---
 
-Reporting
+## ⚡ Real-Time Collaboration
 
-SLA configuration
+Powered by **Socket.IO**, enabling:
 
-API & Webhook setup
+- Presence awareness
+- Soft claim system
+- Draft conflict detection
+- Live ticket updates
+- Agent handoff notes
 
-Plan-based usage limits
+---
 
-Strict tenant isolation is enforced at the application and database levels.
+## ⏱ SLA Management
 
-3️⃣ Agent Layer
+### SLA Capabilities
 
-Users inside each workspace operate under structured roles:
+- First response time tracking
+- Resolution time tracking
+- Category-based SLA policies
 
-Owner / Admin
+### SLA Radar Dashboard
 
-Agent
+- Tickets at risk
+- SLA breaches
+- Near-breach alerts
 
-Manager / Viewer
+---
 
-Permissions are enforced across tickets, settings, reporting, and integrations.
+## 🔌 Integrations
 
-🎫 Ticket Management
+### API Keys
 
-The ticketing system supports:
+- Scoped access control
+- Secure authentication
 
-Ticket creation, assignment, and lifecycle transitions
+### Webhooks
 
-Priority levels
+- HMAC signature verification
+- Retry logic
+- Delivery logging
+- Failure monitoring
 
-Categories and subcategories
+### Infrastructure Support
 
-Tags
+- Rate limiting
+- Background job processing
+- Signed URL attachment storage
 
-Internal notes and external replies
+---
 
-Attachment support (S3 / MinIO compatible storage)
-
-Tickets follow structured workflows to support operational clarity.
-
-⚡ Real-Time Collaboration
-
-Powered by WebSockets (Socket.IO), enabling:
-
-Presence awareness
-
-Soft claim system
-
-Draft conflict detection
-
-Live ticket updates
-
-Agent handoff notes
-
-This ensures coordinated team operations.
-
-⏱ SLA Management
-
-Includes:
-
-First response time tracking
-
-Resolution time tracking
-
-Category-based SLA policies
-
-The SLA Radar dashboard highlights:
-
-Tickets at risk
-
-SLA breaches
-
-Near-breach cases
-
-👤 Customer Context & Timeline
-
-Each ticket provides contextual information including:
-
-Customer profile
-
-Historical tickets
-
-Timeline of events
-
-Operational activity logs
-
-Billing portal access
-
-🔌 Integrations
-
-The platform follows an API-first design.
-
-API Keys
-
-Scoped access control
-
-Secure authentication
-
-Webhooks
-
-HMAC signature verification
-
-Retry logic
-
-Delivery logging
-
-Failure monitoring
-
-Additional infrastructure includes:
-
-Rate limiting
-
-Background job processing
-
-Attachment storage with signed URLs
-
-💳 Subscription & Plan Enforcement
+## 💳 Subscription & Plan Enforcement
 
 Each workspace operates under configurable plan limits:
 
-Seat limits
+- Seat limits
+- Ticket limits
+- Storage limits
+- Webhook limits
+- API rate limits
 
-Ticket limits
+### Stripe Integration
 
-Storage limits
+- Subscription status tracking
+- Invoice visibility
+- Payment monitoring
+- Webhook synchronization
 
-Webhook limits
+---
 
-API rate limits
+## 🛠 Super Admin Layer
 
-Stripe integration provides:
+Platform-level governance includes:
 
-Subscription status tracking
+- Workspace management
+- Plan configuration
+- Subscription visibility
+- Usage monitoring
+- Suspension and reactivation controls
+- System health overview
 
-Invoice visibility
+---
 
-Payment state monitoring
-
-Webhook synchronization
-
-🛠 Super Admin Dashboard
-
-The platform administration layer includes:
-
-Workspace management
-
-Plan configuration
-
-Subscription visibility
-
-Usage monitoring
-
-Suspension and reactivation controls
-
-System health overview
-
-📊 Reporting
+## 📊 Reporting
 
 Operational metrics include:
 
-Ticket volume
+- Ticket volume
+- SLA compliance
+- Average response time
+- Agent performance
 
-SLA compliance
+---
 
-Average response time
+## 🔐 Security
 
-Agent performance
+- Strict tenant isolation
+- Role-based access control
+- Scoped API keys
+- Secure Webhook validation
+- Rate limiting
+- Signed URL access for attachments
 
-🔐 Security
+---
 
-Strict tenant isolation
+## 🧩 Technology Stack
 
-Role-based access control
+### Backend
 
-Scoped API keys
+- Node.js (Modular architecture)
+- MongoDB or PostgreSQL
+- Redis
+- Socket.IO
+- BullMQ
+- S3 / MinIO
+- Stripe API
 
-Secure Webhook validation
+### Frontend
 
-Rate limiting
+- React (Next.js or Vite)
+- Real-time hooks
+- Modular UI architecture
+- Charting libraries
 
-Signed URL access for attachments
+---
 
-🧩 Technology Stack
-Backend
+## 📁 Project Structure
 
-Node.js (Modular architecture)
-
-MongoDB or PostgreSQL
-
-Redis
-
-Socket.IO
-
-BullMQ (Job queue) or agenda 
-
-S3 / MinIO
-
-Stripe API
-
-Frontend
-
-React (Next.js or Vite)
-
-Real-time hooks
-
-Modular UI architecture
-
-Charting libraries
-
-📁 Project Structure (Example)
 /backend
-  /src
-    /modules
-      /auth
-      /workspaces
-      /tickets
-      /customers
-      /reports
-      /integrations
-      /platform
-    /shared
-    /config
-    /infra
+/src
+/modules
+/auth
+/workspaces
+/tickets
+/customers
+/reports
+/integrations
+/platform
+/shared
+/config
+/infra
 
 /frontend
-  /src
-    /pages
-    /components
-    /features
-    /hooks
-    /layouts
-⚙️ Setup Instructions
-1️⃣ Clone the Repository
+/src
+/pages
+/components
+/features
+/hooks
+/layouts
+
+---
+
+## ⚙️ Setup
+
+### 1. Clone Repository
+
+```bash
 git clone https://github.com/your-org/crm-support-saas.git
 cd crm-support-saas
-2️⃣ Backend Setup
+```
+
+---
+
+### 2. Backend Setup
+
+```bash
 cd backend
 npm install
+```
 
-Create a .env file:
+Create a `.env` file inside the `backend` directory:
 
+```env
 PORT=5000
 DATABASE_URL=
 REDIS_URL=
@@ -311,37 +262,37 @@ S3_ACCESS_KEY=
 S3_SECRET_KEY=
 S3_BUCKET=
 S3_REGION=
+```
 
 Run the backend:
 
+```bash
 npm run dev
-3️⃣ Frontend Setup
+```
+
+---
+
+### 3. Frontend Setup
+
+```bash
 cd frontend
 npm install
 npm run dev
-🧪 Development Notes
+```
 
-Ensure Redis is running for real-time presence and queues.
+---
 
-Configure Stripe webhooks for subscription synchronization.
+## 🚀 Deployment Notes
 
-Configure S3 or MinIO for attachment storage.
+- Use environment-based configuration
+- Enable HTTPS for Webhook security
+- Configure CORS properly
+- Use managed database and Redis
+- Monitor background jobs and Webhook failures
 
-Apply database migrations before running in production.
+---
 
-🚀 Deployment Considerations
+## 🤝 Contribution
 
-Use environment-based configuration.
-
-Enable HTTPS for Webhook security.
-
-Configure CORS properly for production.
-
-Use managed database and Redis instances.
-
-Monitor job queues and Webhook failures.
-
-🤝 Contribution
-
-Contributions are welcome.
-Please open an issue before submitting large changes.
+- Contributions are welcome.
+- Please open an issue before submitting major changes.
