@@ -296,3 +296,48 @@ npm run dev
 
 - Contributions are welcome.
 - Please open an issue before submitting major changes.
+
+---
+
+## Backend Auth + Invitations (MVP)
+
+The backend now includes:
+- JWT access + refresh tokens
+- DB-backed refresh sessions with rotation
+- OTP email verification and password reset
+- Workspace bootstrap for verified users
+- Full workspace invite lifecycle (create/list/get/resend/revoke/accept)
+- Async OTP dispatch (fire-and-forget)
+- Route-level eligibility guards (active user, active member, role checks)
+
+### Required backend environment variables
+
+```env
+JWT_ACCESS_SECRET=
+JWT_REFRESH_SECRET=
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_EXPIRES_IN=30d
+AUTH_BCRYPT_ROUNDS=12
+OTP_EXPIRES_MINUTES=10
+OTP_RESEND_COOLDOWN_SECONDS=60
+OTP_MAX_ATTEMPTS=5
+OTP_RATE_LIMIT_WINDOW_MINUTES=15
+OTP_RATE_LIMIT_MAX_PER_WINDOW=5
+INVITE_EXPIRES_DAYS=7
+APP_BASE_URL=http://localhost:5000
+FRONTEND_BASE_URL=http://localhost:5173
+SENDGRID_API_KEY=
+EMAIL_FROM=
+NODEMAILER_HOST=
+NODEMAILER_PORT=587
+NODEMAILER_USER=
+NODEMAILER_PASS=
+```
+
+If no email provider is configured and `NODE_ENV` is not `production`, OTP/invite payloads are logged to console for local development.
+OTP sends are asynchronous and do not block success responses.
+Invite links in emails are built from `FRONTEND_BASE_URL`.
+
+### API reference
+- See [docs/api.md](docs/api.md) for auth and invite endpoints, request samples, and invite acceptance finalization flow.
+- Localization header is supported across endpoints: `x-lang: en|ar`.

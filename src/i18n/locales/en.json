@@ -1,12 +1,60 @@
-﻿{
+{
   "success": {
-    "ok": "Request completed successfully."
+    "ok": "Request completed successfully.",
+    "auth": {
+      "otpSent": "Verification code sent successfully.",
+      "otpResent": "Verification code resent successfully.",
+      "verified": "Email verified successfully.",
+      "loggedIn": "Logged in successfully.",
+      "refreshed": "Session refreshed successfully.",
+      "resetOtpSent": "Password reset code sent if the account exists.",
+      "passwordReset": "Password reset successfully.",
+      "loggedOut": "Logged out successfully.",
+      "loggedOutAll": "Logged out from all sessions successfully.",
+      "passwordChanged": "Password changed successfully."
+    },
+    "invite": {
+      "created": "Invitation created successfully.",
+      "resent": "Invitation resent successfully.",
+      "revoked": "Invitation revoked successfully.",
+      "accepted": "Invitation accepted successfully.",
+      "acceptRequiresVerification": "Verification is required to complete invitation acceptance."
+    }
   },
   "errors": {
     "notFound": "Route not found.",
     "unknown": "Something went wrong.",
     "validation": {
       "failed": "Validation failed."
+    },
+    "auth": {
+      "invalidCredentials": "Invalid email or password.",
+      "emailNotVerified": "Email is not verified.",
+      "emailAlreadyUsed": "Email is already in use.",
+      "passwordRequiredForInvite": "Password is required to continue invite signup.",
+      "userSuspended": "User account is suspended.",
+      "sessionRevoked": "Session has been revoked.",
+      "invalidToken": "Invalid or expired token.",
+      "forbiddenTenant": "You do not have access to this workspace."
+    },
+    "workspace": {
+      "notFound": "Workspace not found."
+    },
+    "otp": {
+      "invalid": "Invalid OTP code.",
+      "expired": "OTP code has expired.",
+      "tooManyAttempts": "Too many invalid attempts. Try again later.",
+      "resendTooSoon": "OTP was sent recently. Please wait before requesting again.",
+      "rateLimited": "Too many OTP requests. Please try again later."
+    },
+    "invite": {
+      "alreadyPending": "A pending invitation already exists for this email.",
+      "alreadyMember": "This email already belongs to a workspace member.",
+      "invalid": "Invitation token is invalid.",
+      "expired": "Invitation has expired.",
+      "revoked": "Invitation has been revoked.",
+      "emailMismatch": "Invitation email does not match.",
+      "notFound": "Invitation not found."
     }
   }
 }

@@ -1,0 +1,16 @@
+process.env.NODE_ENV = 'test';
+process.env.SKIP_DB_TESTS = process.env.SKIP_DB_TESTS || '1';
+process.env.JWT_ACCESS_SECRET = 'test-access-secret';
+process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
+process.env.JWT_ACCESS_EXPIRES_IN = '15m';
+process.env.JWT_REFRESH_EXPIRES_IN = '30d';
+process.env.AUTH_BCRYPT_ROUNDS = '4';
+process.env.OTP_EXPIRES_MINUTES = '10';
+process.env.OTP_RESEND_COOLDOWN_SECONDS = '30';
+process.env.OTP_MAX_ATTEMPTS = '3';
+process.env.OTP_RATE_LIMIT_WINDOW_MINUTES = '15';
+process.env.OTP_RATE_LIMIT_MAX_PER_WINDOW = '2';
+process.env.INVITE_EXPIRES_DAYS = '7';
+process.env.EMAIL_FROM = 'test@example.com';
+process.env.APP_BASE_URL = 'http://localhost:5000';
+process.env.FRONTEND_BASE_URL = 'http://frontend.local';
