@@ -9,7 +9,6 @@ import authRouter from '../modules/auth/index.js';
 import inboxRouter from '../modules/inbox/index.js';
 import slaRouter from '../modules/sla/index.js';
 import integrationsRouter from '../modules/integrations/index.js';
-import plansRouter from '../modules/plans/index.js';
 import adminRouter from '../modules/admin/index.js';
 import filesRouter from '../modules/files/index.js';
 
@@ -26,7 +25,6 @@ router.use('/auth', authRouter);
 router.use('/inbox', inboxRouter);
 router.use('/sla', slaRouter);
 router.use('/integrations', integrationsRouter);
-router.use('/plans', plansRouter);
 router.use('/admin', adminRouter);
 router.use('/files', filesRouter);
 

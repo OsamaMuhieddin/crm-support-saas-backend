@@ -1,0 +1,12 @@
+import '../../modules/platform/models/index.js';
+import '../../modules/mailboxes/models/index.js';
+import '../../modules/workspaces/models/index.js';
+import '../../modules/users/models/index.js';
+import '../../modules/customers/models/index.js';
+import '../../modules/tickets/models/index.js';
+import '../../modules/sla/models/index.js';
+import '../../modules/automations/models/index.js';
+import '../../modules/files/models/index.js';
+import '../../modules/billing/models/index.js';
+import '../../modules/integrations/models/index.js';
+import '../../modules/notifications/models/index.js';

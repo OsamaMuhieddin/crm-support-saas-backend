@@ -1,5 +1,6 @@
 ﻿import mongoose from 'mongoose';
 import { env } from '../../config/env.js';
+import './register-models.js';
 
 export const connectDB = async () => {
   if (!env.MONGO_URI) {
@@ -7,7 +8,8 @@ export const connectDB = async () => {
   }
 
   const conn = await mongoose.connect(env.MONGO_URI);
-  console.log(`🟢 MongoDB Connected: ${conn.connection.host}`);
+  console.log(`MongoDB Connected: ${conn.connection.host}`);
 };
 
 export { mongoose };
+
