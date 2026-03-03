@@ -1,15 +1,17 @@
 # API Reference (MVP Auth + Workspace Invites)
 
-## Base URL
+## 1) Overview
+
+### Base URL
 - `/api`
 
-## Headers
+### Common headers (define once)
 - `x-lang: en|ar` (optional, default `en`)
-- `Authorization: Bearer <accessToken>` (required on protected endpoints)
 - `Content-Type: application/json`
+- `Authorization: Bearer <accessToken>` (required only on protected endpoints)
 
-## Response envelope
-- Success (`< 400`):
+### Response envelope (critical)
+- Success (`< 400`, object response):
 ```json
 {
   "messageKey": "success.ok",
@@ -31,25 +33,72 @@
   ]
 }
 ```
+- Validation failures use:
+  - `status: 422`
+  - `messageKey: errors.validation.failed`
+  - array payload under `errors`
 
-## Environment notes
-- `FRONTEND_BASE_URL` is used to build invite links in email:
-  - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
-- `APP_BASE_URL` remains backend runtime base URL.
-
-## Enums used by requests
+### Enums used in requests
 - `purpose`: `verifyEmail | login | resetPassword | changeEmail`
 - `roleKey`: `owner | admin | agent | viewer`
-- `invite status` (query): `pending | accepted | revoked | expired`
+- invite `status` query: `pending | accepted | revoked | expired`
 
----
+### Environment notes
+- Invite emails use `FRONTEND_BASE_URL`:
+  - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
+- `APP_BASE_URL` is still backend runtime base URL.
 
-## Auth
+## 2) Auth model & authorization model
+
+- Access tokens are workspace-scoped in MVP.
+- Token claims frontend may care about:
+  - `wid`: workspace id used for current access token scope.
+  - `r`: role key in that workspace scope.
+- Frontend should not depend on JWT parsing for UI state. Use `GET /api/auth/me` as the canonical source for:
+  - current `workspace._id`
+  - current `roleKey`
+- Backend authorization is authoritative. Token claims can become stale if membership/role/workspace context changes; fresh claims are issued on verify-email, login, or refresh.
+- Workspace invite management routes enforce these requirements:
+  - valid Authorization token
+  - user is active
+  - user is an active member of the token workspace
+  - role is `owner` or `admin`
+  - `:workspaceId` must match token workspace (`wid`)
+
+## 3) Quick Start Flows
+
+### Flow A: Signup -> Verify Email -> Me
+1. `POST /api/auth/signup` with `email`, `password`, optional `name`.
+2. User receives verify-email OTP code.
+3. `POST /api/auth/verify-email` with `email` + `code`.
+4. Response includes `tokens` (access + refresh).
+5. `GET /api/auth/me` with access token to hydrate user/workspace/role in FE state.
+
+### Flow B: Login -> Refresh -> Me
+1. `POST /api/auth/login` with `email` + `password`.
+2. Store `accessToken` and `refreshToken`.
+3. When access expires, call `POST /api/auth/refresh` with refresh token.
+4. Store rotated tokens returned by refresh.
+5. Call `GET /api/auth/me` to re-sync canonical workspace/role.
+
+### Flow C: Invite Accept (verified vs unverified) -> Verify Email with inviteToken
+1. Workspace owner/admin creates invite via `POST /api/workspaces/:workspaceId/invites`.
+2. Invitee opens link and calls `POST /api/workspaces/invites/accept` with `token` + `email` (and `password` if creating a new user).
+3. If invitee is already verified:
+  - API returns `success.invite.accepted`.
+  - membership is activated immediately.
+4. If invitee is new/unverified:
+  - API returns `success.invite.acceptRequiresVerification`.
+  - verify-email OTP is sent; invite stays pending.
+5. Invitee then calls `POST /api/auth/verify-email` with `email`, `code`, and `inviteToken`.
+6. API finalizes invite membership and issues auth tokens.
+7. FE calls `GET /api/auth/me` to hydrate workspace and role.
+
+## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
-Creates a new unverified user or reuses existing unverified user, then sends verify-email OTP.
-
-Request body:
+- Purpose: create a new unverified user (or reuse existing unverified user) and send verify-email OTP.
+- Request body:
 ```json
 {
   "email": "user@example.com",
@@ -57,48 +106,54 @@ Request body:
   "name": "Optional Name"
 }
 ```
-- `email` required, valid email, max 320 chars
-- `password` required, 8..128 chars
-- `name` optional, 1..160 chars
-
-Success `200`:
+  - `email`: required, valid email, max 320
+  - `password`: required, 8..128
+  - `name`: optional, 1..160
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.otpSent",
   "message": "Verification code sent successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `409` `errors.auth.emailAlreadyUsed`
+  - `429` `errors.otp.resendTooSoon` or `errors.otp.rateLimited`
+- Notes:
+  - If user already exists but is unverified, API still returns success and re-issues verify-email OTP.
+  - Tokens are not issued here.
 
 ### POST `/api/auth/resend-otp`
-Always returns generic success (anti-enumeration).
-
-Request body:
+- Purpose: request OTP resend for a specific purpose.
+- Request body:
 ```json
 {
   "email": "user@example.com",
   "purpose": "verifyEmail"
 }
 ```
-- `email` required
-- `purpose` required, one of enum values above
-
-Eligibility (server-side, response still success):
-- `resetPassword`: actually sends only if user exists + verified + active + not deleted
-- `verifyEmail`: actually sends only if user exists + unverified + active + not deleted
-- other purposes in MVP: no-op success
-
-Success `200`:
+  - `purpose` must be one of: `verifyEmail | login | resetPassword | changeEmail`
+- Success `200` (generic):
 ```json
 {
   "messageKey": "success.auth.otpResent",
   "message": "Verification code resent successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `429` `errors.otp.resendTooSoon` or `errors.otp.rateLimited`
+- Notes (anti-enumeration):
+  - API returns generic success even when no OTP is actually sent.
+  - Actual send eligibility in current MVP:
+    - `verifyEmail`: user exists, unverified, active, not deleted.
+    - `resetPassword`: user exists, verified, active, not deleted.
+    - `login` and `changeEmail`: no-op success.
 
 ### POST `/api/auth/verify-email`
-Verifies OTP and logs user in (issues tokens directly).
-
-Request body:
+- Purpose: verify OTP and issue login tokens.
+- Request body:
 ```json
 {
   "email": "user@example.com",
@@ -106,11 +161,9 @@ Request body:
   "inviteToken": "optional-invite-token"
 }
 ```
-- `email` required
-- `code` required, digits (4..8)
-- `inviteToken` optional, 10..512 chars
-
-Success `200`:
+  - `code`: digits, 4..8
+  - `inviteToken`: optional, 10..512
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.verified",
@@ -127,17 +180,26 @@ Success `200`:
   }
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed` (for example `errors.otp.invalid` / `errors.otp.expired` in `errors[]`)
+  - `429` `errors.otp.tooManyAttempts`
+  - `403` `errors.auth.userSuspended`
+  - `400` invite token errors (`errors.invite.invalid | errors.invite.expired | errors.invite.revoked | errors.invite.emailMismatch`)
+- Notes:
+  - Tokens are issued on success.
+  - `inviteToken` is used to finalize invite acceptance for unverified invitees.
+  - If user already has an active default workspace membership, workspace context is resolved from that membership.
 
 ### POST `/api/auth/login`
-Request body:
+- Purpose: login verified user and issue workspace-scoped tokens.
+- Request body:
 ```json
 {
   "email": "user@example.com",
   "password": "Password123!"
 }
 ```
-
-Success `200`:
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.loggedIn",
@@ -146,16 +208,20 @@ Success `200`:
   "tokens": { "accessToken": "jwt...", "refreshToken": "jwt..." }
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidCredentials`
+  - `403` `errors.auth.emailNotVerified | errors.auth.userSuspended | errors.auth.forbiddenTenant`
 
 ### POST `/api/auth/refresh`
-Request body:
+- Purpose: rotate refresh/access tokens for an active session.
+- Request body:
 ```json
 {
   "refreshToken": "jwt..."
 }
 ```
-
-Success `200`:
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.refreshed",
@@ -163,27 +229,38 @@ Success `200`:
   "tokens": { "accessToken": "jwt...", "refreshToken": "jwt..." }
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.emailNotVerified | errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Refresh rotates tokens; old refresh token becomes unusable.
 
 ### POST `/api/auth/forgot-password`
-Always generic success (anti-enumeration).
-
-Request body:
+- Purpose: request reset-password OTP.
+- Request body:
 ```json
 {
   "email": "user@example.com"
 }
 ```
-
-Success `200`:
+- Success `200` (generic):
 ```json
 {
   "messageKey": "success.auth.resetOtpSent",
   "message": "Password reset code sent if the account exists."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+- Notes (anti-enumeration):
+  - Generic success is returned even if account does not qualify.
+  - OTP is only sent for users who are existing, verified, active, and not deleted.
+  - OTP sending/rate-limit failures are intentionally hidden behind the same generic success response.
 
 ### POST `/api/auth/reset-password`
-Request body:
+- Purpose: verify reset OTP and set a new password.
+- Request body:
 ```json
 {
   "email": "user@example.com",
@@ -191,20 +268,28 @@ Request body:
   "newPassword": "NewPassword456!"
 }
 ```
-
-Success `200`:
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.passwordReset",
   "message": "Password reset successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed` (for example OTP invalid/expired)
+  - `429` `errors.otp.tooManyAttempts`
+  - `401` `errors.auth.invalidCredentials`
+  - `403` `errors.auth.userSuspended`
+- Notes:
+  - On success, all user sessions are revoked.
 
-### GET `/api/auth/me` (protected)
-Headers:
-- `Authorization: Bearer <accessToken>`
-
-Success `200`:
+### GET `/api/auth/me`
+- Purpose: canonical current auth context for FE state hydration and UI gating.
+- Requirements:
+  - requires Authorization header
+  - session must be active
+  - user must be active
+- Success `200`:
 ```json
 {
   "messageKey": "success.ok",
@@ -214,86 +299,101 @@ Success `200`:
   "roleKey": "owner"
 }
 ```
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - FE should treat this endpoint as the canonical source for current workspace and role.
 
-### POST `/api/auth/logout` (protected)
-Headers:
-- `Authorization: Bearer <accessToken>`
-
-Request body:
-```json
-{}
-```
-
-Success `200`:
+### POST `/api/auth/logout`
+- Purpose: revoke current session.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+- Request body: optional (empty object is fine)
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.loggedOut",
   "message": "Logged out successfully."
 }
 ```
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended`
 
-### POST `/api/auth/logout-all` (protected)
-Headers:
-- `Authorization: Bearer <accessToken>`
-
-Request body:
-```json
-{}
-```
-Body is not required by the backend; frontend may send empty object.
-
-Success `200`:
+### POST `/api/auth/logout-all`
+- Purpose: revoke all sessions for current user.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+- Request body: optional (empty object is fine)
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.loggedOutAll",
   "message": "Logged out from all sessions successfully."
 }
 ```
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended`
 
-### POST `/api/auth/change-password` (protected)
-Headers:
-- `Authorization: Bearer <accessToken>`
-
-Request body:
+### POST `/api/auth/change-password`
+- Purpose: change password using current password.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+- Request body:
 ```json
 {
   "currentPassword": "Password123!",
   "newPassword": "NewPassword456!"
 }
 ```
-- both required, 8..128 chars
-- must be different
-
-Success `200`:
+  - both fields required, 8..128
+  - `newPassword` must differ from `currentPassword`
+- Success `200`:
 ```json
 {
   "messageKey": "success.auth.passwordChanged",
   "message": "Password changed successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked | errors.auth.invalidCredentials`
+  - `403` `errors.auth.userSuspended`
+- Notes:
+  - On success, all sessions are revoked. User must login again.
 
----
+## 5) Workspace Invite Endpoints Reference
 
-## Workspace invites
+### Shared requirements for protected invite management routes
+Applies to:
+- `POST /api/workspaces/:workspaceId/invites`
+- `GET /api/workspaces/:workspaceId/invites`
+- `GET /api/workspaces/:workspaceId/invites/:inviteId`
+- `POST /api/workspaces/:workspaceId/invites/:inviteId/resend`
+- `POST /api/workspaces/:workspaceId/invites/:inviteId/revoke`
 
-### Protection rules for workspace-scoped invite routes
-These routes require:
-- valid access token
-- active user account
-- active membership in `req.auth.workspaceId`
-- role `owner` or `admin`
-- tenant match: `:workspaceId` must equal token workspace (`wid`)
+Requirements:
+- requires Authorization header
+- user must be active
+- must be an active member of the token workspace
+- role must be `owner` or `admin`
+- `:workspaceId` must match token workspace id (`wid`)
 
-### POST `/api/workspaces/:workspaceId/invites` (protected)
-Request body:
+### POST `/api/workspaces/:workspaceId/invites`
+- Purpose: create a workspace invite.
+- Request body:
 ```json
 {
   "email": "agent@example.com",
   "roleKey": "agent"
 }
 ```
-
-Success `200`:
+- Success `200`:
 ```json
 {
   "messageKey": "success.invite.created",
@@ -308,18 +408,22 @@ Success `200`:
   }
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.workspace.notFound`
+  - `409` `errors.invite.alreadyPending | errors.invite.alreadyMember`
+- Notes:
+  - Invite email link uses `FRONTEND_BASE_URL`.
+  - Existing non-removed membership in same workspace blocks new invite for that email.
 
-Common `409` errors:
-- `errors.invite.alreadyPending`
-- `errors.invite.alreadyMember` (email already has non-removed membership in same workspace)
-
-### GET `/api/workspaces/:workspaceId/invites` (protected)
-Query params:
-- `status` optional (`pending|accepted|revoked|expired`)
-- `page` optional (min 1, default 1)
-- `limit` optional (1..100, default 10)
-
-Success `200`:
+### GET `/api/workspaces/:workspaceId/invites`
+- Purpose: list invites for workspace with pagination.
+- Request query:
+  - `status` optional (`pending|accepted|revoked|expired`)
+  - `page` optional (`>= 1`, default `1`)
+  - `limit` optional (`1..100`, default `10`)
+- Success `200`:
 ```json
 {
   "messageKey": "success.ok",
@@ -340,9 +444,16 @@ Success `200`:
   ]
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
 
-### GET `/api/workspaces/:workspaceId/invites/:inviteId` (protected)
-Success `200`:
+### GET `/api/workspaces/:workspaceId/invites/:inviteId`
+- Purpose: fetch a single invite by id.
+- Request params:
+  - `workspaceId`: mongo id
+  - `inviteId`: mongo id
+- Success `200`:
 ```json
 {
   "messageKey": "success.ok",
@@ -357,39 +468,47 @@ Success `200`:
   }
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.invite.notFound`
 
-### POST `/api/workspaces/:workspaceId/invites/:inviteId/resend` (protected)
-Request body:
-```json
-{}
-```
-
-Success `200`:
+### POST `/api/workspaces/:workspaceId/invites/:inviteId/resend`
+- Purpose: regenerate invite token and resend invite email.
+- Request body: optional (empty object is fine)
+- Success `200`:
 ```json
 {
   "messageKey": "success.invite.resent",
   "message": "Invitation resent successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.invite.notFound | errors.workspace.notFound`
+  - `400` `errors.invite.invalid | errors.invite.revoked | errors.invite.expired`
 
-### POST `/api/workspaces/:workspaceId/invites/:inviteId/revoke` (protected)
-Request body:
-```json
-{}
-```
-
-Success `200`:
+### POST `/api/workspaces/:workspaceId/invites/:inviteId/revoke`
+- Purpose: revoke an invite (idempotent if already revoked).
+- Request body: optional (empty object is fine)
+- Success `200`:
 ```json
 {
   "messageKey": "success.invite.revoked",
   "message": "Invitation revoked successfully."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.invite.notFound`
 
 ### POST `/api/workspaces/invites/accept`
-Public-ish endpoint (no auth header required).
-
-Request body:
+- Purpose: accept invite from invite-link token.
+- Requirements:
+  - no Authorization header required
+- Request body:
 ```json
 {
   "token": "raw-invite-token",
@@ -398,32 +517,36 @@ Request body:
   "name": "Optional Name"
 }
 ```
-- `token` required, 16..512 chars
-- `email` required
-- `password` optional by validator, but required when invitee user does not exist yet
-- `name` optional
-
-Success `200` (verified user):
+  - `token` required, 16..512
+  - `email` required, valid email
+  - `password` optional by schema, but required if user does not exist
+  - `name` optional
+- Success `200` (verified user):
 ```json
 {
   "messageKey": "success.invite.accepted",
   "message": "Invitation accepted successfully."
 }
 ```
-
-Success `200` (new/unverified user):
+- Success `200` (new/unverified user):
 ```json
 {
   "messageKey": "success.invite.acceptRequiresVerification",
   "message": "Verification is required to complete invitation acceptance."
 }
 ```
+- Common errors:
+  - `422` `errors.validation.failed` (includes password-required case with `errors.auth.passwordRequiredForInvite`)
+  - `403` `errors.auth.userSuspended`
+  - `400` `errors.invite.invalid | errors.invite.expired | errors.invite.revoked | errors.invite.emailMismatch`
+  - `429` `errors.otp.resendTooSoon | errors.otp.rateLimited`
+- Notes:
+  - This endpoint does not return auth tokens.
+  - For unverified invitees, finalization happens only after `POST /api/auth/verify-email` with `inviteToken`.
 
----
+## 6) Common FE Error Handling Guidance
 
-## Invite finalization flow
-1. Owner/admin creates invite.
-2. Invitee calls `POST /api/workspaces/invites/accept`.
-3. If invitee is unverified, backend sends verify-email OTP.
-4. Invitee calls `POST /api/auth/verify-email` with `inviteToken`.
-5. Backend finalizes membership and returns auth tokens.
+- `errors.auth.emailNotVerified`: redirect to OTP verification screen and allow resend flow.
+- `errors.auth.sessionRevoked` or `errors.auth.invalidToken`: clear tokens, clear auth state, and force logout/login.
+- `errors.auth.forbiddenTenant`: show "no access to this workspace", clear current workspace context, and prompt workspace re-selection or re-auth.
+- `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show retry timer / cooldown UI before allowing resend.

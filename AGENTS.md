@@ -47,3 +47,11 @@ Routes define endpoints and call controllers.
 ## Validation
 - Use `express-validator` rules inside modules.
 - Wrap routes with `shared/middlewares/validate.js`.
+
+## API Docs Format Rules
+1. Always include `Quick Start Flows` before endpoint reference sections.
+2. Always include `Auth model & authorization model`, explicitly explaining workspace-scoped tokens and `roleKey`.
+3. Prefer concrete requirement statements over internal middleware/guard names.
+4. Define shared headers once near the top; do not duplicate header blocks for every endpoint.
+5. Every endpoint entry must include: purpose, request schema, success shape, common errors, and anti-enumeration notes when applicable.
+6. Keep all examples consistent with the response envelope and include `messageKey` in success responses.
