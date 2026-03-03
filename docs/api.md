@@ -10,6 +10,15 @@
 - `Content-Type: application/json`
 - `Authorization: Bearer <accessToken>` (required only on protected endpoints)
 
+### Endpoint scope terms
+Protected endpoints:
+- Require Authorization header with a valid access token.
+
+Workspace-scoped endpoints:
+- Include `:workspaceId` in the route.
+- Enforce tenant match (`:workspaceId` must equal token `wid`).
+- Enforce active membership and role requirements.
+
 ### Response envelope (critical)
 - Success (`< 400`, object response):
 ```json
@@ -54,10 +63,11 @@
 - Token claims frontend may care about:
   - `wid`: workspace id used for current access token scope.
   - `r`: role key in that workspace scope.
-- Frontend should not depend on JWT parsing for UI state. Use `GET /api/auth/me` as the canonical source for:
+- Backend uses these claims for authorization enforcement.
+- Frontend should treat tokens as opaque and use `GET /api/auth/me` as the canonical source for:
   - current `workspace._id`
   - current `roleKey`
-- Backend authorization is authoritative. Token claims can become stale if membership/role/workspace context changes; fresh claims are issued on verify-email, login, or refresh.
+- Token claims may become stale if membership changes; fresh claims are issued on verify-email, login, or refresh.
 - Workspace invite management routes enforce these requirements:
   - valid Authorization token
   - user is active
@@ -234,7 +244,8 @@
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.emailNotVerified | errors.auth.userSuspended | errors.auth.forbiddenTenant`
 - Notes:
-  - Refresh rotates tokens; old refresh token becomes unusable.
+  - Frontend MUST replace both `accessToken` and `refreshToken` with the returned pair.
+  - Refresh token rotation invalidates the previous refresh token immediately.
 
 ### POST `/api/auth/forgot-password`
 - Purpose: request reset-password OTP.
@@ -543,10 +554,12 @@ Requirements:
 - Notes:
   - This endpoint does not return auth tokens.
   - For unverified invitees, finalization happens only after `POST /api/auth/verify-email` with `inviteToken`.
+  - Frontend next steps:
+    - If `success.invite.accepted`: redirect user to login screen (or perform login if auto-login is implemented in future).
+    - If `success.invite.acceptRequiresVerification`: show OTP verification UI and call `POST /api/auth/verify-email` with `inviteToken` to finalize membership and receive tokens.
 
 ## 6) Common FE Error Handling Guidance
 
-- `errors.auth.emailNotVerified`: redirect to OTP verification screen and allow resend flow.
-- `errors.auth.sessionRevoked` or `errors.auth.invalidToken`: clear tokens, clear auth state, and force logout/login.
-- `errors.auth.forbiddenTenant`: show "no access to this workspace", clear current workspace context, and prompt workspace re-selection or re-auth.
-- `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show retry timer / cooldown UI before allowing resend.
+- `errors.auth.invalidToken` or `errors.auth.sessionRevoked`: clear tokens and force logout.
+- `errors.auth.forbiddenTenant`: show "no access to this workspace" without necessarily logging user out.
+- `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show cooldown timer before allowing resend.
