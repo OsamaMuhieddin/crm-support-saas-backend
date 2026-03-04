@@ -4,6 +4,7 @@ import { MEMBER_STATUS } from '../../../constants/member-status.js';
 import { User } from '../../users/models/user.model.js';
 import { WorkspaceMember } from '../../workspaces/models/workspace-member.model.js';
 import { createError } from '../../../shared/errors/createError.js';
+import { buildValidationError } from '../../../shared/middlewares/validate.js';
 import { normalizeEmail } from '../../../shared/utils/normalize.js';
 import { authConfig } from '../../../config/auth.config.js';
 import { sendOtpEmailFireAndForget } from '../../../shared/services/email.service.js';
@@ -313,6 +314,13 @@ export const resetPassword = async ({ email, code, newPassword }) => {
 
   const user = await findActiveUserByEmail(email);
   assertActiveNonSuspendedUser(user);
+
+  const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
+  if (isSamePassword) {
+    throw createError('errors.validation.failed', 422, [
+      buildValidationError('newPassword', 'errors.auth.passwordMustDiffer')
+    ]);
+  }
 
   user.passwordHash = await hashPassword(newPassword);
   await user.save();

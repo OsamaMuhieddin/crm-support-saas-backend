@@ -287,7 +287,7 @@ Workspace-scoped endpoints:
 }
 ```
 - Common errors:
-  - `422` `errors.validation.failed` (for example OTP invalid/expired)
+  - `422` `errors.validation.failed` (for example OTP invalid/expired, or `errors.auth.passwordMustDiffer` on field `newPassword`)
   - `429` `errors.otp.tooManyAttempts`
   - `401` `errors.auth.invalidCredentials`
   - `403` `errors.auth.userSuspended`

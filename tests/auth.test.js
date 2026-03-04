@@ -233,6 +233,70 @@ describe('Auth + OTP flows', () => {
     expect(loginNewPassword.body.messageKey).toBe('success.auth.loggedIn');
   });
 
+  maybeDbTest(
+    'reset-password rejects same password and consumes OTP code',
+    async () => {
+      const email = 'reset-same-password@example.com';
+      const password = 'Password123!';
+
+      await createVerifiedUser({ email, password });
+
+      const forgotResult = await captureFallbackEmail(() =>
+        request(app).post('/api/auth/forgot-password').send({ email })
+      );
+
+      expect(forgotResult.response.status).toBe(200);
+      expect(forgotResult.response.body.messageKey).toBe(
+        'success.auth.resetOtpSent'
+      );
+
+      const resetCode = extractOtpCodeFromLogs(forgotResult.logs);
+      expect(resetCode).toBeTruthy();
+
+      const samePasswordResponse = await request(app)
+        .post('/api/auth/reset-password')
+        .send({
+          email,
+          code: resetCode,
+          newPassword: password
+        });
+
+      expect(samePasswordResponse.status).toBe(422);
+      expect(samePasswordResponse.body.messageKey).toBe(
+        'errors.validation.failed'
+      );
+      expect(samePasswordResponse.body.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'newPassword',
+            messageKey: 'errors.auth.passwordMustDiffer'
+          })
+        ])
+      );
+
+      const reusedCodeResponse = await request(app)
+        .post('/api/auth/reset-password')
+        .send({
+          email,
+          code: resetCode,
+          newPassword: 'AnotherPassword456!'
+        });
+
+      expect(reusedCodeResponse.status).toBe(422);
+      expect(reusedCodeResponse.body.messageKey).toBe(
+        'errors.validation.failed'
+      );
+      expect(reusedCodeResponse.body.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'code',
+            messageKey: 'errors.otp.invalid'
+          })
+        ])
+      );
+    }
+  );
+
   maybeDbTest('resend-otp within cooldown returns resendTooSoon', async () => {
     const email = 'otp-cooldown@example.com';
 

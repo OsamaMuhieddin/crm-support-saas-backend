@@ -31,6 +31,7 @@
       "invalidCredentials": "Invalid email or password.",
       "emailNotVerified": "Email is not verified.",
       "emailAlreadyUsed": "Email is already in use.",
+      "passwordMustDiffer": "New password must be different from current password.",
       "passwordRequiredForInvite": "Password is required to continue invite signup.",
       "userSuspended": "User account is suspended.",
       "sessionRevoked": "Session has been revoked.",
