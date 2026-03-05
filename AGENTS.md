@@ -27,6 +27,15 @@ Routes define endpoints and call controllers.
 ## Tenancy (planned rules)
 - Workspace is the tenant root.
 - Most data will be scoped by `workspaceId` in future models/services.
+- Users can belong to multiple workspaces via memberships.
+- Active workspace is session-scoped (`session.workspaceId`).
+- Active workspace MUST change only through explicit endpoint:
+  - `POST /api/workspaces/switch`
+- Do NOT auto-switch active workspace as a side effect of invite acceptance or invite finalization.
+
+## Workspace Context Endpoints
+- `GET /api/workspaces/mine`: list current user's active memberships with workspace basics + role.
+- `POST /api/workspaces/switch`: switch active workspace for current session and return a new access token.
 
 ## Localization
 - Header: `x-lang: en|ar`, default `en`.
@@ -55,3 +64,19 @@ Routes define endpoints and call controllers.
 4. Define shared headers once near the top; do not duplicate header blocks for every endpoint.
 5. Every endpoint entry must include: purpose, request schema, success shape, common errors, and anti-enumeration notes when applicable.
 6. Keep all examples consistent with the response envelope and include `messageKey` in success responses.
+
+## Local File Mention Format (Direct Click)
+- Use repo-relative file mentions prefixed with `@`.
+- Required format: `@src/.../file.ext`
+- Keep file mentions plain text (not backticks, not markdown links).
+- Use `/` path separators.
+- Put each file mention on its own line.
+- Do not use `http://`, `https://`, `file://`, or `vscode://`.
+
+Examples:
+- Good: @src/shared/utils/security.js
+- Good: @src/modules/mailboxes/models/mailbox.model.js
+- Good: @src/modules/mailboxes/schemas/README.md
+- Bad: security.js
+- Bad: `src/shared/utils/security.js`
+- Bad: [security.js](...)

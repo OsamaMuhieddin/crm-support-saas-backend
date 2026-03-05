@@ -51,12 +51,14 @@ export const requireAuth = async (req, res, next) => {
     }
 
     const session = await Session.findById(payload.sid)
-      .select('_id userId revokedAt expiresAt')
+      .select('_id userId workspaceId revokedAt expiresAt')
       .lean();
 
     const isSessionInvalid =
       !session ||
       String(session.userId) !== String(payload.sub) ||
+      !session.workspaceId ||
+      String(session.workspaceId) !== String(payload.wid) ||
       session.revokedAt ||
       new Date(session.expiresAt).getTime() <= Date.now();
 

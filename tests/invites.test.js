@@ -1,4 +1,5 @@
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import app from '../src/app.js';
 import { WorkspaceInvite } from '../src/modules/workspaces/models/workspace-invite.model.js';
 import { WorkspaceMember } from '../src/modules/workspaces/models/workspace-member.model.js';
@@ -198,6 +199,7 @@ describe('Workspace invites lifecycle', () => {
     expect(acceptResponse.body.messageKey).toBe(
       'success.invite.acceptRequiresVerification'
     );
+    expect(acceptResponse.body.workspaceId).toBe(owner.workspaceId);
 
     const invite = await WorkspaceInvite.findById(created.response.body.invite._id);
     expect(invite.status).toBe(INVITE_STATUS.PENDING);
@@ -230,6 +232,7 @@ describe('Workspace invites lifecycle', () => {
 
     expect(acceptResponse.status).toBe(200);
     expect(acceptResponse.body.messageKey).toBe('success.invite.accepted');
+    expect(acceptResponse.body.workspaceId).toBe(owner.workspaceId);
 
     const invite = await WorkspaceInvite.findById(created.response.body.invite._id);
     expect(invite.status).toBe(INVITE_STATUS.ACCEPTED);
@@ -283,6 +286,11 @@ describe('Workspace invites lifecycle', () => {
     expect(verifyResponse.status).toBe(200);
     expect(verifyResponse.body.messageKey).toBe('success.auth.verified');
     expect(verifyResponse.body.tokens.accessToken).toBeTruthy();
+    expect(verifyResponse.body.workspaceId).toBe(owner.workspaceId);
+    expect(verifyResponse.body.inviteWorkspaceId).toBe(owner.workspaceId);
+    expect(verifyResponse.body.activeWorkspaceId).toBeTruthy();
+    const verifyTokenPayload = jwt.decode(verifyResponse.body.tokens.accessToken);
+    expect(verifyTokenPayload.wid).toBe(verifyResponse.body.activeWorkspaceId);
 
     const invite = await WorkspaceInvite.findById(created.response.body.invite._id);
     expect(invite.status).toBe(INVITE_STATUS.ACCEPTED);

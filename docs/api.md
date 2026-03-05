@@ -1,4 +1,4 @@
-# API Reference (MVP Auth + Workspace Invites)
+# API Reference (MVP Auth + Workspace Invites + Workspace Switching)
 
 ## 1) Overview
 
@@ -18,6 +18,10 @@ Workspace-scoped endpoints:
 - Include `:workspaceId` in the route.
 - Enforce tenant match (`:workspaceId` must equal token `wid`).
 - Enforce active membership and role requirements.
+
+Session-context endpoints:
+- Use the session's active workspace context.
+- `POST /api/workspaces/switch` is the only endpoint allowed to change the active workspace.
 
 ### Response envelope (critical)
 - Success (`< 400`, object response):
@@ -59,15 +63,16 @@ Workspace-scoped endpoints:
 
 ## 2) Auth model & authorization model
 
-- Access tokens are workspace-scoped in MVP.
-- Token claims frontend may care about:
-  - `wid`: workspace id used for current access token scope.
-  - `r`: role key in that workspace scope.
-- Backend uses these claims for authorization enforcement.
-- Frontend should treat tokens as opaque and use `GET /api/auth/me` as the canonical source for:
-  - current `workspace._id`
-  - current `roleKey`
-- Token claims may become stale if membership changes; fresh claims are issued on verify-email, login, or refresh.
+- Users can belong to multiple workspaces through workspace memberships.
+- Every session has exactly one active workspace context (`session.workspaceId`).
+- Access tokens are workspace-scoped for that active session context:
+  - `wid`: active workspace id
+  - `r`: role key in that workspace
+- Refresh tokens are session-scoped; refresh re-issues claims from current session context.
+- Active workspace changes are explicit only via `POST /api/workspaces/switch`.
+- Invite acceptance and invite finalization do not auto-switch session context.
+- Old access tokens become invalid after switch because token `wid` must match `session.workspaceId`.
+- Frontend should treat tokens as opaque and use `GET /api/auth/me` as canonical source for current workspace and role.
 - Workspace invite management routes enforce these requirements:
   - valid Authorization token
   - user is active
@@ -91,18 +96,22 @@ Workspace-scoped endpoints:
 4. Store rotated tokens returned by refresh.
 5. Call `GET /api/auth/me` to re-sync canonical workspace/role.
 
-### Flow C: Invite Accept (verified vs unverified) -> Verify Email with inviteToken
+### Flow C: Invite Accept (verified vs unverified) -> Verify Email with inviteToken -> Explicit Switch
 1. Workspace owner/admin creates invite via `POST /api/workspaces/:workspaceId/invites`.
 2. Invitee opens link and calls `POST /api/workspaces/invites/accept` with `token` + `email` (and `password` if creating a new user).
 3. If invitee is already verified:
   - API returns `success.invite.accepted`.
+  - Response includes `workspaceId` of the invited workspace.
   - membership is activated immediately.
 4. If invitee is new/unverified:
   - API returns `success.invite.acceptRequiresVerification`.
+  - Response includes `workspaceId` of the invited workspace.
   - verify-email OTP is sent; invite stays pending.
 5. Invitee then calls `POST /api/auth/verify-email` with `email`, `code`, and `inviteToken`.
-6. API finalizes invite membership and issues auth tokens.
-7. FE calls `GET /api/auth/me` to hydrate workspace and role.
+6. API finalizes invite membership, issues auth tokens, and returns both active + invited workspace context fields.
+7. Session active workspace is not auto-switched by invite acceptance/finalization.
+8. FE uses returned `workspaceId`/`inviteWorkspaceId` and calls `POST /api/workspaces/switch` when it wants to move to the invited workspace.
+9. FE calls `GET /api/auth/me` to hydrate canonical active workspace and role.
 
 ## 4) Auth Endpoints Reference
 
@@ -187,7 +196,10 @@ Workspace-scoped endpoints:
   "tokens": {
     "accessToken": "jwt...",
     "refreshToken": "jwt..."
-  }
+  },
+  "workspaceId": "65f9...",
+  "activeWorkspaceId": "65f1...",
+  "inviteWorkspaceId": "65f9..."
 }
 ```
 - Common errors:
@@ -198,7 +210,10 @@ Workspace-scoped endpoints:
 - Notes:
   - Tokens are issued on success.
   - `inviteToken` is used to finalize invite acceptance for unverified invitees.
-  - If user already has an active default workspace membership, workspace context is resolved from that membership.
+  - `workspaceId` is returned for FE convenience and is `inviteWorkspaceId || activeWorkspaceId`.
+  - `activeWorkspaceId` is the workspace used to mint the access token (`wid` claim).
+  - `inviteWorkspaceId` is the finalized invited workspace when `inviteToken` is provided, otherwise `null`.
+  - Invite finalization does not auto-switch workspace context.
 
 ### POST `/api/auth/login`
 - Purpose: login verified user and issue workspace-scoped tokens.
@@ -306,7 +321,12 @@ Workspace-scoped endpoints:
   "messageKey": "success.ok",
   "message": "Request completed successfully.",
   "user": { "_id": "65f0...", "email": "user@example.com" },
-  "workspace": { "_id": "65f1..." },
+  "workspace": {
+    "_id": "65f1...",
+    "name": "Acme Workspace",
+    "slug": "acme-workspace",
+    "status": "active"
+  },
   "roleKey": "owner"
 }
 ```
@@ -315,6 +335,11 @@ Workspace-scoped endpoints:
   - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
 - Notes:
   - FE should treat this endpoint as the canonical source for current workspace and role.
+  - Active workspace resolution order:
+    1. `session.workspaceId` if membership is active.
+    2. `user.lastWorkspaceId` if membership is active.
+    3. `user.defaultWorkspaceId` if membership is active.
+    4. first active membership.
 
 ### POST `/api/auth/logout`
 - Purpose: revoke current session.
@@ -378,7 +403,77 @@ Workspace-scoped endpoints:
 - Notes:
   - On success, all sessions are revoked. User must login again.
 
-## 5) Workspace Invite Endpoints Reference
+## 5) Workspace Context Endpoints
+
+### GET `/api/workspaces/mine`
+- Purpose: list all active workspace memberships for the authenticated user.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+- Success `200`:
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "memberships": [
+    {
+      "workspaceId": "65f1...",
+      "workspace": {
+        "_id": "65f1...",
+        "name": "Acme Workspace",
+        "slug": "acme-workspace",
+        "status": "active"
+      },
+      "roleKey": "admin",
+      "memberStatus": "active",
+      "isOwner": false
+    }
+  ]
+}
+```
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended`
+- Notes:
+  - This endpoint is workspace-agnostic and returns all active memberships for the current user.
+
+### POST `/api/workspaces/switch`
+- Purpose: explicitly switch the current session active workspace context.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+- Request body:
+```json
+{
+  "workspaceId": "65f9..."
+}
+```
+- Success `200`:
+```json
+{
+  "messageKey": "success.workspace.switched",
+  "message": "Workspace switched successfully.",
+  "accessToken": "jwt...",
+  "workspace": {
+    "_id": "65f9...",
+    "name": "Support Workspace",
+    "slug": "support-workspace",
+    "status": "active"
+  },
+  "roleKey": "agent"
+}
+```
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.workspace.notMember | errors.workspace.inactiveMember`
+  - `404` `errors.workspace.notFound`
+- Notes:
+  - This is the only endpoint that changes active workspace context.
+  - Client must replace in-memory access token with returned `accessToken`.
+  - Old access token becomes invalid immediately after switch.
+
+## 6) Workspace Invite Endpoints Reference
 
 ### Shared requirements for protected invite management routes
 Applies to:
@@ -536,14 +631,18 @@ Requirements:
 ```json
 {
   "messageKey": "success.invite.accepted",
-  "message": "Invitation accepted successfully."
+  "message": "Invitation accepted successfully.",
+  "workspaceId": "65f1...",
+  "roleKey": "admin"
 }
 ```
 - Success `200` (new/unverified user):
 ```json
 {
   "messageKey": "success.invite.acceptRequiresVerification",
-  "message": "Verification is required to complete invitation acceptance."
+  "message": "Verification code sent. Verify your email to complete invitation acceptance.",
+  "workspaceId": "65f1...",
+  "roleKey": "agent"
 }
 ```
 - Common errors:
@@ -553,12 +652,16 @@ Requirements:
   - `429` `errors.otp.resendTooSoon | errors.otp.rateLimited`
 - Notes:
   - This endpoint does not return auth tokens.
+  - Response includes invited `workspaceId` so client can switch context explicitly later.
+  - Client should call `POST /api/workspaces/switch` with this returned `workspaceId` when switching into the invited workspace context.
   - For unverified invitees, finalization happens only after `POST /api/auth/verify-email` with `inviteToken`.
+  - Invite acceptance does not auto-switch active workspace.
   - Frontend next steps:
     - If `success.invite.accepted`: redirect user to login screen (or perform login if auto-login is implemented in future).
     - If `success.invite.acceptRequiresVerification`: show OTP verification UI and call `POST /api/auth/verify-email` with `inviteToken` to finalize membership and receive tokens.
+    - Then call `POST /api/workspaces/switch` when user chooses to move to invited workspace context.
 
-## 6) Common FE Error Handling Guidance
+## 7) Common FE Error Handling Guidance
 
 - `errors.auth.invalidToken` or `errors.auth.sessionRevoked`: clear tokens and force logout.
 - `errors.auth.forbiddenTenant`: show "no access to this workspace" without necessarily logging user out.

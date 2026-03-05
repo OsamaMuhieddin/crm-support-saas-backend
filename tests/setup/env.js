@@ -1,5 +1,8 @@
 process.env.NODE_ENV = 'test';
-process.env.SKIP_DB_TESTS = process.env.SKIP_DB_TESTS || '1';
+process.env.SKIP_DB_TESTS = process.env.SKIP_DB_TESTS || '0';
+process.env.TEST_MONGO_URI =
+  process.env.TEST_MONGO_URI ||
+  'mongodb://127.0.0.1:27017/crm_support_saas_test';
 process.env.JWT_ACCESS_SECRET = 'test-access-secret';
 process.env.JWT_REFRESH_SECRET = 'test-refresh-secret';
 process.env.JWT_ACCESS_EXPIRES_IN = '15m';

@@ -18,7 +18,10 @@
       "resent": "Invitation resent successfully.",
       "revoked": "Invitation revoked successfully.",
       "accepted": "Invitation accepted successfully.",
-      "acceptRequiresVerification": "Verification is required to complete invitation acceptance."
+      "acceptRequiresVerification": "Verification code sent. Verify your email to complete invitation acceptance."
+    },
+    "workspace": {
+      "switched": "Workspace switched successfully."
     }
   },
   "errors": {
@@ -39,7 +42,9 @@
       "forbiddenTenant": "You do not have access to this workspace."
     },
     "workspace": {
-      "notFound": "Workspace not found."
+      "notFound": "Workspace not found.",
+      "notMember": "You are not a member of this workspace.",
+      "inactiveMember": "Your workspace membership is inactive."
     },
     "otp": {
       "invalid": "Invalid OTP code.",

@@ -93,7 +93,10 @@ export const resetPasswordController = async (req, res, next) => {
 
 export const meController = async (req, res, next) => {
   try {
-    const data = await getMe({ userId: req.auth.userId });
+    const data = await getMe({
+      userId: req.auth.userId,
+      sessionId: req.auth.sessionId
+    });
     return res.json({ messageKey: 'success.ok', ...data });
   } catch (error) {
     return next(error);

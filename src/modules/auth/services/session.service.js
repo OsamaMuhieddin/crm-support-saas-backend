@@ -51,6 +51,33 @@ export const createSessionWithTokens = async ({
   };
 };
 
+export const mintAccessTokenForSession = async ({
+  sessionId,
+  userId,
+  workspaceId,
+  roleKey
+}) => {
+  const session = await Session.findOne({
+    _id: sessionId,
+    userId,
+    revokedAt: null,
+    expiresAt: { $gt: nowDate() }
+  })
+    .select('_id')
+    .lean();
+
+  if (!session) {
+    throw createError('errors.auth.sessionRevoked', 401);
+  }
+
+  return signAccessToken({
+    userId,
+    sessionId,
+    workspaceId,
+    roleKey
+  });
+};
+
 export const validateRefreshSession = async (refreshToken) => {
   const payload = verifyRefreshToken(refreshToken);
 
@@ -58,13 +85,12 @@ export const validateRefreshSession = async (refreshToken) => {
     throw createError('errors.auth.invalidToken', 401);
   }
 
-  const session = await Session.findById(payload.sid);
+  const session = await Session.findOne({
+    _id: payload.sid,
+    userId: payload.sub
+  });
   if (!session) {
     throw createError('errors.auth.sessionRevoked', 401);
-  }
-
-  if (String(session.userId) !== String(payload.sub)) {
-    throw createError('errors.auth.invalidToken', 401);
   }
 
   if (session.revokedAt || session.expiresAt.getTime() <= Date.now()) {

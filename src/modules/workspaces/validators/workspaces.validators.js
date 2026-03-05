@@ -78,3 +78,9 @@ export const acceptInviteValidator = [
     .isLength({ min: 1, max: 160 })
     .withMessage('errors.validation.failed')
 ];
+
+export const switchWorkspaceValidator = [
+  body('workspaceId')
+    .isMongoId()
+    .withMessage('errors.validation.failed')
+];

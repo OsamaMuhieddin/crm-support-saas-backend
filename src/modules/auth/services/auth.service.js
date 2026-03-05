@@ -1,8 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { OTP_PURPOSE } from '../../../constants/otp-purpose.js';
-import { MEMBER_STATUS } from '../../../constants/member-status.js';
 import { User } from '../../users/models/user.model.js';
-import { WorkspaceMember } from '../../workspaces/models/workspace-member.model.js';
+import { Session } from '../../users/models/session.model.js';
 import { createError } from '../../../shared/errors/createError.js';
 import { buildValidationError } from '../../../shared/middlewares/validate.js';
 import { normalizeEmail } from '../../../shared/utils/normalize.js';
@@ -179,7 +178,7 @@ export const verifyEmailAndLogin = async ({
 
   const emailNormalized = normalizeEmail(email);
 
-  const user =
+  let user =
     (otpRecord.userId && (await User.findById(otpRecord.userId))) ||
     (await User.findOne({ emailNormalized, deletedAt: null }));
 
@@ -197,18 +196,23 @@ export const verifyEmailAndLogin = async ({
 
   const { tokens } = await createSessionWithTokens({
     userId: user._id,
-    workspaceId: workspaceContext.workspaceId,
-    roleKey: workspaceContext.roleKey,
+    workspaceId: workspaceContext.activeWorkspaceId,
+    roleKey: workspaceContext.activeRoleKey,
     ip,
     userAgent
   });
 
+  user = await User.findById(user._id);
   user.lastLoginAt = new Date();
   await user.save();
 
   return {
     user: buildSafeUser(user),
-    tokens
+    tokens,
+    workspaceId:
+      workspaceContext.inviteWorkspaceId || workspaceContext.activeWorkspaceId,
+    activeWorkspaceId: workspaceContext.activeWorkspaceId,
+    inviteWorkspaceId: workspaceContext.inviteWorkspaceId
   };
 };
 
@@ -229,7 +233,7 @@ export const login = async ({ email, password, ip, userAgent }) => {
     throw createError('errors.auth.emailNotVerified', 403);
   }
 
-  const workspaceContext = await getActiveWorkspaceContext(user._id);
+  const workspaceContext = await getActiveWorkspaceContext({ userId: user._id });
 
   const { tokens } = await createSessionWithTokens({
     userId: user._id,
@@ -239,6 +243,7 @@ export const login = async ({ email, password, ip, userAgent }) => {
     userAgent
   });
 
+  user.lastWorkspaceId = workspaceContext.workspaceId;
   user.lastLoginAt = new Date();
   await user.save();
 
@@ -262,7 +267,10 @@ export const refresh = async ({ refreshToken }) => {
     throw createError('errors.auth.emailNotVerified', 403);
   }
 
-  const workspaceContext = await getActiveWorkspaceContext(user._id);
+  const workspaceContext = await getActiveWorkspaceContext({
+    userId: user._id,
+    sessionWorkspaceId: session.workspaceId
+  });
 
   const tokens = await rotateSessionTokens({
     session,
@@ -330,7 +338,7 @@ export const resetPassword = async ({ email, code, newPassword }) => {
   return {};
 };
 
-export const getMe = async ({ userId }) => {
+export const getMe = async ({ userId, sessionId }) => {
   const user = await User.findOne({
     _id: userId,
     deletedAt: null
@@ -340,26 +348,22 @@ export const getMe = async ({ userId }) => {
     throw createError('errors.auth.invalidToken', 401);
   }
 
-  const workspaceContext = await getActiveWorkspaceContext(user._id);
-
-  const activeMember = await WorkspaceMember.findOne({
-    workspaceId: workspaceContext.workspaceId,
+  const session = await Session.findOne({
+    _id: sessionId,
     userId: user._id,
-    status: MEMBER_STATUS.ACTIVE,
-    deletedAt: null
+    revokedAt: null
   })
-    .select('_id')
+    .select('workspaceId')
     .lean();
 
-  if (!activeMember) {
-    throw createError('errors.auth.forbiddenTenant', 403);
-  }
+  const workspaceContext = await getActiveWorkspaceContext({
+    userId: user._id,
+    sessionWorkspaceId: session?.workspaceId || null
+  });
 
   return {
     user: buildSafeUser(user),
-    workspace: {
-      _id: workspaceContext.workspaceId
-    },
+    workspace: workspaceContext.workspace,
     roleKey: workspaceContext.roleKey
   };
 };

@@ -3,6 +3,7 @@ import { Workspace } from '../models/workspace.model.js';
 import { WorkspaceInvite } from '../models/workspace-invite.model.js';
 import { WorkspaceMember } from '../models/workspace-member.model.js';
 import { User } from '../../users/models/user.model.js';
+import { Session } from '../../users/models/session.model.js';
 import { MEMBER_STATUS } from '../../../constants/member-status.js';
 import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
 import { INVITE_STATUS } from '../../../constants/invite-status.js';
@@ -23,6 +24,7 @@ import {
   sendOtpEmailFireAndForget
 } from '../../../shared/services/email.service.js';
 import { createOtp } from '../../auth/services/otp.service.js';
+import { mintAccessTokenForSession } from '../../auth/services/session.service.js';
 
 const oneDayMs = 24 * 60 * 60 * 1000;
 
@@ -81,6 +83,137 @@ const buildInviteView = (invite) => ({
   createdAt: invite.createdAt,
   updatedAt: invite.updatedAt
 });
+
+const buildWorkspaceView = (workspace) => ({
+  _id: String(workspace._id),
+  name: workspace.name,
+  slug: workspace.slug,
+  status: workspace.status
+});
+
+const buildMembershipView = ({ member, workspace, userId }) => ({
+  workspaceId: String(workspace._id),
+  workspace: buildWorkspaceView(workspace),
+  roleKey: member.roleKey,
+  memberStatus: member.status,
+  isOwner:
+    member.roleKey === WORKSPACE_ROLES.OWNER ||
+    String(workspace.ownerUserId) === String(userId)
+});
+
+const findWorkspaceById = async (workspaceId) =>
+  Workspace.findOne({
+    _id: workspaceId,
+    deletedAt: null
+  })
+    .select('_id name slug status ownerUserId')
+    .lean();
+
+const findActiveMemberForWorkspace = async ({ userId, workspaceId }) =>
+  WorkspaceMember.findOne({
+    workspaceId,
+    userId,
+    status: MEMBER_STATUS.ACTIVE,
+    deletedAt: null
+  })
+    .select('_id workspaceId roleKey status')
+    .lean();
+
+const findActiveContextForWorkspace = async ({ userId, workspaceId }) => {
+  if (!workspaceId) {
+    return null;
+  }
+
+  const member = await findActiveMemberForWorkspace({ userId, workspaceId });
+  if (!member) {
+    return null;
+  }
+
+  const workspace = await findWorkspaceById(workspaceId);
+  if (!workspace) {
+    return null;
+  }
+
+  return buildMembershipView({ member, workspace, userId });
+};
+
+const listAllActiveMembershipContexts = async ({ userId }) => {
+  const members = await WorkspaceMember.find({
+    userId,
+    status: MEMBER_STATUS.ACTIVE,
+    deletedAt: null
+  })
+    .sort({ createdAt: 1 })
+    .select('_id workspaceId roleKey status')
+    .lean();
+
+  if (members.length === 0) {
+    return [];
+  }
+
+  const workspaceIds = [...new Set(members.map((item) => String(item.workspaceId)))];
+  const workspaces = await Workspace.find({
+    _id: { $in: workspaceIds },
+    deletedAt: null
+  })
+    .select('_id name slug status ownerUserId')
+    .lean();
+
+  const workspaceById = new Map(
+    workspaces.map((workspace) => [String(workspace._id), workspace])
+  );
+
+  return members
+    .map((member) => {
+      const workspace = workspaceById.get(String(member.workspaceId));
+      if (!workspace) {
+        return null;
+      }
+
+      return buildMembershipView({ member, workspace, userId });
+    })
+    .filter(Boolean);
+};
+
+const resolveActiveWorkspaceContext = async ({ userId, sessionWorkspaceId = null }) => {
+  const user = await User.findOne({
+    _id: userId,
+    deletedAt: null
+  })
+    .select('_id defaultWorkspaceId lastWorkspaceId')
+    .lean();
+
+  if (!user) {
+    throw createError('errors.auth.invalidToken', 401);
+  }
+
+  const candidates = [
+    sessionWorkspaceId ? String(sessionWorkspaceId) : null,
+    user.lastWorkspaceId ? String(user.lastWorkspaceId) : null,
+    user.defaultWorkspaceId ? String(user.defaultWorkspaceId) : null
+  ].filter(Boolean);
+
+  const seen = new Set();
+  for (const workspaceId of candidates) {
+    if (seen.has(workspaceId)) {
+      continue;
+    }
+
+    seen.add(workspaceId);
+
+    const context = await findActiveContextForWorkspace({ userId, workspaceId });
+    if (context) {
+      return context;
+    }
+  }
+
+  const activeMemberships = await listAllActiveMembershipContexts({ userId });
+  if (activeMemberships.length > 0) {
+    return activeMemberships[0];
+  }
+
+  throw createError('errors.auth.forbiddenTenant', 403);
+};
 
 const markInviteExpiredIfNeeded = async (invite) => {
   if (invite.expiresAt.getTime() > Date.now()) {
@@ -178,23 +311,8 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
     throw createError('errors.auth.invalidToken', 401);
   }
 
-  if (user.defaultWorkspaceId) {
-    const member = await WorkspaceMember.findOne({
-      workspaceId: user.defaultWorkspaceId,
-      userId: user._id,
-      status: MEMBER_STATUS.ACTIVE,
-      deletedAt: null
-    })
-      .select('workspaceId roleKey')
-      .lean();
-
-    if (member) {
-      return {
-        workspaceId: String(member.workspaceId),
-        roleKey: member.roleKey
-      };
-    }
-  }
+  let hasUserChanges = false;
+  let inviteContext = null;
 
   if (inviteToken) {
     const invite = await findInviteByRawToken(inviteToken);
@@ -213,70 +331,146 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
     invite.acceptedAt = new Date();
     await invite.save();
 
-    user.defaultWorkspaceId = invite.workspaceId;
-    user.lastWorkspaceId = invite.workspaceId;
-    await user.save();
+    if (!user.defaultWorkspaceId) {
+      user.defaultWorkspaceId = invite.workspaceId;
+      hasUserChanges = true;
+    }
 
-    return {
-      workspaceId: String(invite.workspaceId),
-      roleKey: invite.roleKey
-    };
+    inviteContext = await findActiveContextForWorkspace({
+      userId: user._id,
+      workspaceId: invite.workspaceId
+    });
+
+    if (!inviteContext) {
+      throw createError('errors.auth.forbiddenTenant', 403);
+    }
   }
 
-  const workspaceName = deriveWorkspaceName(user);
-  const workspaceSlug = await ensureUniqueSlug(workspaceName);
+  if (!user.defaultWorkspaceId) {
+    const workspaceName = deriveWorkspaceName(user);
+    const workspaceSlug = await ensureUniqueSlug(workspaceName);
 
-  const workspace = await Workspace.create({
-    name: workspaceName,
-    slug: workspaceSlug,
-    ownerUserId: user._id
-  });
+    const workspace = await Workspace.create({
+      name: workspaceName,
+      slug: workspaceSlug,
+      ownerUserId: user._id
+    });
 
-  await WorkspaceMember.create({
-    workspaceId: workspace._id,
+    await WorkspaceMember.create({
+      workspaceId: workspace._id,
+      userId: user._id,
+      roleKey: WORKSPACE_ROLES.OWNER,
+      status: MEMBER_STATUS.ACTIVE,
+      joinedAt: new Date()
+    });
+
+    user.defaultWorkspaceId = workspace._id;
+    if (!user.lastWorkspaceId) {
+      user.lastWorkspaceId = workspace._id;
+    }
+    hasUserChanges = true;
+  }
+
+  if (hasUserChanges) {
+    await user.save();
+  }
+
+  const activeContext = await resolveActiveWorkspaceContext({
     userId: user._id,
-    roleKey: WORKSPACE_ROLES.OWNER,
-    status: MEMBER_STATUS.ACTIVE,
-    joinedAt: new Date()
+    sessionWorkspaceId: null
   });
-
-  user.defaultWorkspaceId = workspace._id;
-  user.lastWorkspaceId = workspace._id;
-  await user.save();
 
   return {
-    workspaceId: String(workspace._id),
-    roleKey: WORKSPACE_ROLES.OWNER
+    activeWorkspaceId: activeContext.workspaceId,
+    activeRoleKey: activeContext.roleKey,
+    activeWorkspace: activeContext.workspace,
+    inviteWorkspaceId: inviteContext?.workspaceId || null,
+    inviteRoleKey: inviteContext?.roleKey || null,
+    inviteWorkspace: inviteContext?.workspace || null
   };
 };
 
-export const getActiveWorkspaceContext = async (userId) => {
-  const user = await User.findOne({
-    _id: userId,
-    deletedAt: null
-  })
-    .select('defaultWorkspaceId')
-    .lean();
+export const getActiveWorkspaceContext = async (input) => {
+  const userId = typeof input === 'string' ? input : input?.userId;
+  const sessionWorkspaceId =
+    typeof input === 'string' ? null : input?.sessionWorkspaceId || null;
 
-  if (!user || !user.defaultWorkspaceId) {
-    throw createError('errors.auth.forbiddenTenant', 403);
+  if (!userId) {
+    throw createError('errors.auth.invalidToken', 401);
+  }
+
+  return resolveActiveWorkspaceContext({ userId, sessionWorkspaceId });
+};
+
+export const listMyWorkspaceMemberships = async ({ userId }) => {
+  const memberships = await listAllActiveMembershipContexts({ userId });
+
+  return {
+    memberships
+  };
+};
+
+export const switchWorkspaceForSession = async ({
+  userId,
+  sessionId,
+  workspaceId
+}) => {
+  const workspace = await findWorkspaceById(workspaceId);
+  if (!workspace) {
+    throw createError('errors.workspace.notFound', 404);
   }
 
   const member = await WorkspaceMember.findOne({
-    workspaceId: user.defaultWorkspaceId,
+    workspaceId,
     userId,
-    status: MEMBER_STATUS.ACTIVE,
     deletedAt: null
   })
-    .select('workspaceId roleKey')
+    .select('_id roleKey status')
     .lean();
 
   if (!member) {
-    throw createError('errors.auth.forbiddenTenant', 403);
+    throw createError('errors.workspace.notMember', 403);
   }
 
+  if (member.status !== MEMBER_STATUS.ACTIVE) {
+    throw createError('errors.workspace.inactiveMember', 403);
+  }
+
+  const updateResult = await Session.updateOne(
+    {
+      _id: sessionId,
+      userId,
+      revokedAt: null,
+      expiresAt: { $gt: new Date() }
+    },
+    {
+      $set: { workspaceId }
+    }
+  );
+
+  if (!updateResult.matchedCount) {
+    throw createError('errors.auth.sessionRevoked', 401);
+  }
+
+  await User.updateOne(
+    {
+      _id: userId
+    },
+    {
+      $set: { lastWorkspaceId: workspaceId }
+    }
+  );
+
+  const accessToken = await mintAccessTokenForSession({
+    userId,
+    sessionId,
+    workspaceId,
+    roleKey: member.roleKey
+  });
+
   return {
-    workspaceId: String(member.workspaceId),
+    accessToken,
+    workspace: buildWorkspaceView(workspace),
     roleKey: member.roleKey
   };
 };
@@ -555,7 +749,9 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
     });
 
     return {
-      accepted: false
+      accepted: false,
+      workspaceId: String(invite.workspaceId),
+      roleKey: invite.roleKey
     };
   }
 
@@ -571,12 +767,12 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
 
   if (!user.defaultWorkspaceId) {
     user.defaultWorkspaceId = invite.workspaceId;
+    await user.save();
   }
 
-  user.lastWorkspaceId = invite.workspaceId;
-  await user.save();
-
   return {
-    accepted: true
+    accepted: true,
+    workspaceId: String(invite.workspaceId),
+    roleKey: invite.roleKey
   };
 };

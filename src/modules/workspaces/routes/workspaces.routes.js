@@ -9,18 +9,31 @@ import {
   acceptInviteController,
   createInviteController,
   getInviteController,
+  listMineController,
   listInvitesController,
   resendInviteController,
-  revokeInviteController
+  revokeInviteController,
+  switchWorkspaceController
 } from '../controllers/workspaces.controller.js';
 import {
   acceptInviteValidator,
   createInviteValidator,
   inviteByIdValidator,
-  listInvitesValidator
+  listInvitesValidator,
+  switchWorkspaceValidator
 } from '../validators/workspaces.validators.js';
 
 const router = Router();
+
+router.get('/mine', requireAuth, requireActiveUser, listMineController);
+
+router.post(
+  '/switch',
+  requireAuth,
+  requireActiveUser,
+  validate(switchWorkspaceValidator),
+  switchWorkspaceController
+);
 
 router.post(
   '/:workspaceId/invites',

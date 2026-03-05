@@ -4,7 +4,10 @@ import { jest } from '@jest/globals';
 jest.setTimeout(120000);
 
 const skipDbTests = process.env.SKIP_DB_TESTS === '1';
-const mongoUri = process.env.TEST_MONGO_URI || process.env.MONGO_URI;
+const mongoUri =
+  process.env.TEST_MONGO_URI ||
+  process.env.MONGO_URI ||
+  'mongodb://127.0.0.1:27017/crm_support_saas_test';
 
 globalThis.__DB_TESTS_DISABLED__ = skipDbTests;
 

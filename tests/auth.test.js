@@ -300,6 +300,21 @@ describe('Auth + OTP flows', () => {
   maybeDbTest('resend-otp within cooldown returns resendTooSoon', async () => {
     const email = 'otp-cooldown@example.com';
 
+    const signupResult = await signupAndCaptureOtp({
+      email,
+      password: 'Password123!'
+    });
+    expect(signupResult.response.status).toBe(200);
+
+    await OtpCode.updateMany(
+      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
+      {
+        $set: {
+          lastSentAt: new Date(Date.now() - 60 * 1000)
+        }
+      }
+    );
+
     const first = await request(app).post('/api/auth/resend-otp').send({
       email,
       purpose: OTP_PURPOSE.VERIFY_EMAIL
@@ -319,6 +334,21 @@ describe('Auth + OTP flows', () => {
   maybeDbTest('resend-otp exceeding window limit returns rateLimited', async () => {
     const email = 'otp-window@example.com';
 
+    const signupResult = await signupAndCaptureOtp({
+      email,
+      password: 'Password123!'
+    });
+    expect(signupResult.response.status).toBe(200);
+
+    await OtpCode.updateMany(
+      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
+      {
+        $set: {
+          lastSentAt: new Date(Date.now() - 60 * 1000)
+        }
+      }
+    );
+
     const first = await request(app).post('/api/auth/resend-otp').send({
       email,
       purpose: OTP_PURPOSE.VERIFY_EMAIL
@@ -340,24 +370,8 @@ describe('Auth + OTP flows', () => {
       purpose: OTP_PURPOSE.VERIFY_EMAIL
     });
 
-    expect(second.status).toBe(200);
-
-    await OtpCode.updateMany(
-      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
-      {
-        $set: {
-          lastSentAt: new Date(Date.now() - 60 * 1000)
-        }
-      }
-    );
-
-    const third = await request(app).post('/api/auth/resend-otp').send({
-      email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
-    });
-
-    expect(third.status).toBe(429);
-    expect(third.body.messageKey).toBe('errors.otp.rateLimited');
+    expect(second.status).toBe(429);
+    expect(second.body.messageKey).toBe('errors.otp.rateLimited');
   });
 
   maybeDbTest('logout-all revokes all sessions', async () => {

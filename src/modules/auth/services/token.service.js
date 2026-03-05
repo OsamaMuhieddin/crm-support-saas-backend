@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'node:crypto';
 import { createError } from '../../../shared/errors/createError.js';
 import { authConfig } from '../../../config/auth.config.js';
 
@@ -29,6 +30,7 @@ export const signRefreshToken = ({ userId, sessionId }) =>
     {
       sub: String(userId),
       sid: String(sessionId),
+      jti: randomUUID(),
       typ: 'refresh',
       ver: 1
     },

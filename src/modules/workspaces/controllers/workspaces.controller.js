@@ -3,10 +3,44 @@ import {
   assertTenantAccess,
   createWorkspaceInvite,
   getWorkspaceInviteById,
+  listMyWorkspaceMemberships,
   listWorkspaceInvites,
   resendWorkspaceInvite,
-  revokeWorkspaceInvite
+  revokeWorkspaceInvite,
+  switchWorkspaceForSession
 } from '../services/workspaces.service.js';
+
+export const listMineController = async (req, res, next) => {
+  try {
+    const data = await listMyWorkspaceMemberships({
+      userId: req.auth.userId
+    });
+
+    return res.json({
+      messageKey: 'success.ok',
+      ...data
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const switchWorkspaceController = async (req, res, next) => {
+  try {
+    const data = await switchWorkspaceForSession({
+      userId: req.auth.userId,
+      sessionId: req.auth.sessionId,
+      workspaceId: req.body.workspaceId
+    });
+
+    return res.json({
+      messageKey: 'success.workspace.switched',
+      ...data
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
 
 export const createInviteController = async (req, res, next) => {
   try {
@@ -98,7 +132,9 @@ export const acceptInviteController = async (req, res, next) => {
     return res.json({
       messageKey: data.accepted
         ? 'success.invite.accepted'
-        : 'success.invite.acceptRequiresVerification'
+        : 'success.invite.acceptRequiresVerification',
+      workspaceId: data.workspaceId,
+      roleKey: data.roleKey
     });
   } catch (error) {
     return next(error);
