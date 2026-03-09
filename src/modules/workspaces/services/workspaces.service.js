@@ -9,19 +9,17 @@ import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
 import { INVITE_STATUS } from '../../../constants/invite-status.js';
 import { OTP_PURPOSE } from '../../../constants/otp-purpose.js';
 import { createError } from '../../../shared/errors/createError.js';
-import {
-  buildValidationError
-} from '../../../shared/middlewares/validate.js';
+import { buildValidationError } from '../../../shared/middlewares/validate.js';
 import { normalizeEmail } from '../../../shared/utils/normalize.js';
 import { buildPagination } from '../../../shared/utils/pagination.js';
 import { authConfig } from '../../../config/auth.config.js';
 import {
   generateSecureToken,
-  hashValue
+  hashValue,
 } from '../../../shared/utils/security.js';
 import {
   sendInviteEmail,
-  sendOtpEmailFireAndForget
+  sendOtpEmailFireAndForget,
 } from '../../../shared/services/email.service.js';
 import { createOtp } from '../../auth/services/otp.service.js';
 import { mintAccessTokenForSession } from '../../auth/services/session.service.js';
@@ -61,7 +59,7 @@ const ensureUniqueSlug = async (baseValue) => {
   while (
     await Workspace.exists({
       slug: candidate,
-      deletedAt: null
+      deletedAt: null,
     })
   ) {
     candidate = `${baseSlug}-${attempt}`;
@@ -81,30 +79,36 @@ const buildInviteView = (invite) => ({
   acceptedAt: invite.acceptedAt,
   invitedByUserId: invite.invitedByUserId,
   createdAt: invite.createdAt,
-  updatedAt: invite.updatedAt
+  updatedAt: invite.updatedAt,
 });
 
 const buildWorkspaceView = (workspace) => ({
   _id: String(workspace._id),
   name: workspace.name,
   slug: workspace.slug,
-  status: workspace.status
+  status: workspace.status,
+});
+
+const buildWorkspaceMembershipView = (workspace) => ({
+  name: workspace.name,
+  slug: workspace.slug,
+  status: workspace.status,
 });
 
 const buildMembershipView = ({ member, workspace, userId }) => ({
   workspaceId: String(workspace._id),
-  workspace: buildWorkspaceView(workspace),
+  workspace: buildWorkspaceMembershipView(workspace),
   roleKey: member.roleKey,
   memberStatus: member.status,
   isOwner:
     member.roleKey === WORKSPACE_ROLES.OWNER ||
-    String(workspace.ownerUserId) === String(userId)
+    String(workspace.ownerUserId) === String(userId),
 });
 
 const findWorkspaceById = async (workspaceId) =>
   Workspace.findOne({
     _id: workspaceId,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id name slug status ownerUserId')
     .lean();
@@ -114,7 +118,7 @@ const findActiveMemberForWorkspace = async ({ userId, workspaceId }) =>
     workspaceId,
     userId,
     status: MEMBER_STATUS.ACTIVE,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id workspaceId roleKey status')
     .lean();
@@ -141,7 +145,7 @@ const listAllActiveMembershipContexts = async ({ userId }) => {
   const members = await WorkspaceMember.find({
     userId,
     status: MEMBER_STATUS.ACTIVE,
-    deletedAt: null
+    deletedAt: null,
   })
     .sort({ createdAt: 1 })
     .select('_id workspaceId roleKey status')
@@ -151,10 +155,12 @@ const listAllActiveMembershipContexts = async ({ userId }) => {
     return [];
   }
 
-  const workspaceIds = [...new Set(members.map((item) => String(item.workspaceId)))];
+  const workspaceIds = [
+    ...new Set(members.map((item) => String(item.workspaceId))),
+  ];
   const workspaces = await Workspace.find({
     _id: { $in: workspaceIds },
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id name slug status ownerUserId')
     .lean();
@@ -175,10 +181,13 @@ const listAllActiveMembershipContexts = async ({ userId }) => {
     .filter(Boolean);
 };
 
-const resolveActiveWorkspaceContext = async ({ userId, sessionWorkspaceId = null }) => {
+const resolveActiveWorkspaceContext = async ({
+  userId,
+  sessionWorkspaceId = null,
+}) => {
   const user = await User.findOne({
     _id: userId,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id defaultWorkspaceId lastWorkspaceId')
     .lean();
@@ -190,7 +199,7 @@ const resolveActiveWorkspaceContext = async ({ userId, sessionWorkspaceId = null
   const candidates = [
     sessionWorkspaceId ? String(sessionWorkspaceId) : null,
     user.lastWorkspaceId ? String(user.lastWorkspaceId) : null,
-    user.defaultWorkspaceId ? String(user.defaultWorkspaceId) : null
+    user.defaultWorkspaceId ? String(user.defaultWorkspaceId) : null,
   ].filter(Boolean);
 
   const seen = new Set();
@@ -201,7 +210,10 @@ const resolveActiveWorkspaceContext = async ({ userId, sessionWorkspaceId = null
 
     seen.add(workspaceId);
 
-    const context = await findActiveContextForWorkspace({ userId, workspaceId });
+    const context = await findActiveContextForWorkspace({
+      userId,
+      workspaceId,
+    });
     if (context) {
       return context;
     }
@@ -235,7 +247,7 @@ const findInviteByRawToken = async (token) => {
 
   const invite = await WorkspaceInvite.findOne({
     tokenHash: hashValue(token),
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!invite) {
@@ -276,7 +288,7 @@ const createOrActivateMember = async ({ workspaceId, userId, roleKey }) => {
     userId,
     roleKey,
     status: MEMBER_STATUS.ACTIVE,
-    joinedAt: new Date()
+    joinedAt: new Date(),
   });
 };
 
@@ -289,7 +301,7 @@ const sendWorkspaceInviteEmail = async ({
   invite,
   token,
   invitedByName,
-  workspaceName
+  workspaceName,
 }) => {
   await sendInviteEmail({
     to: invite.email,
@@ -297,14 +309,17 @@ const sendWorkspaceInviteEmail = async ({
     workspaceName,
     inviteLinkOrToken: buildInviteLink(token),
     roleKey: invite.roleKey,
-    expiresAt: invite.expiresAt
+    expiresAt: invite.expiresAt,
   });
 };
 
-export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) => {
+export const ensureWorkspaceForVerifiedUser = async ({
+  userId,
+  inviteToken,
+}) => {
   const user = await User.findOne({
     _id: userId,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!user) {
@@ -324,7 +339,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
     await createOrActivateMember({
       workspaceId: invite.workspaceId,
       userId: user._id,
-      roleKey: invite.roleKey
+      roleKey: invite.roleKey,
     });
 
     invite.status = INVITE_STATUS.ACCEPTED;
@@ -338,7 +353,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
 
     inviteContext = await findActiveContextForWorkspace({
       userId: user._id,
-      workspaceId: invite.workspaceId
+      workspaceId: invite.workspaceId,
     });
 
     if (!inviteContext) {
@@ -353,7 +368,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
     const workspace = await Workspace.create({
       name: workspaceName,
       slug: workspaceSlug,
-      ownerUserId: user._id
+      ownerUserId: user._id,
     });
 
     await WorkspaceMember.create({
@@ -361,7 +376,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
       userId: user._id,
       roleKey: WORKSPACE_ROLES.OWNER,
       status: MEMBER_STATUS.ACTIVE,
-      joinedAt: new Date()
+      joinedAt: new Date(),
     });
 
     user.defaultWorkspaceId = workspace._id;
@@ -377,7 +392,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
 
   const activeContext = await resolveActiveWorkspaceContext({
     userId: user._id,
-    sessionWorkspaceId: null
+    sessionWorkspaceId: null,
   });
 
   return {
@@ -386,7 +401,7 @@ export const ensureWorkspaceForVerifiedUser = async ({ userId, inviteToken }) =>
     activeWorkspace: activeContext.workspace,
     inviteWorkspaceId: inviteContext?.workspaceId || null,
     inviteRoleKey: inviteContext?.roleKey || null,
-    inviteWorkspace: inviteContext?.workspace || null
+    inviteWorkspace: inviteContext?.workspace || null,
   };
 };
 
@@ -402,18 +417,30 @@ export const getActiveWorkspaceContext = async (input) => {
   return resolveActiveWorkspaceContext({ userId, sessionWorkspaceId });
 };
 
-export const listMyWorkspaceMemberships = async ({ userId }) => {
+export const listMyWorkspaceMemberships = async ({
+  userId,
+  currentWorkspaceId = null,
+}) => {
   const memberships = await listAllActiveMembershipContexts({ userId });
+  const normalizedCurrentWorkspaceId = currentWorkspaceId
+    ? String(currentWorkspaceId)
+    : null;
 
   return {
-    memberships
+    currentWorkspaceId: normalizedCurrentWorkspaceId,
+    memberships: memberships.map((membership) => ({
+      ...membership,
+      isCurrent:
+        normalizedCurrentWorkspaceId !== null &&
+        membership.workspaceId === normalizedCurrentWorkspaceId,
+    })),
   };
 };
 
 export const switchWorkspaceForSession = async ({
   userId,
   sessionId,
-  workspaceId
+  workspaceId,
 }) => {
   const workspace = await findWorkspaceById(workspaceId);
   if (!workspace) {
@@ -423,7 +450,7 @@ export const switchWorkspaceForSession = async ({
   const member = await WorkspaceMember.findOne({
     workspaceId,
     userId,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id roleKey status')
     .lean();
@@ -441,10 +468,10 @@ export const switchWorkspaceForSession = async ({
       _id: sessionId,
       userId,
       revokedAt: null,
-      expiresAt: { $gt: new Date() }
+      expiresAt: { $gt: new Date() },
     },
     {
-      $set: { workspaceId }
+      $set: { workspaceId },
     }
   );
 
@@ -454,10 +481,10 @@ export const switchWorkspaceForSession = async ({
 
   await User.updateOne(
     {
-      _id: userId
+      _id: userId,
     },
     {
-      $set: { lastWorkspaceId: workspaceId }
+      $set: { lastWorkspaceId: workspaceId },
     }
   );
 
@@ -465,13 +492,13 @@ export const switchWorkspaceForSession = async ({
     userId,
     sessionId,
     workspaceId,
-    roleKey: member.roleKey
+    roleKey: member.roleKey,
   });
 
   return {
     accessToken,
     workspace: buildWorkspaceView(workspace),
-    roleKey: member.roleKey
+    roleKey: member.roleKey,
   };
 };
 
@@ -486,11 +513,11 @@ export const createWorkspaceInvite = async ({
   email,
   roleKey,
   invitedByUserId,
-  invitedByName
+  invitedByName,
 }) => {
   const workspace = await Workspace.findOne({
     _id: workspaceId,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('name')
     .lean();
@@ -502,7 +529,7 @@ export const createWorkspaceInvite = async ({
   const emailNormalized = normalizeEmail(email);
   const existingUser = await User.findOne({
     emailNormalized,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('_id')
     .lean();
@@ -513,7 +540,7 @@ export const createWorkspaceInvite = async ({
       workspaceId,
       userId: existingUser._id,
       deletedAt: null,
-      status: { $ne: MEMBER_STATUS.REMOVED }
+      status: { $ne: MEMBER_STATUS.REMOVED },
     })
       .select('_id')
       .lean();
@@ -539,18 +566,18 @@ export const createWorkspaceInvite = async ({
       invitedByUserId,
       tokenHash,
       status: INVITE_STATUS.PENDING,
-      expiresAt
+      expiresAt,
     });
 
     await sendWorkspaceInviteEmail({
       invite,
       token,
       invitedByName,
-      workspaceName: workspace.name
+      workspaceName: workspace.name,
     });
 
     return {
-      invite: buildInviteView(invite)
+      invite: buildInviteView(invite),
     };
   } catch (error) {
     if (error?.code === 11000) {
@@ -565,7 +592,7 @@ export const listWorkspaceInvites = async ({
   workspaceId,
   status,
   page = 1,
-  limit = 10
+  limit = 10,
 }) => {
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.min(100, Math.max(1, Number(limit) || 10));
@@ -573,7 +600,7 @@ export const listWorkspaceInvites = async ({
 
   const query = {
     workspaceId,
-    deletedAt: null
+    deletedAt: null,
   };
 
   if (status) {
@@ -586,19 +613,19 @@ export const listWorkspaceInvites = async ({
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(safeLimit)
-      .lean()
+      .lean(),
   ]);
 
   const pagination = buildPagination({
     page: safePage,
     limit: safeLimit,
     total,
-    results: invites.length
+    results: invites.length,
   });
 
   return {
     ...pagination,
-    invites: invites.map((invite) => buildInviteView(invite))
+    invites: invites.map((invite) => buildInviteView(invite)),
   };
 };
 
@@ -606,7 +633,7 @@ export const getWorkspaceInviteById = async ({ workspaceId, inviteId }) => {
   const invite = await WorkspaceInvite.findOne({
     _id: inviteId,
     workspaceId,
-    deletedAt: null
+    deletedAt: null,
   }).lean();
 
   if (!invite) {
@@ -614,19 +641,19 @@ export const getWorkspaceInviteById = async ({ workspaceId, inviteId }) => {
   }
 
   return {
-    invite: buildInviteView(invite)
+    invite: buildInviteView(invite),
   };
 };
 
 export const resendWorkspaceInvite = async ({
   workspaceId,
   inviteId,
-  invitedByName
+  invitedByName,
 }) => {
   const invite = await WorkspaceInvite.findOne({
     _id: inviteId,
     workspaceId,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!invite) {
@@ -656,7 +683,7 @@ export const resendWorkspaceInvite = async ({
 
   const workspace = await Workspace.findOne({
     _id: workspaceId,
-    deletedAt: null
+    deletedAt: null,
   })
     .select('name')
     .lean();
@@ -669,7 +696,7 @@ export const resendWorkspaceInvite = async ({
     invite,
     token,
     invitedByName,
-    workspaceName: workspace.name
+    workspaceName: workspace.name,
   });
 
   return {};
@@ -678,12 +705,12 @@ export const resendWorkspaceInvite = async ({
 export const revokeWorkspaceInvite = async ({
   workspaceId,
   inviteId,
-  revokedByUserId
+  revokedByUserId,
 }) => {
   const invite = await WorkspaceInvite.findOne({
     _id: inviteId,
     workspaceId,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!invite) {
@@ -700,7 +727,12 @@ export const revokeWorkspaceInvite = async ({
   return {};
 };
 
-export const acceptWorkspaceInvite = async ({ token, email, password, name }) => {
+export const acceptWorkspaceInvite = async ({
+  token,
+  email,
+  password,
+  name,
+}) => {
   const invite = await findInviteByRawToken(token);
 
   const emailNormalized = normalizeEmail(email);
@@ -710,13 +742,16 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
 
   let user = await User.findOne({
     emailNormalized,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!user) {
     if (!password) {
       throw createError('errors.validation.failed', 422, [
-        buildValidationError('password', 'errors.auth.passwordRequiredForInvite')
+        buildValidationError(
+          'password',
+          'errors.auth.passwordRequiredForInvite'
+        ),
       ]);
     }
 
@@ -726,8 +761,8 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
       passwordHash: await bcrypt.hash(password, authConfig.bcryptRounds),
       isEmailVerified: false,
       profile: {
-        name: name || null
-      }
+        name: name || null,
+      },
     });
   }
 
@@ -739,26 +774,26 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
     const otpResult = await createOtp({
       email: user.email,
       userId: user._id,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
+      purpose: OTP_PURPOSE.VERIFY_EMAIL,
     });
 
     sendOtpEmailFireAndForget({
       to: user.email,
       purpose: OTP_PURPOSE.VERIFY_EMAIL,
-      code: otpResult.code
+      code: otpResult.code,
     });
 
     return {
       accepted: false,
       workspaceId: String(invite.workspaceId),
-      roleKey: invite.roleKey
+      roleKey: invite.roleKey,
     };
   }
 
   await createOrActivateMember({
     workspaceId: invite.workspaceId,
     userId: user._id,
-    roleKey: invite.roleKey
+    roleKey: invite.roleKey,
   });
 
   invite.status = INVITE_STATUS.ACCEPTED;
@@ -773,6 +808,6 @@ export const acceptWorkspaceInvite = async ({ token, email, password, name }) =>
   return {
     accepted: true,
     workspaceId: String(invite.workspaceId),
-    roleKey: invite.roleKey
+    roleKey: invite.roleKey,
   };
 };

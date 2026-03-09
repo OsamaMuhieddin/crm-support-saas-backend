@@ -7,18 +7,19 @@ import {
   listWorkspaceInvites,
   resendWorkspaceInvite,
   revokeWorkspaceInvite,
-  switchWorkspaceForSession
+  switchWorkspaceForSession,
 } from '../services/workspaces.service.js';
 
 export const listMineController = async (req, res, next) => {
   try {
     const data = await listMyWorkspaceMemberships({
-      userId: req.auth.userId
+      userId: req.auth.userId,
+      currentWorkspaceId: req.auth.workspaceId,
     });
 
     return res.json({
       messageKey: 'success.ok',
-      ...data
+      ...data,
     });
   } catch (error) {
     return next(error);
@@ -30,12 +31,12 @@ export const switchWorkspaceController = async (req, res, next) => {
     const data = await switchWorkspaceForSession({
       userId: req.auth.userId,
       sessionId: req.auth.sessionId,
-      workspaceId: req.body.workspaceId
+      workspaceId: req.body.workspaceId,
     });
 
     return res.json({
       messageKey: 'success.workspace.switched',
-      ...data
+      ...data,
     });
   } catch (error) {
     return next(error);
@@ -50,12 +51,12 @@ export const createInviteController = async (req, res, next) => {
       workspaceId: req.params.workspaceId,
       email: req.body.email,
       roleKey: req.body.roleKey,
-      invitedByUserId: req.auth.userId
+      invitedByUserId: req.auth.userId,
     });
 
     return res.json({
       messageKey: 'success.invite.created',
-      ...data
+      ...data,
     });
   } catch (error) {
     return next(error);
@@ -70,7 +71,7 @@ export const listInvitesController = async (req, res, next) => {
       workspaceId: req.params.workspaceId,
       status: req.query.status,
       page: req.query.page,
-      limit: req.query.limit
+      limit: req.query.limit,
     });
 
     return res.json({ messageKey: 'success.ok', ...data });
@@ -85,7 +86,7 @@ export const getInviteController = async (req, res, next) => {
 
     const data = await getWorkspaceInviteById({
       workspaceId: req.params.workspaceId,
-      inviteId: req.params.inviteId
+      inviteId: req.params.inviteId,
     });
 
     return res.json({ messageKey: 'success.ok', ...data });
@@ -100,7 +101,7 @@ export const resendInviteController = async (req, res, next) => {
 
     await resendWorkspaceInvite({
       workspaceId: req.params.workspaceId,
-      inviteId: req.params.inviteId
+      inviteId: req.params.inviteId,
     });
 
     return res.json({ messageKey: 'success.invite.resent' });
@@ -116,7 +117,7 @@ export const revokeInviteController = async (req, res, next) => {
     await revokeWorkspaceInvite({
       workspaceId: req.params.workspaceId,
       inviteId: req.params.inviteId,
-      revokedByUserId: req.auth.userId
+      revokedByUserId: req.auth.userId,
     });
 
     return res.json({ messageKey: 'success.invite.revoked' });
@@ -134,7 +135,7 @@ export const acceptInviteController = async (req, res, next) => {
         ? 'success.invite.accepted'
         : 'success.invite.acceptRequiresVerification',
       workspaceId: data.workspaceId,
-      roleKey: data.roleKey
+      roleKey: data.roleKey,
     });
   } catch (error) {
     return next(error);

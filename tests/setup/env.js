@@ -17,3 +17,16 @@ process.env.INVITE_EXPIRES_DAYS = '7';
 process.env.EMAIL_FROM = 'test@example.com';
 process.env.APP_BASE_URL = 'http://localhost:5000';
 process.env.FRONTEND_BASE_URL = 'http://frontend.local';
+process.env.STORAGE_PROVIDER = 'local';
+process.env.S3_BUCKET = 'crm-support-files-test';
+process.env.STORAGE_LOCAL_ROOT = '.tmp/local-storage-test';
+process.env.MAX_FILE_SIZE_BYTES = '1048576';
+process.env.FILES_ALLOWED_MIME_TYPES =
+  'application/pdf,image/jpeg,image/png,text/plain';
+process.env.FILES_ALLOWED_EXTENSIONS = '.pdf,.jpg,.jpeg,.png,.txt';
+process.env.FILES_UPLOAD_RATE_LIMIT_ENABLED = 'true';
+process.env.FILES_UPLOAD_RATE_LIMIT_WINDOW_SECONDS = '60';
+process.env.FILES_UPLOAD_RATE_LIMIT_MAX = '100';
+process.env.FILES_DOWNLOAD_RATE_LIMIT_ENABLED = 'true';
+process.env.FILES_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS = '60';
+process.env.FILES_DOWNLOAD_RATE_LIMIT_MAX = '300';

@@ -3,6 +3,9 @@ import crypto from 'crypto';
 export const hashValue = (value) =>
   crypto.createHash('sha256').update(String(value)).digest('hex');
 
+export const hashBuffer = (buffer) =>
+  crypto.createHash('sha256').update(buffer).digest('hex');
+
 export const generateOtpCode = (length = 6) => {
   const digits = '0123456789';
   let code = '';
@@ -17,4 +20,3 @@ export const generateOtpCode = (length = 6) => {
 
 export const generateSecureToken = (size = 32) =>
   crypto.randomBytes(size).toString('hex');
-

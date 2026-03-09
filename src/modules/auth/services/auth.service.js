@@ -13,11 +13,11 @@ import {
   revokeAllUserSessions,
   revokeSessionById,
   rotateSessionTokens,
-  validateRefreshSession
+  validateRefreshSession,
 } from './session.service.js';
 import {
   ensureWorkspaceForVerifiedUser,
-  getActiveWorkspaceContext
+  getActiveWorkspaceContext,
 } from '../../workspaces/services/workspaces.service.js';
 
 const buildSafeUser = (user) => ({
@@ -30,7 +30,7 @@ const buildSafeUser = (user) => ({
   lastWorkspaceId: user.lastWorkspaceId,
   lastLoginAt: user.lastLoginAt,
   createdAt: user.createdAt,
-  updatedAt: user.updatedAt
+  updatedAt: user.updatedAt,
 });
 
 const hashPassword = async (password) =>
@@ -70,8 +70,8 @@ export const signup = async ({ email, password, name }) => {
       emailNormalized,
       passwordHash: await hashPassword(password),
       profile: {
-        name: name || null
-      }
+        name: name || null,
+      },
     });
   } else {
     let hasChanges = false;
@@ -84,7 +84,7 @@ export const signup = async ({ email, password, name }) => {
     if (!user.profile?.name && name) {
       user.profile = {
         ...user.profile,
-        name
+        name,
       };
       hasChanges = true;
     }
@@ -97,13 +97,13 @@ export const signup = async ({ email, password, name }) => {
   const otpResult = await createOtp({
     email: user.email,
     userId: user._id,
-    purpose: OTP_PURPOSE.VERIFY_EMAIL
+    purpose: OTP_PURPOSE.VERIFY_EMAIL,
   });
 
   sendOtpEmailFireAndForget({
     to: user.email,
     purpose: OTP_PURPOSE.VERIFY_EMAIL,
-    code: otpResult.code
+    code: otpResult.code,
   });
 
   return {};
@@ -124,13 +124,13 @@ export const resendOtp = async ({ email, purpose }) => {
     const otpResult = await createOtp({
       email: user.email,
       userId: user._id,
-      purpose
+      purpose,
     });
 
     sendOtpEmailFireAndForget({
       to: user.email,
       purpose,
-      code: otpResult.code
+      code: otpResult.code,
     });
 
     return {};
@@ -138,7 +138,10 @@ export const resendOtp = async ({ email, purpose }) => {
 
   if (purpose === OTP_PURPOSE.VERIFY_EMAIL) {
     const isEligible = Boolean(
-      user && !user.isEmailVerified && user.status === 'active' && !user.deletedAt
+      user &&
+      !user.isEmailVerified &&
+      user.status === 'active' &&
+      !user.deletedAt
     );
 
     if (!isEligible) {
@@ -148,13 +151,13 @@ export const resendOtp = async ({ email, purpose }) => {
     const otpResult = await createOtp({
       email: user.email,
       userId: user._id,
-      purpose
+      purpose,
     });
 
     sendOtpEmailFireAndForget({
       to: user.email,
       purpose,
-      code: otpResult.code
+      code: otpResult.code,
     });
   }
 
@@ -168,12 +171,12 @@ export const verifyEmailAndLogin = async ({
   code,
   inviteToken,
   ip,
-  userAgent
+  userAgent,
 }) => {
   const otpRecord = await verifyOtp({
     email,
     purpose: OTP_PURPOSE.VERIFY_EMAIL,
-    code
+    code,
   });
 
   const emailNormalized = normalizeEmail(email);
@@ -191,7 +194,7 @@ export const verifyEmailAndLogin = async ({
 
   const workspaceContext = await ensureWorkspaceForVerifiedUser({
     userId: user._id,
-    inviteToken
+    inviteToken,
   });
 
   const { tokens } = await createSessionWithTokens({
@@ -199,7 +202,7 @@ export const verifyEmailAndLogin = async ({
     workspaceId: workspaceContext.activeWorkspaceId,
     roleKey: workspaceContext.activeRoleKey,
     ip,
-    userAgent
+    userAgent,
   });
 
   user = await User.findById(user._id);
@@ -212,7 +215,7 @@ export const verifyEmailAndLogin = async ({
     workspaceId:
       workspaceContext.inviteWorkspaceId || workspaceContext.activeWorkspaceId,
     activeWorkspaceId: workspaceContext.activeWorkspaceId,
-    inviteWorkspaceId: workspaceContext.inviteWorkspaceId
+    inviteWorkspaceId: workspaceContext.inviteWorkspaceId,
   };
 };
 
@@ -233,14 +236,16 @@ export const login = async ({ email, password, ip, userAgent }) => {
     throw createError('errors.auth.emailNotVerified', 403);
   }
 
-  const workspaceContext = await getActiveWorkspaceContext({ userId: user._id });
+  const workspaceContext = await getActiveWorkspaceContext({
+    userId: user._id,
+  });
 
   const { tokens } = await createSessionWithTokens({
     userId: user._id,
     workspaceId: workspaceContext.workspaceId,
     roleKey: workspaceContext.roleKey,
     ip,
-    userAgent
+    userAgent,
   });
 
   user.lastWorkspaceId = workspaceContext.workspaceId;
@@ -249,7 +254,7 @@ export const login = async ({ email, password, ip, userAgent }) => {
 
   return {
     user: buildSafeUser(user),
-    tokens
+    tokens,
   };
 };
 
@@ -258,7 +263,7 @@ export const refresh = async ({ refreshToken }) => {
 
   const user = await User.findOne({
     _id: payload.sub,
-    deletedAt: null
+    deletedAt: null,
   });
 
   assertActiveNonSuspendedUser(user);
@@ -269,18 +274,18 @@ export const refresh = async ({ refreshToken }) => {
 
   const workspaceContext = await getActiveWorkspaceContext({
     userId: user._id,
-    sessionWorkspaceId: session.workspaceId
+    sessionWorkspaceId: session.workspaceId,
   });
 
   const tokens = await rotateSessionTokens({
     session,
     userId: user._id,
     workspaceId: workspaceContext.workspaceId,
-    roleKey: workspaceContext.roleKey
+    roleKey: workspaceContext.roleKey,
   });
 
   return {
-    tokens
+    tokens,
   };
 };
 
@@ -298,13 +303,13 @@ export const forgotPassword = async ({ email }) => {
     const otpResult = await createOtp({
       email: user.email,
       userId: user._id,
-      purpose: OTP_PURPOSE.RESET_PASSWORD
+      purpose: OTP_PURPOSE.RESET_PASSWORD,
     });
 
     sendOtpEmailFireAndForget({
       to: user.email,
       purpose: OTP_PURPOSE.RESET_PASSWORD,
-      code: otpResult.code
+      code: otpResult.code,
     });
   } catch (error) {
     // Keep response generic to avoid user enumeration.
@@ -317,7 +322,7 @@ export const resetPassword = async ({ email, code, newPassword }) => {
   await verifyOtp({
     email,
     purpose: OTP_PURPOSE.RESET_PASSWORD,
-    code
+    code,
   });
 
   const user = await findActiveUserByEmail(email);
@@ -326,7 +331,7 @@ export const resetPassword = async ({ email, code, newPassword }) => {
   const isSamePassword = await bcrypt.compare(newPassword, user.passwordHash);
   if (isSamePassword) {
     throw createError('errors.validation.failed', 422, [
-      buildValidationError('newPassword', 'errors.auth.passwordMustDiffer')
+      buildValidationError('newPassword', 'errors.auth.passwordMustDiffer'),
     ]);
   }
 
@@ -341,7 +346,7 @@ export const resetPassword = async ({ email, code, newPassword }) => {
 export const getMe = async ({ userId, sessionId }) => {
   const user = await User.findOne({
     _id: userId,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!user) {
@@ -351,20 +356,23 @@ export const getMe = async ({ userId, sessionId }) => {
   const session = await Session.findOne({
     _id: sessionId,
     userId: user._id,
-    revokedAt: null
+    revokedAt: null,
   })
     .select('workspaceId')
     .lean();
 
   const workspaceContext = await getActiveWorkspaceContext({
     userId: user._id,
-    sessionWorkspaceId: session?.workspaceId || null
+    sessionWorkspaceId: session?.workspaceId || null,
   });
 
   return {
     user: buildSafeUser(user),
-    workspace: workspaceContext.workspace,
-    roleKey: workspaceContext.roleKey
+    workspace: {
+      _id: workspaceContext.workspaceId,
+      ...workspaceContext.workspace,
+    },
+    roleKey: workspaceContext.roleKey,
   };
 };
 
@@ -381,11 +389,11 @@ export const logoutAll = async ({ userId }) => {
 export const changePassword = async ({
   userId,
   currentPassword,
-  newPassword
+  newPassword,
 }) => {
   const user = await User.findOne({
     _id: userId,
-    deletedAt: null
+    deletedAt: null,
   });
 
   if (!user) {

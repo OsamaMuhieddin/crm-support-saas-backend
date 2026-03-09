@@ -22,6 +22,10 @@
     },
     "workspace": {
       "switched": "Workspace switched successfully."
+    },
+    "file": {
+      "uploaded": "File uploaded successfully.",
+      "deleted": "File deleted successfully."
     }
   },
   "errors": {
@@ -61,6 +65,19 @@
       "revoked": "Invitation has been revoked.",
       "emailMismatch": "Invitation email does not match.",
       "notFound": "Invitation not found."
+    },
+    "file": {
+      "notFound": "File not found.",
+      "empty": "File is required and cannot be empty.",
+      "tooLarge": "File is too large. Maximum allowed size is {{maxBytes}} bytes.",
+      "invalidMimeType": "File MIME type is not allowed.",
+      "invalidExtension": "File extension is not allowed.",
+      "uploadFailed": "File upload failed.",
+      "downloadFailed": "File download failed.",
+      "deleteFailed": "File delete failed.",
+      "storageUnavailable": "File storage service is unavailable.",
+      "forbidden": "You are not allowed to perform this action on files.",
+      "rateLimited": "Too many file requests. Please try again later."
     }
   }
 }

@@ -302,6 +302,7 @@ npm run dev
 ## Backend Auth + Invitations (MVP)
 
 The backend now includes:
+
 - JWT access + refresh tokens
 - DB-backed refresh sessions with rotation
 - OTP email verification and password reset
@@ -339,5 +340,56 @@ OTP sends are asynchronous and do not block success responses.
 Invite links in emails are built from `FRONTEND_BASE_URL`.
 
 ### API reference
+
 - See [docs/api.md](docs/api.md) for auth and invite endpoints, request samples, and invite acceptance finalization flow.
 - Localization header is supported across endpoints: `x-lang: en|ar`.
+
+## Backend Files v1 (MinIO)
+
+Files v1 is implemented with backend multipart upload and backend-streamed download:
+
+- Upload endpoint: `POST /api/files`
+- Download endpoint: `GET /api/files/:fileId/download`
+- Bucket visibility: private
+- Detailed local setup: [docs/files-minio-setup.md](docs/files-minio-setup.md)
+
+### Start local MinIO (official image)
+
+```bash
+docker compose -f docker-compose.minio.yml up -d
+```
+
+### Access MinIO console
+
+- Console URL: `http://localhost:9011`
+- API endpoint: `http://localhost:9000`
+- Credentials: `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` from `.env`
+- Override host ports with `MINIO_API_PORT` and `MINIO_CONSOLE_PORT` if needed.
+
+### Create private bucket
+
+1. Open MinIO console.
+2. Create bucket named `S3_BUCKET` (for example `crm-support-files`).
+3. Keep bucket private (default).
+4. Do not attach any anonymous/public read policy.
+
+### Required storage env (local/dev example)
+
+```env
+STORAGE_PROVIDER=minio
+S3_ENDPOINT=127.0.0.1
+S3_PORT=9000
+S3_USE_SSL=false
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin123
+S3_BUCKET=crm-support-files
+S3_REGION=us-east-1
+S3_FORCE_PATH_STYLE=true
+MAX_FILE_SIZE_BYTES=10485760
+FILES_ALLOWED_MIME_TYPES=application/pdf,image/jpeg,image/png,text/plain,application/zip
+FILES_ALLOWED_EXTENSIONS=.pdf,.jpg,.jpeg,.png,.txt,.zip
+FILES_UPLOAD_RATE_LIMIT_WINDOW_SECONDS=60
+FILES_UPLOAD_RATE_LIMIT_MAX=20
+FILES_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS=60
+FILES_DOWNLOAD_RATE_LIMIT_MAX=120
+```

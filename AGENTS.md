@@ -37,10 +37,26 @@ Routes define endpoints and call controllers.
 - `GET /api/workspaces/mine`: list current user's active memberships with workspace basics + role.
 - `POST /api/workspaces/switch`: switch active workspace for current session and return a new access token.
 
+## Files v1 (Implemented)
+- Module: `src/modules/files`.
+- Storage abstraction: `src/infra/storage` with MinIO provider and local adapter fallback for tests/dev.
+- Public download contract is fixed at:
+  - `GET /api/files/:fileId/download`
+- v1 behavior is backend-streamed download (no public object URL exposure).
+- `files` stores physical object metadata.
+- `file_links` stores generic polymorphic relations and supports soft-delete.
+- Upload permission: `owner|admin|agent`.
+- Delete permission: `owner|admin`.
+- Viewer can read/list/download only.
+
 ## Localization
 - Header: `x-lang: en|ar`, default `en`.
 - Success responses are localized by the wrapper in `app.js`.
 - Error responses are localized by the global error handler in `app.js`.
+- Locale integrity rule:
+  - `src/i18n/locales/ar.json` MUST contain Arabic user-facing strings only.
+  - Do NOT add English fallback text in Arabic locale values.
+  - When adding new keys, update `en.json` and `ar.json` in the same change and verify Arabic wording before finalizing.
 
 ## Response shape (CRITICAL)
 - Success (<400) object bodies:
@@ -66,17 +82,20 @@ Routes define endpoints and call controllers.
 6. Keep all examples consistent with the response envelope and include `messageKey` in success responses.
 
 ## Local File Mention Format (Direct Click)
-- Use repo-relative file mentions prefixed with `@`.
-- Required format: `@src/.../file.ext`
+- Use one universal format for every repo file: `@./<repo-relative-path>`.
+- This applies to root files, docs, tests, and `src` files.
 - Keep file mentions plain text (not backticks, not markdown links).
 - Use `/` path separators.
 - Put each file mention on its own line.
 - Do not use `http://`, `https://`, `file://`, or `vscode://`.
 
 Examples:
-- Good: @src/shared/utils/security.js
-- Good: @src/modules/mailboxes/models/mailbox.model.js
-- Good: @src/modules/mailboxes/schemas/README.md
+- Good: @./README.md
+- Good: @./docs/api.md
+- Good: @./tests/workspaces.switch.test.js
+- Good: @./src/shared/utils/security.js
+- Good: @./src/modules/mailboxes/models/mailbox.model.js
+- Bad: README.md
 - Bad: security.js
 - Bad: `src/shared/utils/security.js`
 - Bad: [security.js](...)

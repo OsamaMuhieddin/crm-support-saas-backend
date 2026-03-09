@@ -3,35 +3,45 @@
 ## 1) Overview
 
 ### Base URL
+
 - `/api`
 
 ### Common headers (define once)
+
 - `x-lang: en|ar` (optional, default `en`)
 - `Content-Type: application/json`
 - `Authorization: Bearer <accessToken>` (required only on protected endpoints)
 
 ### Endpoint scope terms
+
 Protected endpoints:
+
 - Require Authorization header with a valid access token.
 
 Workspace-scoped endpoints:
+
 - Include `:workspaceId` in the route.
 - Enforce tenant match (`:workspaceId` must equal token `wid`).
 - Enforce active membership and role requirements.
 
 Session-context endpoints:
+
 - Use the session's active workspace context.
 - `POST /api/workspaces/switch` is the only endpoint allowed to change the active workspace.
 
 ### Response envelope (critical)
+
 - Success (`< 400`, object response):
+
 ```json
 {
   "messageKey": "success.ok",
   "message": "Localized message"
 }
 ```
+
 - Error:
+
 ```json
 {
   "status": 422,
@@ -46,17 +56,20 @@ Session-context endpoints:
   ]
 }
 ```
+
 - Validation failures use:
   - `status: 422`
   - `messageKey: errors.validation.failed`
   - array payload under `errors`
 
 ### Enums used in requests
+
 - `purpose`: `verifyEmail | login | resetPassword | changeEmail`
 - `roleKey`: `owner | admin | agent | viewer`
 - invite `status` query: `pending | accepted | revoked | expired`
 
 ### Environment notes
+
 - Invite emails use `FRONTEND_BASE_URL`:
   - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
 - `APP_BASE_URL` is still backend runtime base URL.
@@ -83,6 +96,7 @@ Session-context endpoints:
 ## 3) Quick Start Flows
 
 ### Flow A: Signup -> Verify Email -> Me
+
 1. `POST /api/auth/signup` with `email`, `password`, optional `name`.
 2. User receives verify-email OTP code.
 3. `POST /api/auth/verify-email` with `email` + `code`.
@@ -90,6 +104,7 @@ Session-context endpoints:
 5. `GET /api/auth/me` with access token to hydrate user/workspace/role in FE state.
 
 ### Flow B: Login -> Refresh -> Me
+
 1. `POST /api/auth/login` with `email` + `password`.
 2. Store `accessToken` and `refreshToken`.
 3. When access expires, call `POST /api/auth/refresh` with refresh token.
@@ -97,27 +112,43 @@ Session-context endpoints:
 5. Call `GET /api/auth/me` to re-sync canonical workspace/role.
 
 ### Flow C: Invite Accept (verified vs unverified) -> Verify Email with inviteToken -> Explicit Switch
+
 1. Workspace owner/admin creates invite via `POST /api/workspaces/:workspaceId/invites`.
 2. Invitee opens link and calls `POST /api/workspaces/invites/accept` with `token` + `email` (and `password` if creating a new user).
 3. If invitee is already verified:
-  - API returns `success.invite.accepted`.
-  - Response includes `workspaceId` of the invited workspace.
-  - membership is activated immediately.
+
+- API returns `success.invite.accepted`.
+- Response includes `workspaceId` of the invited workspace.
+- membership is activated immediately.
+
 4. If invitee is new/unverified:
-  - API returns `success.invite.acceptRequiresVerification`.
-  - Response includes `workspaceId` of the invited workspace.
-  - verify-email OTP is sent; invite stays pending.
+
+- API returns `success.invite.acceptRequiresVerification`.
+- Response includes `workspaceId` of the invited workspace.
+- verify-email OTP is sent; invite stays pending.
+
 5. Invitee then calls `POST /api/auth/verify-email` with `email`, `code`, and `inviteToken`.
 6. API finalizes invite membership, issues auth tokens, and returns both active + invited workspace context fields.
 7. Session active workspace is not auto-switched by invite acceptance/finalization.
 8. FE uses returned `workspaceId`/`inviteWorkspaceId` and calls `POST /api/workspaces/switch` when it wants to move to the invited workspace.
 9. FE calls `GET /api/auth/me` to hydrate canonical active workspace and role.
 
+### Flow D: Upload -> List/Search -> Metadata -> Download -> Delete
+
+1. `POST /api/files` with multipart field `file` uploads binary to private storage through backend.
+2. `GET /api/files` lists workspace-scoped files with pagination and filters.
+3. `GET /api/files/:fileId` fetches metadata for a single file.
+4. `GET /api/files/:fileId/download` streams file bytes from backend (single public API contract in v1).
+5. `DELETE /api/files/:fileId` explicitly removes physical object and soft-deletes the DB record.
+6. Clients should treat `url` as canonical backend route (`/api/files/:fileId/download`), not a direct storage URL.
+
 ## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
+
 - Purpose: create a new unverified user (or reuse existing unverified user) and send verify-email OTP.
 - Request body:
+
 ```json
 {
   "email": "user@example.com",
@@ -125,16 +156,19 @@ Session-context endpoints:
   "name": "Optional Name"
 }
 ```
-  - `email`: required, valid email, max 320
-  - `password`: required, 8..128
-  - `name`: optional, 1..160
+
+- `email`: required, valid email, max 320
+- `password`: required, 8..128
+- `name`: optional, 1..160
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.otpSent",
   "message": "Verification code sent successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `409` `errors.auth.emailAlreadyUsed`
@@ -144,22 +178,27 @@ Session-context endpoints:
   - Tokens are not issued here.
 
 ### POST `/api/auth/resend-otp`
+
 - Purpose: request OTP resend for a specific purpose.
 - Request body:
+
 ```json
 {
   "email": "user@example.com",
   "purpose": "verifyEmail"
 }
 ```
-  - `purpose` must be one of: `verifyEmail | login | resetPassword | changeEmail`
+
+- `purpose` must be one of: `verifyEmail | login | resetPassword | changeEmail`
 - Success `200` (generic):
+
 ```json
 {
   "messageKey": "success.auth.otpResent",
   "message": "Verification code resent successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `429` `errors.otp.resendTooSoon` or `errors.otp.rateLimited`
@@ -171,8 +210,10 @@ Session-context endpoints:
     - `login` and `changeEmail`: no-op success.
 
 ### POST `/api/auth/verify-email`
+
 - Purpose: verify OTP and issue login tokens.
 - Request body:
+
 ```json
 {
   "email": "user@example.com",
@@ -180,9 +221,11 @@ Session-context endpoints:
   "inviteToken": "optional-invite-token"
 }
 ```
-  - `code`: digits, 4..8
-  - `inviteToken`: optional, 10..512
+
+- `code`: digits, 4..8
+- `inviteToken`: optional, 10..512
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.verified",
@@ -202,6 +245,7 @@ Session-context endpoints:
   "inviteWorkspaceId": "65f9..."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed` (for example `errors.otp.invalid` / `errors.otp.expired` in `errors[]`)
   - `429` `errors.otp.tooManyAttempts`
@@ -216,15 +260,19 @@ Session-context endpoints:
   - Invite finalization does not auto-switch workspace context.
 
 ### POST `/api/auth/login`
+
 - Purpose: login verified user and issue workspace-scoped tokens.
 - Request body:
+
 ```json
 {
   "email": "user@example.com",
   "password": "Password123!"
 }
 ```
+
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.loggedIn",
@@ -233,20 +281,25 @@ Session-context endpoints:
   "tokens": { "accessToken": "jwt...", "refreshToken": "jwt..." }
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `401` `errors.auth.invalidCredentials`
   - `403` `errors.auth.emailNotVerified | errors.auth.userSuspended | errors.auth.forbiddenTenant`
 
 ### POST `/api/auth/refresh`
+
 - Purpose: rotate refresh/access tokens for an active session.
 - Request body:
+
 ```json
 {
   "refreshToken": "jwt..."
 }
 ```
+
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.refreshed",
@@ -254,6 +307,7 @@ Session-context endpoints:
   "tokens": { "accessToken": "jwt...", "refreshToken": "jwt..." }
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
@@ -263,20 +317,25 @@ Session-context endpoints:
   - Refresh token rotation invalidates the previous refresh token immediately.
 
 ### POST `/api/auth/forgot-password`
+
 - Purpose: request reset-password OTP.
 - Request body:
+
 ```json
 {
   "email": "user@example.com"
 }
 ```
+
 - Success `200` (generic):
+
 ```json
 {
   "messageKey": "success.auth.resetOtpSent",
   "message": "Password reset code sent if the account exists."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
 - Notes (anti-enumeration):
@@ -285,8 +344,10 @@ Session-context endpoints:
   - OTP sending/rate-limit failures are intentionally hidden behind the same generic success response.
 
 ### POST `/api/auth/reset-password`
+
 - Purpose: verify reset OTP and set a new password.
 - Request body:
+
 ```json
 {
   "email": "user@example.com",
@@ -294,13 +355,16 @@ Session-context endpoints:
   "newPassword": "NewPassword456!"
 }
 ```
+
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.passwordReset",
   "message": "Password reset successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed` (for example OTP invalid/expired, or `errors.auth.passwordMustDiffer` on field `newPassword`)
   - `429` `errors.otp.tooManyAttempts`
@@ -310,12 +374,14 @@ Session-context endpoints:
   - On success, all user sessions are revoked.
 
 ### GET `/api/auth/me`
+
 - Purpose: canonical current auth context for FE state hydration and UI gating.
 - Requirements:
   - requires Authorization header
   - session must be active
   - user must be active
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.ok",
@@ -330,6 +396,7 @@ Session-context endpoints:
   "roleKey": "owner"
 }
 ```
+
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
@@ -342,60 +409,71 @@ Session-context endpoints:
     4. first active membership.
 
 ### POST `/api/auth/logout`
+
 - Purpose: revoke current session.
 - Requirements:
   - requires Authorization header
   - user must be active
 - Request body: optional (empty object is fine)
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.loggedOut",
   "message": "Logged out successfully."
 }
 ```
+
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended`
 
 ### POST `/api/auth/logout-all`
+
 - Purpose: revoke all sessions for current user.
 - Requirements:
   - requires Authorization header
   - user must be active
 - Request body: optional (empty object is fine)
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.loggedOutAll",
   "message": "Logged out from all sessions successfully."
 }
 ```
+
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended`
 
 ### POST `/api/auth/change-password`
+
 - Purpose: change password using current password.
 - Requirements:
   - requires Authorization header
   - user must be active
 - Request body:
+
 ```json
 {
   "currentPassword": "Password123!",
   "newPassword": "NewPassword456!"
 }
 ```
-  - both fields required, 8..128
-  - `newPassword` must differ from `currentPassword`
+
+- both fields required, 8..128
+- `newPassword` must differ from `currentPassword`
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.auth.passwordChanged",
   "message": "Password changed successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked | errors.auth.invalidCredentials`
@@ -406,49 +484,73 @@ Session-context endpoints:
 ## 5) Workspace Context Endpoints
 
 ### GET `/api/workspaces/mine`
-- Purpose: list all active workspace memberships for the authenticated user.
+
+- Purpose: list all active workspace memberships for the authenticated user and identify the current active workspace for this session.
 - Requirements:
   - requires Authorization header
   - user must be active
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.ok",
   "message": "Request completed successfully.",
+  "currentWorkspaceId": "65f9...",
   "memberships": [
     {
       "workspaceId": "65f1...",
       "workspace": {
-        "_id": "65f1...",
         "name": "Acme Workspace",
         "slug": "acme-workspace",
         "status": "active"
       },
       "roleKey": "admin",
       "memberStatus": "active",
-      "isOwner": false
+      "isOwner": false,
+      "isCurrent": false
+    },
+    {
+      "workspaceId": "65f9...",
+      "workspace": {
+        "name": "Support Workspace",
+        "slug": "support-workspace",
+        "status": "active"
+      },
+      "roleKey": "agent",
+      "memberStatus": "active",
+      "isOwner": false,
+      "isCurrent": true
     }
   ]
 }
 ```
+
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended`
 - Notes:
   - This endpoint is workspace-agnostic and returns all active memberships for the current user.
+  - `workspaceId` is the canonical workspace identifier for each membership item.
+  - Nested `workspace` intentionally excludes `_id` to avoid duplicate id fields.
+  - `currentWorkspaceId` + membership `isCurrent` reflect the active workspace in the current authenticated session.
+  - `GET /api/auth/me` remains the canonical source for active workspace + role hydration.
 
 ### POST `/api/workspaces/switch`
+
 - Purpose: explicitly switch the current session active workspace context.
 - Requirements:
   - requires Authorization header
   - user must be active
 - Request body:
+
 ```json
 {
   "workspaceId": "65f9..."
 }
 ```
+
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.workspace.switched",
@@ -463,6 +565,7 @@ Session-context endpoints:
   "roleKey": "agent"
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
@@ -476,7 +579,9 @@ Session-context endpoints:
 ## 6) Workspace Invite Endpoints Reference
 
 ### Shared requirements for protected invite management routes
+
 Applies to:
+
 - `POST /api/workspaces/:workspaceId/invites`
 - `GET /api/workspaces/:workspaceId/invites`
 - `GET /api/workspaces/:workspaceId/invites/:inviteId`
@@ -484,6 +589,7 @@ Applies to:
 - `POST /api/workspaces/:workspaceId/invites/:inviteId/revoke`
 
 Requirements:
+
 - requires Authorization header
 - user must be active
 - must be an active member of the token workspace
@@ -491,15 +597,19 @@ Requirements:
 - `:workspaceId` must match token workspace id (`wid`)
 
 ### POST `/api/workspaces/:workspaceId/invites`
+
 - Purpose: create a workspace invite.
 - Request body:
+
 ```json
 {
   "email": "agent@example.com",
   "roleKey": "agent"
 }
 ```
+
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.invite.created",
@@ -514,6 +624,7 @@ Requirements:
   }
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
@@ -524,12 +635,14 @@ Requirements:
   - Existing non-removed membership in same workspace blocks new invite for that email.
 
 ### GET `/api/workspaces/:workspaceId/invites`
+
 - Purpose: list invites for workspace with pagination.
 - Request query:
   - `status` optional (`pending|accepted|revoked|expired`)
   - `page` optional (`>= 1`, default `1`)
   - `limit` optional (`1..100`, default `10`)
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.ok",
@@ -550,16 +663,19 @@ Requirements:
   ]
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
 
 ### GET `/api/workspaces/:workspaceId/invites/:inviteId`
+
 - Purpose: fetch a single invite by id.
 - Request params:
   - `workspaceId`: mongo id
   - `inviteId`: mongo id
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.ok",
@@ -574,21 +690,25 @@ Requirements:
   }
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
   - `404` `errors.invite.notFound`
 
 ### POST `/api/workspaces/:workspaceId/invites/:inviteId/resend`
+
 - Purpose: regenerate invite token and resend invite email.
 - Request body: optional (empty object is fine)
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.invite.resent",
   "message": "Invitation resent successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
@@ -596,25 +716,30 @@ Requirements:
   - `400` `errors.invite.invalid | errors.invite.revoked | errors.invite.expired`
 
 ### POST `/api/workspaces/:workspaceId/invites/:inviteId/revoke`
+
 - Purpose: revoke an invite (idempotent if already revoked).
 - Request body: optional (empty object is fine)
 - Success `200`:
+
 ```json
 {
   "messageKey": "success.invite.revoked",
   "message": "Invitation revoked successfully."
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
   - `404` `errors.invite.notFound`
 
 ### POST `/api/workspaces/invites/accept`
+
 - Purpose: accept invite from invite-link token.
 - Requirements:
   - no Authorization header required
 - Request body:
+
 ```json
 {
   "token": "raw-invite-token",
@@ -623,11 +748,13 @@ Requirements:
   "name": "Optional Name"
 }
 ```
-  - `token` required, 16..512
-  - `email` required, valid email
-  - `password` optional by schema, but required if user does not exist
-  - `name` optional
+
+- `token` required, 16..512
+- `email` required, valid email
+- `password` optional by schema, but required if user does not exist
+- `name` optional
 - Success `200` (verified user):
+
 ```json
 {
   "messageKey": "success.invite.accepted",
@@ -636,7 +763,9 @@ Requirements:
   "roleKey": "admin"
 }
 ```
+
 - Success `200` (new/unverified user):
+
 ```json
 {
   "messageKey": "success.invite.acceptRequiresVerification",
@@ -645,6 +774,7 @@ Requirements:
   "roleKey": "agent"
 }
 ```
+
 - Common errors:
   - `422` `errors.validation.failed` (includes password-required case with `errors.auth.passwordRequiredForInvite`)
   - `403` `errors.auth.userSuspended`
@@ -666,3 +796,206 @@ Requirements:
 - `errors.auth.invalidToken` or `errors.auth.sessionRevoked`: clear tokens and force logout.
 - `errors.auth.forbiddenTenant`: show "no access to this workspace" without necessarily logging user out.
 - `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show cooldown timer before allowing resend.
+
+## 8) Files Endpoints Reference (Files v1)
+
+### Auth + authorization requirements
+
+- All file endpoints are protected and require Authorization header.
+- All file endpoints are session-context endpoints and are strictly scoped to token workspace (`wid` / `session.workspaceId`).
+- Upload roles: `owner | admin | agent`.
+- Delete roles: `owner | admin`.
+- Viewer can list/get/download metadata+content but cannot upload/delete.
+- Download remains backend-streamed in v1 through `GET /api/files/:fileId/download`.
+
+### POST `/api/files`
+
+- Purpose: upload one file via multipart form-data, store object in private storage, and create file metadata record.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request schema:
+  - Content-Type: `multipart/form-data`
+  - field `file`: required, single file only
+  - optional text field `kind`
+  - optional text field `source`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.file.uploaded",
+  "message": "File uploaded successfully.",
+  "file": {
+    "_id": "65ff...",
+    "workspaceId": "65aa...",
+    "uploadedByUserId": "65bb...",
+    "url": "/api/files/65ff.../download",
+    "sizeBytes": 1024,
+    "mimeType": "text/plain",
+    "originalName": "readme.txt",
+    "extension": ".txt",
+    "checksum": "sha256...",
+    "storageStatus": "ready",
+    "isPrivate": true,
+    "downloadCount": 0
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed` (`errors.file.empty | errors.file.tooLarge | errors.file.invalidMimeType | errors.file.invalidExtension`)
+  - `403` `errors.auth.forbiddenTenant`
+  - `429` `errors.file.rateLimited`
+  - `502` `errors.file.uploadFailed`
+  - `503` `errors.file.storageUnavailable`
+- Notes:
+  - Filename is sanitized before storing.
+  - Object key pattern: `workspaces/{workspaceId}/files/{YYYY}/{MM}/{DD}/{uuid}-{sanitizedName}`.
+  - Compensation cleanup is attempted when storage upload succeeds but DB persistence fails.
+
+### GET `/api/files`
+
+- Purpose: list workspace files with pagination, safe partial search, and filters.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `search` optional (safe escaped partial search over filename)
+  - `mimeType` optional
+  - `extension` optional
+  - `uploadedByUserId` optional mongo id
+  - `kind` optional
+  - `isLinked` optional boolean
+  - `entityType` optional string (uses `file_links` relation filter)
+  - `entityId` optional mongo id (requires `entityType`)
+  - `createdFrom` / `createdTo` optional ISO datetime
+  - `sort` optional allowlist: `createdAt|-createdAt|sizeBytes|-sizeBytes|originalName|-originalName|downloadCount|-downloadCount|lastAccessedAt|-lastAccessedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "files": [
+    {
+      "_id": "65ff...",
+      "workspaceId": "65aa...",
+      "uploadedByUserId": "65bb...",
+      "url": "/api/files/65ff.../download",
+      "sizeBytes": 1024,
+      "mimeType": "text/plain",
+      "originalName": "readme.txt",
+      "extension": ".txt",
+      "storageStatus": "ready",
+      "isLinked": false
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Notes:
+  - Soft-deleted files are excluded by default.
+  - Search input is escaped before regex construction to avoid regex injection.
+  - `entityType` only filters to files linked to any entity of that type.
+  - `entityType + entityId` filters to files linked to that exact entity record.
+  - Sending `entityId` without `entityType` returns `422 errors.validation.failed`.
+
+### GET `/api/files/:fileId`
+
+- Purpose: fetch one file metadata record (without raw storage location details).
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "file": {
+    "_id": "65ff...",
+    "workspaceId": "65aa...",
+    "uploadedByUserId": "65bb...",
+    "url": "/api/files/65ff.../download",
+    "sizeBytes": 1024,
+    "mimeType": "text/plain",
+    "originalName": "readme.txt",
+    "extension": ".txt",
+    "checksum": "sha256...",
+    "storageStatus": "ready",
+    "isLinked": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.file.notFound`
+- Anti-enumeration note:
+  - Cross-workspace file IDs resolve as `404 errors.file.notFound` to avoid tenant data leakage.
+
+### GET `/api/files/:fileId/download`
+
+- Purpose: stream file content from backend using a single stable API contract.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+  - Binary stream response.
+  - Response headers include:
+    - `Content-Type`
+    - `Content-Length` (when available)
+    - `Content-Disposition` with sanitized filename
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.file.notFound`
+  - `429` `errors.file.rateLimited`
+  - `502` `errors.file.downloadFailed`
+  - `503` `errors.file.storageUnavailable`
+- Anti-enumeration note:
+  - Cross-workspace file IDs resolve as `404 errors.file.notFound`.
+- Notes:
+  - Bucket remains private and hidden from clients.
+  - v1 streams bytes directly; future internal switch to short-lived signed URLs will preserve this public endpoint contract.
+
+### DELETE `/api/files/:fileId`
+
+- Purpose: explicitly remove physical object from storage, then soft-delete file record.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.file.deleted",
+  "message": "File deleted successfully.",
+  "alreadyDeleted": false,
+  "file": {
+    "_id": "65ff...",
+    "workspaceId": "65aa...",
+    "storageStatus": "deleted"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.file.notFound`
+  - `502` `errors.file.deleteFailed`
+  - `503` `errors.file.storageUnavailable`
+- Notes:
+  - If object is already missing in storage, endpoint still soft-deletes the DB record.
+  - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
