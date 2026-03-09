@@ -1,5 +1,8 @@
 import { jest } from '@jest/globals';
-import { createWorkspaceInvite } from '../src/modules/workspaces/services/workspaces.service.js';
+import {
+  createWorkspaceInvite,
+  ensureWorkspaceForVerifiedUser,
+} from '../src/modules/workspaces/services/workspaces.service.js';
 import { Workspace } from '../src/modules/workspaces/models/workspace.model.js';
 import { User } from '../src/modules/users/models/user.model.js';
 import { WorkspaceMember } from '../src/modules/workspaces/models/workspace-member.model.js';
@@ -102,5 +105,46 @@ describe('workspaces.service createWorkspaceInvite', () => {
     });
 
     expect(createInviteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspaces.service ensureWorkspaceForVerifiedUser', () => {
+  beforeEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  test('does not persist user workspace linkage before default mailbox provisioning succeeds', async () => {
+    const userDoc = {
+      _id: 'user-1',
+      email: 'owner@example.com',
+      defaultWorkspaceId: null,
+      lastWorkspaceId: null,
+      save: jest.fn().mockResolvedValue(undefined),
+    };
+
+    jest.spyOn(User, 'findOne').mockResolvedValue(userDoc);
+    jest.spyOn(Workspace, 'exists').mockResolvedValue(false);
+    jest.spyOn(Workspace, 'create').mockResolvedValue({
+      _id: 'workspace-1',
+    });
+    jest.spyOn(WorkspaceMember, 'create').mockResolvedValue({
+      _id: 'member-1',
+    });
+    jest.spyOn(Workspace, 'findOne').mockReturnValue(
+      createQuery(null)
+    );
+
+    await expect(
+      ensureWorkspaceForVerifiedUser({
+        userId: 'user-1',
+      })
+    ).rejects.toMatchObject({
+      messageKey: 'errors.workspace.notFound',
+      statusCode: 404,
+    });
+
+    expect(userDoc.save).not.toHaveBeenCalled();
+    expect(userDoc.defaultWorkspaceId).toBeNull();
+    expect(userDoc.lastWorkspaceId).toBeNull();
   });
 });

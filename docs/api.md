@@ -142,6 +142,19 @@ Session-context endpoints:
 5. `DELETE /api/files/:fileId` explicitly removes physical object and soft-deletes the DB record.
 6. Clients should treat `url` as canonical backend route (`/api/files/:fileId/download`), not a direct storage URL.
 
+### Flow E: Mailboxes v1 -> Set Default -> Activate/Deactivate
+
+1. New workspaces bootstrap with one default mailbox (`Support`) and `workspace.defaultMailboxId` is set.
+2. Owner/Admin can create additional queues via `POST /api/mailboxes`.
+3. Use `GET /api/mailboxes` for paginated list/search/filter; active mailboxes are returned by default.
+4. Use `GET /api/mailboxes/options` for lightweight dropdown data.
+5. Change default queue explicitly with `POST /api/mailboxes/:id/set-default`.
+6. Operational state changes use:
+   - `POST /api/mailboxes/:id/activate`
+   - `POST /api/mailboxes/:id/deactivate`
+7. Default mailbox cannot be deactivated; set another mailbox as default first.
+8. Mailbox v1 has no delete endpoint.
+
 ## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
@@ -999,3 +1012,341 @@ Requirements:
 - Notes:
   - If object is already missing in storage, endpoint still soft-deletes the DB record.
   - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
+
+## 9) Mailboxes Endpoints Reference (Mailbox v1)
+
+### Auth model + authorization rules
+
+- All mailbox endpoints are protected and require Authorization header.
+- All mailbox endpoints are session-context endpoints scoped to token workspace (`wid` / `session.workspaceId`).
+- Role rules:
+  - `owner|admin`: create, update, set-default, activate, deactivate, read.
+  - `agent|viewer`: read-only (`GET /api/mailboxes`, `GET /api/mailboxes/options`, `GET /api/mailboxes/:id`).
+- Mailbox v1 is queue abstraction only (not inbound channel/provider abstraction).
+- Mailbox `type` is currently constrained to `email` in v1; channel/source behavior is intentionally out of scope.
+- Mailbox v1 does not include delete endpoint.
+
+### Mailbox invariants in v1
+
+- Multiple mailboxes per workspace are supported.
+- Exactly one default mailbox per workspace is enforced.
+- `workspace.defaultMailboxId` is kept aligned with the mailbox marked `isDefault`.
+- A default mailbox is always active.
+- Default mailbox cannot be deactivated.
+- Last active mailbox cannot be deactivated.
+
+### GET `/api/mailboxes`
+
+- Purpose: list workspace mailboxes with pagination, safe partial search, filters, and sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` optional (partial search)
+  - `search` optional alias for `q`
+  - `isActive` optional boolean
+  - `isDefault` optional boolean
+  - `includeInactive` optional boolean
+  - `sort` optional allowlist: `name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 2,
+  "results": 2,
+  "mailboxes": [
+    {
+      "_id": "65f1...",
+      "workspaceId": "65aa...",
+      "name": "Support",
+      "type": "email",
+      "emailAddress": null,
+      "fromName": null,
+      "replyTo": null,
+      "signatureText": null,
+      "signatureHtml": null,
+      "isDefault": true,
+      "isActive": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant` (for unauthorized inactive visibility requests)
+- Notes:
+  - Active mailboxes are returned by default.
+  - `owner|admin` can request inactive records via `includeInactive=true` or `isActive=false`.
+  - `agent|viewer` cannot request inactive mailbox data.
+  - Search input is escaped before regex construction.
+
+### GET `/api/mailboxes/options`
+
+- Purpose: lightweight mailbox options endpoint for selectors/dropdowns.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` optional
+  - `search` optional alias for `q`
+  - `limit` optional (`1..50`, default `20`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f1...",
+      "name": "Support",
+      "isDefault": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Notes:
+  - Active-only by default.
+  - Intended for fast UI typeahead/dropdown usage.
+
+### GET `/api/mailboxes/:id`
+
+- Purpose: fetch one mailbox in current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "mailbox": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Support",
+    "type": "email",
+    "isDefault": true,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.mailbox.notFound`
+- Anti-enumeration note:
+  - Cross-workspace mailbox IDs resolve as `404 errors.mailbox.notFound`.
+  - Inactive mailboxes are hidden from `agent|viewer` and resolve as `404`.
+
+### POST `/api/mailboxes`
+
+- Purpose: create a mailbox queue in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+  - `type` is optional and only `email` is accepted in v1.
+
+```json
+{
+  "name": "Billing Queue",
+  "type": "email",
+  "emailAddress": "billing@example.com",
+  "fromName": "Billing Team",
+  "replyTo": "billing@example.com",
+  "signatureText": "Thanks",
+  "signatureHtml": "<p>Thanks</p>"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.mailbox.created",
+  "message": "Mailbox created successfully.",
+  "mailbox": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "name": "Billing Queue",
+    "type": "email",
+    "isDefault": false,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `409` `errors.mailbox.emailAlreadyUsed`
+- Notes:
+  - Creation does not auto-delete or replace existing mailboxes.
+  - Exactly-one-default invariant remains enforced.
+
+### PATCH `/api/mailboxes/:id`
+
+- Purpose: update mailbox metadata (not activate/deactivate, not set-default).
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+  - At least one of:
+    - `name`
+    - `type`
+    - `emailAddress`
+    - `fromName`
+    - `replyTo`
+    - `signatureText`
+    - `signatureHtml`
+  - If `type` is sent, it must be `email`.
+  - Unknown body fields are rejected with `422 errors.validation.failed`.
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.mailbox.updated",
+  "message": "Mailbox updated successfully.",
+  "mailbox": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "name": "Billing Queue",
+    "type": "email",
+    "isDefault": false,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.mailbox.notFound`
+  - `409` `errors.mailbox.emailAlreadyUsed`
+- Notes:
+  - Activation/deactivation has dedicated endpoints.
+  - Default switching has dedicated endpoint.
+
+### POST `/api/mailboxes/:id/set-default`
+
+- Purpose: make mailbox default and synchronize `workspace.defaultMailboxId`.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.mailbox.defaultSet",
+  "message": "Default mailbox updated successfully.",
+  "mailbox": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "name": "Billing Queue",
+    "isDefault": true,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.mailbox.notFound`
+  - `409` `errors.mailbox.defaultMustBeActive | errors.mailbox.defaultConflict`
+- Notes:
+  - Previous default mailbox is unset automatically.
+  - Workspace default pointer is updated in the same operation.
+
+### POST `/api/mailboxes/:id/activate`
+
+- Purpose: activate mailbox.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.mailbox.activated",
+  "message": "Mailbox activated successfully.",
+  "mailbox": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.mailbox.notFound`
+
+### POST `/api/mailboxes/:id/deactivate`
+
+- Purpose: deactivate mailbox operationally without deleting history references.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.mailbox.deactivated",
+  "message": "Mailbox deactivated successfully.",
+  "mailbox": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "isActive": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.mailbox.notFound`
+  - `409` `errors.mailbox.defaultCannotDeactivate | errors.mailbox.lastActiveCannotDeactivate`
+- Notes:
+  - Default mailbox cannot be deactivated.
+  - Last active mailbox cannot be deactivated.
+  - Ticket/conversation/message mailbox references are preserved.
+
+## 10) Mailbox Backfill Command
+
+- Purpose: idempotently repair workspaces with missing/invalid mailbox defaults.
+- Command:
+
+```bash
+npm run mailboxes:backfill-default
+```
+
+- What it does:
+  - scans non-deleted workspaces
+  - ensures exactly one default mailbox exists per workspace
+  - ensures default mailbox is active
+  - updates `workspace.defaultMailboxId` to the canonical default mailbox
+  - creates a default `Support` mailbox only when workspace has no mailboxes
+- Rerun safety:
+  - safe to run multiple times (idempotent)
+  - does not create duplicate default mailboxes when rerun

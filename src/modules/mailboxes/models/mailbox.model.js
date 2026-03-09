@@ -94,6 +94,18 @@ mailboxSchema.index(
   }
 );
 mailboxSchema.index({ workspaceId: 1, isActive: 1 });
+mailboxSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  isActive: 1,
+  isDefault: -1,
+  createdAt: -1,
+});
+mailboxSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  name: 1,
+});
 mailboxSchema.index(
   { workspaceId: 1, emailAddressNormalized: 1 },
   {

@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand"
+    "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "mailboxes:backfill-default": "node scripts/backfill-default-mailboxes.js"
   },
   "dependencies": {
     "@sendgrid/mail": "^8.1.6",

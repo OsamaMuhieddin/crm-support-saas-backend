@@ -11,6 +11,7 @@ import slaRouter from '../modules/sla/index.js';
 import integrationsRouter from '../modules/integrations/index.js';
 import adminRouter from '../modules/admin/index.js';
 import filesRouter from '../modules/files/index.js';
+import mailboxesRouter from '../modules/mailboxes/index.js';
 
 const router = Router();
 
@@ -27,5 +28,6 @@ router.use('/sla', slaRouter);
 router.use('/integrations', integrationsRouter);
 router.use('/admin', adminRouter);
 router.use('/files', filesRouter);
+router.use('/mailboxes', mailboxesRouter);
 
 export default router;

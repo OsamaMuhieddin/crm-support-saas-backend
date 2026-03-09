@@ -82,20 +82,18 @@ Routes define endpoints and call controllers.
 6. Keep all examples consistent with the response envelope and include `messageKey` in success responses.
 
 ## Local File Mention Format (Direct Click)
-- Use one universal format for every repo file: `@./<repo-relative-path>`.
-- This applies to root files, docs, tests, and `src` files.
-- Keep file mentions plain text (not backticks, not markdown links).
-- Use `/` path separators.
+- Use clickable markdown links for every repo file.
+- Link target must be an absolute local path.
+- Keep `/` path separators in link targets.
 - Put each file mention on its own line.
 - Do not use `http://`, `https://`, `file://`, or `vscode://`.
 
 Examples:
-- Good: @./README.md
-- Good: @./docs/api.md
-- Good: @./tests/workspaces.switch.test.js
-- Good: @./src/shared/utils/security.js
-- Good: @./src/modules/mailboxes/models/mailbox.model.js
+- Good: [README.md](/c:/Users/96396/Documents/GitHub/crm-support-saas-backend/README.md)
+- Good: [api.md](/c:/Users/96396/Documents/GitHub/crm-support-saas-backend/docs/api.md)
+- Good: [workspaces.switch.test.js](/c:/Users/96396/Documents/GitHub/crm-support-saas-backend/tests/workspaces.switch.test.js)
+- Good: [security.js](/c:/Users/96396/Documents/GitHub/crm-support-saas-backend/src/shared/utils/security.js)
+- Good: [mailbox.model.js](/c:/Users/96396/Documents/GitHub/crm-support-saas-backend/src/modules/mailboxes/models/mailbox.model.js)
+- Bad: @./README.md
 - Bad: README.md
-- Bad: security.js
 - Bad: `src/shared/utils/security.js`
-- Bad: [security.js](...)

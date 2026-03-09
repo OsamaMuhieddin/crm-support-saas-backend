@@ -26,6 +26,13 @@
     "file": {
       "uploaded": "File uploaded successfully.",
       "deleted": "File deleted successfully."
+    },
+    "mailbox": {
+      "created": "Mailbox created successfully.",
+      "updated": "Mailbox updated successfully.",
+      "defaultSet": "Default mailbox updated successfully.",
+      "activated": "Mailbox activated successfully.",
+      "deactivated": "Mailbox deactivated successfully."
     }
   },
   "errors": {
@@ -78,6 +85,14 @@
       "storageUnavailable": "File storage service is unavailable.",
       "forbidden": "You are not allowed to perform this action on files.",
       "rateLimited": "Too many file requests. Please try again later."
+    },
+    "mailbox": {
+      "notFound": "Mailbox not found.",
+      "emailAlreadyUsed": "Mailbox email address is already used in this workspace.",
+      "defaultMustBeActive": "Default mailbox must be active.",
+      "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
+      "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
+      "defaultConflict": "Unable to update default mailbox. Please retry."
     }
   }
 }

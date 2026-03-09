@@ -44,3 +44,33 @@ This repository is a backend foundation for a multi-tenant helpdesk/CRM SaaS:
 - v1 uses backend-streamed download and private bucket storage.
 - Storage adapters live in `src/infra/storage` (MinIO first, local adapter fallback for tests/dev).
 - Keep response envelopes and workspace isolation rules identical to the rest of the codebase.
+
+## Mailboxes v1 Notes
+
+- Mailboxes module is implemented under `src/modules/mailboxes`.
+- Mounted base route: `/api/mailboxes`.
+- Implemented endpoints:
+  - `POST /api/mailboxes`
+  - `GET /api/mailboxes`
+  - `GET /api/mailboxes/options`
+  - `GET /api/mailboxes/:id`
+  - `PATCH /api/mailboxes/:id`
+  - `POST /api/mailboxes/:id/set-default`
+  - `POST /api/mailboxes/:id/activate`
+  - `POST /api/mailboxes/:id/deactivate`
+- No delete endpoint in v1 (operational flow is activate/deactivate).
+- Mailbox is a shared queue abstraction in v1; `type` is currently constrained to `email`.
+- RBAC:
+  - `owner|admin`: read + mutate
+  - `agent|viewer`: read-only
+- Default rules:
+  - exactly one default mailbox per workspace
+  - `workspace.defaultMailboxId` must match mailbox `isDefault`
+  - default mailbox must stay active
+  - default mailbox cannot be deactivated
+  - cannot deactivate last active mailbox
+- Workspace bootstrap:
+  - new workspace creation path provisions default `Support` mailbox
+  - provisioning happens in `ensureWorkspaceForVerifiedUser` new-workspace branch
+- Backfill command for existing data:
+  - `npm run mailboxes:backfill-default`

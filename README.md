@@ -393,3 +393,29 @@ FILES_UPLOAD_RATE_LIMIT_MAX=20
 FILES_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS=60
 FILES_DOWNLOAD_RATE_LIMIT_MAX=120
 ```
+
+## Backend Mailboxes v1
+
+Mailbox v1 is now available as a workspace-scoped support queue abstraction:
+
+- `POST /api/mailboxes`
+- `GET /api/mailboxes`
+- `GET /api/mailboxes/options`
+- `GET /api/mailboxes/:id`
+- `PATCH /api/mailboxes/:id`
+- `POST /api/mailboxes/:id/set-default`
+- `POST /api/mailboxes/:id/activate`
+- `POST /api/mailboxes/:id/deactivate`
+
+Rules:
+
+- Multiple mailboxes per workspace are allowed.
+- Exactly one default mailbox per workspace is enforced.
+- New workspaces bootstrap with one default `Support` mailbox.
+- No delete endpoint in v1 (operational path is activate/deactivate).
+
+Backfill existing data safely:
+
+```bash
+npm run mailboxes:backfill-default
+```

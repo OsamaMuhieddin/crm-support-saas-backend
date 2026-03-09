@@ -23,6 +23,7 @@ import {
 } from '../../../shared/services/email.service.js';
 import { createOtp } from '../../auth/services/otp.service.js';
 import { mintAccessTokenForSession } from '../../auth/services/session.service.js';
+import { ensureWorkspaceDefaultMailbox } from '../../mailboxes/services/mailboxes.service.js';
 
 const oneDayMs = 24 * 60 * 60 * 1000;
 
@@ -379,11 +380,16 @@ export const ensureWorkspaceForVerifiedUser = async ({
       joinedAt: new Date(),
     });
 
+    await ensureWorkspaceDefaultMailbox({
+      workspaceId: workspace._id,
+    });
+
     user.defaultWorkspaceId = workspace._id;
     if (!user.lastWorkspaceId) {
       user.lastWorkspaceId = workspace._id;
     }
-    hasUserChanges = true;
+    await user.save();
+    hasUserChanges = false;
   }
 
   if (hasUserChanges) {
