@@ -384,7 +384,7 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       emailAddress: 'fail-agent@example.com',
     });
     expect(agentCreate.status).toBe(403);
-    expect(agentCreate.body.messageKey).toBe('errors.auth.forbiddenTenant');
+    expect(agentCreate.body.messageKey).toBe('errors.auth.forbiddenRole');
 
     const viewerCreate = await createMailbox({
       accessToken: viewer.accessToken,
@@ -392,14 +392,14 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       emailAddress: 'fail-viewer@example.com',
     });
     expect(viewerCreate.status).toBe(403);
-    expect(viewerCreate.body.messageKey).toBe('errors.auth.forbiddenTenant');
+    expect(viewerCreate.body.messageKey).toBe('errors.auth.forbiddenRole');
 
     const agentSetDefault = await request(app)
       .post(`/api/mailboxes/${mailboxResponse.body.mailbox._id}/set-default`)
       .set('Authorization', `Bearer ${agent.accessToken}`)
       .send({});
     expect(agentSetDefault.status).toBe(403);
-    expect(agentSetDefault.body.messageKey).toBe('errors.auth.forbiddenTenant');
+    expect(agentSetDefault.body.messageKey).toBe('errors.auth.forbiddenRole');
   });
 
   maybeDbTest(

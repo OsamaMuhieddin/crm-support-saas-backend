@@ -50,7 +50,8 @@
       "userSuspended": "User account is suspended.",
       "sessionRevoked": "Session has been revoked.",
       "invalidToken": "Invalid or expired token.",
-      "forbiddenTenant": "You do not have access to this workspace."
+      "forbiddenTenant": "You do not have access to this workspace.",
+      "forbiddenRole": "Your role is not allowed to perform this action in this workspace."
     },
     "workspace": {
       "notFound": "Workspace not found.",

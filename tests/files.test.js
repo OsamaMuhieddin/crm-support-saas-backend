@@ -179,7 +179,7 @@ describe('Files v1 endpoints', () => {
     );
 
     expect(response.status).toBe(403);
-    expect(response.body.messageKey).toBe('errors.auth.forbiddenTenant');
+    expect(response.body.messageKey).toBe('errors.auth.forbiddenRole');
   });
 
   maybeDbTest('upload validation failure for missing file', async () => {
@@ -682,7 +682,7 @@ describe('Files v1 endpoints', () => {
       .set('Authorization', `Bearer ${agent.accessToken}`);
 
     expect(response.status).toBe(403);
-    expect(response.body.messageKey).toBe('errors.auth.forbiddenTenant');
+    expect(response.body.messageKey).toBe('errors.auth.forbiddenRole');
   });
 
   maybeDbTest(

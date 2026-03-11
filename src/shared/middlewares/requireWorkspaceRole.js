@@ -11,7 +11,7 @@ export const requireWorkspaceRole = (...allowedRoles) => {
     try {
       const roleKey = req?.member?.roleKey;
       if (!roleKey || !allowedSet.has(String(roleKey).toLowerCase())) {
-        throw createError('errors.auth.forbiddenTenant', 403);
+        throw createError('errors.auth.forbiddenRole', 403);
       }
 
       return next();
