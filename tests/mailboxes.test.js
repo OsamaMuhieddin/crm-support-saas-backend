@@ -277,7 +277,7 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       expect.arrayContaining([
         expect.objectContaining({
           field: 'type',
-          messageKey: 'errors.validation.failed',
+          messageKey: 'errors.validation.invalidEnum',
         }),
       ])
     );
@@ -309,7 +309,7 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       expect.arrayContaining([
         expect.objectContaining({
           field: 'unknownField',
-          messageKey: 'errors.validation.failed',
+          messageKey: 'errors.validation.unknownField',
         }),
       ])
     );
@@ -327,7 +327,7 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       expect.arrayContaining([
         expect.objectContaining({
           field: 'type',
-          messageKey: 'errors.validation.failed',
+          messageKey: 'errors.validation.invalidEnum',
         }),
       ])
     );

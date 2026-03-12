@@ -38,9 +38,9 @@ const optionalNullableTrimmedField = (field, maxLength) =>
     .customSanitizer(toNullableString)
     .if((value) => value !== null && value !== undefined)
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .isLength({ min: 1, max: maxLength })
-    .withMessage('errors.validation.failed');
+    .withMessage('errors.validation.lengthRange');
 
 const optionalNullableEmailField = (field) =>
   body(field)
@@ -48,29 +48,29 @@ const optionalNullableEmailField = (field) =>
     .customSanitizer(toNullableString)
     .if((value) => value !== null && value !== undefined)
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .isEmail()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalidEmail')
     .isLength({ max: 320 })
-    .withMessage('errors.validation.failed');
+    .withMessage('errors.validation.maxLength');
 
 const mailboxIdParam = param('id')
   .isMongoId()
-  .withMessage('errors.validation.failed');
+  .withMessage('errors.validation.invalidId');
 
 export const createMailboxValidator = [
   body('name')
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   body('type')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .isIn(MAILBOX_V1_TYPE_VALUES)
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidEnum'),
   optionalNullableEmailField('emailAddress'),
   optionalNullableTrimmedField('fromName', 120),
   optionalNullableEmailField('replyTo'),
@@ -82,75 +82,75 @@ export const listMailboxesValidator = [
   query('page')
     .optional()
     .isInt({ min: 1 })
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalidNumber')
     .toInt(),
   query('limit')
     .optional()
     .isInt({ min: 1, max: 100 })
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalidNumber')
     .toInt(),
   query('q')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   query('search')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   query('isActive')
     .optional()
     .isBoolean()
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidBoolean'),
   query('isDefault')
     .optional()
     .isBoolean()
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidBoolean'),
   query('includeInactive')
     .optional()
     .isBoolean()
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidBoolean'),
   query('sort')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .isIn(sortAllowlist)
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidEnum'),
 ];
 
 export const mailboxOptionsValidator = [
   query('q')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   query('search')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   query('limit')
     .optional()
     .isInt({ min: 1, max: 50 })
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalidNumber')
     .toInt(),
   query('isActive')
     .optional()
     .isBoolean()
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidBoolean'),
   query('includeInactive')
     .optional()
     .isBoolean()
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidBoolean'),
 ];
 
 export const mailboxByIdValidator = [mailboxIdParam];
@@ -160,16 +160,16 @@ export const updateMailboxValidator = [
   body('name')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 120 })
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.lengthRange'),
   body('type')
     .optional()
     .isString()
-    .withMessage('errors.validation.failed')
+    .withMessage('errors.validation.invalid')
     .isIn(MAILBOX_V1_TYPE_VALUES)
-    .withMessage('errors.validation.failed'),
+    .withMessage('errors.validation.invalidEnum'),
   optionalNullableEmailField('emailAddress'),
   optionalNullableTrimmedField('fromName', 120),
   optionalNullableEmailField('replyTo'),
@@ -185,7 +185,7 @@ export const updateMailboxBodyValidation = (req) => {
 
   if (unknownFields.length > 0) {
     return unknownFields.map((field) =>
-      buildValidationError(field, 'errors.validation.failed')
+      buildValidationError(field, 'errors.validation.unknownField')
     );
   }
 
@@ -197,7 +197,9 @@ export const updateMailboxBodyValidation = (req) => {
     return [];
   }
 
-  return [buildValidationError('body', 'errors.validation.failed')];
+  return [
+    buildValidationError('body', 'errors.validation.bodyRequiresAtLeastOneField'),
+  ];
 };
 
 export const mailboxActionByIdValidator = [mailboxIdParam];

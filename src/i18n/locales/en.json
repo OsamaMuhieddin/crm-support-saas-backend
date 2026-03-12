@@ -46,7 +46,14 @@
       "invalidEnum": "Invalid value.",
       "maxLength": "Value exceeds the maximum allowed length.",
       "lengthRange": "Value length is out of range.",
-      "otpLength": "Invalid verification code length."
+      "otpLength": "Invalid verification code length.",
+      "invalidId": "Invalid ID.",
+      "invalidNumber": "Invalid number.",
+      "invalidBoolean": "Invalid boolean value.",
+      "invalidDate": "Invalid date.",
+      "unknownField": "This field is not allowed.",
+      "bodyRequiresAtLeastOneField": "At least one updatable field is required.",
+      "entityTypeRequiredWithEntityId": "entityType is required when entityId is provided."
     },
     "auth": {
       "invalidCredentials": "Invalid email or password.",

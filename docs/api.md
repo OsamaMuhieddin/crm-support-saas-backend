@@ -50,8 +50,8 @@ Session-context endpoints:
   "errors": [
     {
       "field": "email",
-      "messageKey": "errors.validation.failed",
-      "msg": "Localized message"
+      "messageKey": "errors.validation.invalidEmail",
+      "msg": "Localized field message"
     }
   ]
 }
@@ -61,6 +61,7 @@ Session-context endpoints:
   - `status: 422`
   - `messageKey: errors.validation.failed`
   - array payload under `errors`
+  - each `errors[]` item can carry a specific key (for example `errors.validation.invalidEmail`)
 
 ### Enums used in requests
 
@@ -921,7 +922,7 @@ Requirements:
   - Search input is escaped before regex construction to avoid regex injection.
   - `entityType` only filters to files linked to any entity of that type.
   - `entityType + entityId` filters to files linked to that exact entity record.
-  - Sending `entityId` without `entityType` returns `422 errors.validation.failed`.
+  - Sending `entityId` without `entityType` returns `422 errors.validation.failed` with field key `errors.validation.entityTypeRequiredWithEntityId` in `errors[]`.
 
 ### GET `/api/files/:fileId`
 
@@ -1214,9 +1215,10 @@ Requirements:
     - `fromName`
     - `replyTo`
     - `signatureText`
-    - `signatureHtml`
+  - `signatureHtml`
   - If `type` is sent, it must be `email`.
-  - Unknown body fields are rejected with `422 errors.validation.failed`.
+  - Unknown body fields are rejected with `422 errors.validation.failed` and field key `errors.validation.unknownField`.
+  - Sending none of the allowed fields returns field key `errors.validation.bodyRequiresAtLeastOneField`.
 - Success `200`:
 
 ```json

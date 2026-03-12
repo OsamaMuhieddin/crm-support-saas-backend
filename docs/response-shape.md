@@ -39,6 +39,6 @@ Validation example (422):
   "messageKey": "errors.validation.failed",
   "message": "Validation failed.",
   "errors": [
-    { "field": "email", "messageKey": "errors.validation.failed", "msg": { "key": "errors.validation.failed" } }
+    { "field": "email", "messageKey": "errors.validation.invalidEmail", "msg": "Invalid email address." }
   ]
 }

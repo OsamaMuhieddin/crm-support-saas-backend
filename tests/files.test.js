@@ -587,7 +587,7 @@ describe('Files v1 endpoints', () => {
         expect.arrayContaining([
           expect.objectContaining({
             field: 'entityId',
-            messageKey: 'errors.validation.failed',
+            messageKey: 'errors.validation.entityTypeRequiredWithEntityId',
           }),
         ])
       );

@@ -46,7 +46,14 @@
       "invalidEnum": "قيمة غير صالحة.",
       "maxLength": "القيمة تتجاوز الحد الأقصى للطول.",
       "lengthRange": "طول القيمة خارج النطاق.",
-      "otpLength": "طول رمز التحقق غير صالح."
+      "otpLength": "طول رمز التحقق غير صالح.",
+      "invalidId": "معرّف غير صالح.",
+      "invalidNumber": "رقم غير صالح.",
+      "invalidBoolean": "قيمة منطقية غير صالحة.",
+      "invalidDate": "تاريخ غير صالح.",
+      "unknownField": "هذا الحقل غير مسموح.",
+      "bodyRequiresAtLeastOneField": "يجب إرسال حقل واحد على الأقل للتحديث.",
+      "entityTypeRequiredWithEntityId": "يجب إرسال نوع الكيان عند إرسال معرف الكيان."
     },
     "auth": {
       "invalidCredentials": "البريد الإلكتروني أو كلمة المرور غير صحيحة.",
