@@ -44,7 +44,7 @@ export const createOtp = async ({ email, userId = null, purpose }) => {
   const emailNormalized = normalizeEmail(email);
   if (!emailNormalized) {
     throw createError('errors.validation.failed', 422, [
-      buildValidationError('email', 'errors.validation.failed')
+      buildValidationError('email', 'errors.validation.invalidEmail')
     ]);
   }
 
@@ -74,7 +74,7 @@ export const verifyOtp = async ({ email, purpose, code }) => {
   const emailNormalized = normalizeEmail(email);
   if (!emailNormalized) {
     throw createError('errors.validation.failed', 422, [
-      buildValidationError('email', 'errors.validation.failed')
+      buildValidationError('email', 'errors.validation.invalidEmail')
     ]);
   }
 
