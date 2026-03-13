@@ -156,6 +156,28 @@ Session-context endpoints:
 7. Default mailbox cannot be deactivated; set another mailbox as default first.
 8. Mailbox v1 has no delete endpoint.
 
+### Flow F: Ticket Categories and Tags
+
+1. Owner/Admin creates ticket categories and tags inside the current workspace.
+2. Use `GET /api/tickets/categories` and `GET /api/tickets/tags` for paginated admin/operator reads.
+3. Use `GET /api/tickets/categories/options` and `GET /api/tickets/tags/options` for lightweight selector data.
+4. Operational users (`owner|admin|agent|viewer`) can read active dictionaries.
+5. Category/tag activation state is managed explicitly through activate/deactivate endpoints.
+
+### Flow G: Tickets Core
+
+1. Authenticate normally and keep an access token scoped to the active workspace session.
+2. Create and maintain ticket categories/tags when structured routing is needed.
+3. Create a ticket with `POST /api/tickets`; `mailboxId` is optional and falls back to the workspace default mailbox.
+4. Upload files first through `POST /api/files` when a ticket or reply needs attachments.
+5. Use `GET /api/tickets` for paginated list/search/filter reads and `GET /api/tickets/:id` for detail.
+6. Use `GET /api/tickets/:id/conversation` and `GET /api/tickets/:id/messages` to render the thread.
+7. Use `POST /api/tickets/:id/messages` for `customer_message`, `public_reply`, and `internal_note`.
+8. Use `PATCH /api/tickets/:id` for editable record updates (`subject`, `priority`, `categoryId`, `tagIds`, `mailboxId` before any messages exist).
+9. Use `POST /api/tickets/:id/assign`, `POST /api/tickets/:id/unassign`, and `POST /api/tickets/:id/self-assign` for operational assignment control.
+10. Use `POST /api/tickets/:id/status`, `POST /api/tickets/:id/solve`, `POST /api/tickets/:id/close`, and `POST /api/tickets/:id/reopen` for explicit lifecycle actions.
+11. Use `GET /api/tickets/:id/participants`, `POST /api/tickets/:id/participants`, and `DELETE /api/tickets/:id/participants/:userId` for internal watcher/collaborator metadata.
+
 ## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
@@ -1352,3 +1374,1428 @@ npm run mailboxes:backfill-default
 - Rerun safety:
   - safe to run multiple times (idempotent)
   - does not create duplicate default mailboxes when rerun
+
+## 11) Tickets Endpoints Reference
+
+### Auth model + authorization rules
+
+- All ticket endpoints are protected and require Authorization header.
+- All ticket endpoints are session-context endpoints scoped to the token workspace (`wid` / `session.workspaceId`).
+- Read roles:
+  - `owner|admin|agent|viewer`
+- Ticket write roles:
+  - `owner|admin|agent`
+- Dictionary mutation roles:
+  - `owner|admin`
+- Inactive dictionary visibility:
+  - `owner|admin` can request inactive rows explicitly.
+  - `agent|viewer` can read active rows only.
+  - inactive direct detail rows are hidden from `agent|viewer` and resolve as `404`.
+
+### Ticket record rules
+
+- Every ticket belongs to the active workspace and receives a workspace-scoped incremental `number`.
+- One conversation is created automatically for every ticket and linked back through `conversationId`.
+- `contactId` is required on create.
+- `organizationId` is derived from the linked contact when the contact already belongs to an organization.
+- If `organizationId` is sent explicitly for a contact that already has an organization, the values must match.
+- `mailboxId` is optional on create and falls back to the workspace default mailbox.
+- Mailbox changes are only allowed while the ticket has `messageCount = 0`.
+- Category/tag refs used in writes must be active and belong to the current workspace.
+- Ticket detail can still render already-linked inactive category/tag refs for historical integrity.
+- Create-time `initialMessage` accepts only `customer_message` and `internal_note`.
+- Create-time and later message attachments must be uploaded through `/api/files` first, then linked by `attachmentFileIds`.
+- Ticket message attachments are linked to the message as the semantic owner and to the root ticket for reverse lookup.
+- Ticket list excludes `closed` tickets by default unless `includeClosed=true` is requested or an explicit `status` filter is supplied.
+- `assigneeId` lives on the ticket itself; assignment actions update `assignedAt` and move `new` tickets to `open`.
+- Ticket participants are internal-only metadata (`watcher|collaborator`) and do not grant or revoke access.
+- `owner|admin` can assign any operational member (`owner|admin|agent`).
+- `agent` self-assignment uses `POST /api/tickets/:id/self-assign` only and is limited to unassigned tickets or tickets they already own.
+- Closed tickets accept `internal_note` only until they are reopened explicitly.
+- Explicit lifecycle actions control `solved`, `closed`, and `reopen` transitions and keep `statusChangedAt`, `closedAt`, and live resolution markers consistent.
+
+### Ticket dictionary rules
+
+- Ticket categories and tags are workspace-scoped dictionaries.
+- No hard-delete endpoints are exposed in v1.
+- Category `path` is maintained by the service and recalculated when parent or slug changes.
+- Category parent references must stay inside the same workspace and cannot create cycles.
+- Tag names remain unique per workspace after normalization.
+
+### POST `/api/tickets`
+
+- Purpose: create a ticket in the current workspace, allocate the next workspace-scoped ticket number, create its conversation row, and optionally capture a minimal initial message.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "subject": "Billing issue on paid plan",
+  "contactId": "65f1...",
+  "mailboxId": "65f2...",
+  "organizationId": "65f3...",
+  "priority": "high",
+  "categoryId": "65f4...",
+  "tagIds": ["65f5..."],
+  "assigneeId": "65f6...",
+  "initialMessage": {
+    "type": "internal_note",
+    "bodyText": "Customer already called support."
+  }
+}
+```
+
+- Request rules:
+  - `subject` required, trimmed string (`1..240`)
+  - `contactId` required mongo id
+  - `mailboxId`, `organizationId`, `categoryId`, `assigneeId` optional mongo ids
+  - `priority` optional enum: `low|normal|high|urgent`
+  - `tagIds` optional unique mongo id array
+  - `initialMessage` optional object
+  - `initialMessage.type` allowed values: `customer_message|internal_note`
+  - `initialMessage.bodyText` required when `initialMessage` is present
+  - `initialMessage.attachmentFileIds` optional unique mongo id array (`max 20`)
+  - attachment ids must reference current-workspace files with `storageStatus = ready`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.created",
+  "message": "Ticket created successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "workspaceId": "65aa...",
+    "mailboxId": "65f2...",
+    "number": 42,
+    "subject": "Billing issue on paid plan",
+    "status": "new",
+    "priority": "high",
+    "channel": "manual",
+    "categoryId": "65f4...",
+    "tagIds": ["65f5..."],
+    "contactId": "65f1...",
+    "organizationId": "65f3...",
+    "assigneeId": null,
+    "conversationId": "65f7...",
+    "messageCount": 1,
+    "internalNoteCount": 1,
+    "lastMessageType": "internal_note",
+    "lastMessagePreview": "Customer already called support.",
+    "mailbox": {
+      "_id": "65f2...",
+      "name": "Support",
+      "type": "email",
+      "emailAddress": null,
+      "isDefault": true,
+      "isActive": true
+    },
+    "contact": {
+      "_id": "65f1...",
+      "organizationId": "65f3...",
+      "fullName": "Jane Doe",
+      "email": "jane@example.com",
+      "phone": "+963955555555"
+    },
+    "organization": {
+      "_id": "65f3...",
+      "name": "Acme",
+      "domain": "acme.example.com"
+    },
+    "category": {
+      "_id": "65f4...",
+      "name": "Billing",
+      "slug": "billing",
+      "path": "billing",
+      "isActive": true
+    },
+    "tags": [
+      {
+        "_id": "65f5...",
+        "name": "VIP",
+        "isActive": true
+      }
+    ],
+    "conversation": {
+      "_id": "65f7...",
+      "mailboxId": "65f2...",
+      "channel": "manual",
+      "messageCount": 1,
+      "internalNoteCount": 1,
+      "lastMessageType": "internal_note",
+      "lastMessagePreview": "Customer already called support."
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.contactNotFound | errors.ticket.organizationNotFound | errors.ticket.assigneeNotFound | errors.mailbox.notFound | errors.ticketCategory.notFound | errors.ticketTag.notFound | errors.file.notFound`
+  - `409` `errors.ticket.attachmentAlreadyLinked`
+  - `409` duplicate category/tag uniqueness conflicts flow through their existing module keys
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Anti-enumeration note:
+  - all referenced ids are resolved inside the active workspace only.
+  - missing or cross-workspace refs collapse to module-scoped `404` errors.
+
+### GET `/api/tickets`
+
+- Purpose: list tickets in the current workspace with pagination, search, filters, and sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` or `search` optional (searches ticket `number` and `subject` only)
+  - `status` optional enum
+  - `priority` optional enum
+  - `mailboxId`, `assigneeId`, `categoryId`, `tagId`, `contactId`, `organizationId` optional mongo ids
+  - `unassigned` optional boolean
+  - `channel` optional enum
+  - `includeClosed` optional boolean
+  - `createdFrom`, `createdTo`, `updatedFrom`, `updatedTo` optional ISO8601 timestamps
+  - `sort` optional allowlist: `number|-number|subject|-subject|priority|-priority|createdAt|-createdAt|updatedAt|-updatedAt|lastMessageAt|-lastMessageAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "tickets": [
+    {
+      "_id": "65f0...",
+      "workspaceId": "65aa...",
+      "mailboxId": "65f2...",
+      "number": 42,
+      "subject": "Billing issue on paid plan",
+      "status": "new",
+      "priority": "high",
+      "channel": "manual",
+      "contactId": "65f1...",
+      "organizationId": "65f3...",
+      "conversationId": "65f7...",
+      "messageCount": 1,
+      "lastMessageType": "internal_note",
+      "lastMessagePreview": "Customer already called support.",
+      "mailbox": {
+        "_id": "65f2...",
+        "name": "Support",
+        "type": "email",
+        "emailAddress": null,
+        "isDefault": true,
+        "isActive": true
+      },
+      "contact": {
+        "_id": "65f1...",
+        "organizationId": "65f3...",
+        "fullName": "Jane Doe",
+        "email": "jane@example.com",
+        "phone": "+963955555555"
+      },
+      "conversation": {
+        "_id": "65f7...",
+        "mailboxId": "65f2...",
+        "channel": "manual",
+        "messageCount": 1,
+        "internalNoteCount": 1,
+        "lastMessageType": "internal_note",
+        "lastMessagePreview": "Customer already called support."
+      }
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Anti-enumeration note:
+  - the endpoint is always scoped to the active workspace from the token.
+  - filter ids are applied inside the current workspace only and never expose foreign-tenant existence.
+
+### GET `/api/tickets/:id`
+
+- Purpose: fetch one ticket detail in the current workspace, including reference summaries and conversation summary.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "workspaceId": "65aa...",
+    "mailboxId": "65f2...",
+    "number": 42,
+    "subject": "Billing issue on paid plan",
+    "status": "new",
+    "priority": "high",
+    "channel": "manual",
+    "categoryId": "65f4...",
+    "tagIds": ["65f5..."],
+    "contactId": "65f1...",
+    "organizationId": "65f3...",
+    "conversationId": "65f7...",
+    "messageCount": 1,
+    "publicMessageCount": 0,
+    "internalNoteCount": 1,
+    "attachmentCount": 0,
+    "participantCount": 0,
+    "lastMessageType": "internal_note",
+    "lastMessagePreview": "Customer already called support.",
+    "mailbox": {
+      "_id": "65f2...",
+      "name": "Support",
+      "type": "email",
+      "emailAddress": null,
+      "isDefault": true,
+      "isActive": true
+    },
+    "category": {
+      "_id": "65f4...",
+      "name": "Billing",
+      "slug": "billing",
+      "path": "billing",
+      "isActive": false
+    },
+    "tags": [
+      {
+        "_id": "65f5...",
+        "name": "VIP",
+        "isActive": false
+      }
+    ],
+    "conversation": {
+      "_id": "65f7...",
+      "mailboxId": "65f2...",
+      "channel": "manual",
+      "messageCount": 1,
+      "internalNoteCount": 1,
+      "lastMessageType": "internal_note",
+      "lastMessagePreview": "Customer already called support."
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticket.notFound`.
+  - already-linked inactive category/tag refs remain readable inside the ticket detail payload.
+
+### PATCH `/api/tickets/:id`
+
+- Purpose: update editable ticket record fields in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "subject": "Updated billing issue subject",
+  "priority": "urgent",
+  "categoryId": "65f4...",
+  "tagIds": ["65f5..."],
+  "mailboxId": "65f2..."
+}
+```
+
+- Request rules:
+  - allowed fields only: `subject`, `priority`, `categoryId`, `tagIds`, `mailboxId`
+  - at least one allowed field is required
+  - `categoryId` may be `null` to clear the category
+  - `tagIds` replaces the full linked tag set
+  - `mailboxId` may change only while `messageCount = 0`
+  - `status`, `contactId`, `organizationId`, `conversationId`, counters, and unknown fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.updated",
+  "message": "Ticket updated successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "subject": "Updated billing issue subject",
+    "priority": "urgent",
+    "mailboxId": "65f2...",
+    "categoryId": "65f4...",
+    "tagIds": ["65f5..."]
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound | errors.mailbox.notFound | errors.ticketCategory.notFound | errors.ticketTag.notFound`
+  - `409` `errors.ticket.mailboxChangeNotAllowed`
+  - `403` `errors.auth.forbiddenRole`
+- Anti-enumeration note:
+  - cross-workspace ticket ids and referenced ids collapse to workspace-scoped `404` responses.
+
+### GET `/api/tickets/:id/conversation`
+
+- Purpose: return the one conversation summary linked to the ticket in the current workspace.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "conversation": {
+    "_id": "65f7...",
+    "workspaceId": "65aa...",
+    "ticketId": "65f0...",
+    "mailboxId": "65f2...",
+    "channel": "manual",
+    "messageCount": 3,
+    "publicMessageCount": 1,
+    "internalNoteCount": 1,
+    "attachmentCount": 2,
+    "lastMessageAt": "2026-03-13T12:00:00.000Z",
+    "lastMessageType": "customer_message",
+    "lastMessagePreview": "Customer replied with more details.",
+    "mailbox": {
+      "_id": "65f2...",
+      "name": "Support",
+      "type": "email",
+      "emailAddress": null,
+      "isDefault": true,
+      "isActive": true
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound`
+  - `500` `errors.ticket.conversationInvariantFailed`
+- Anti-enumeration note:
+  - cross-workspace ticket ids resolve as `404 errors.ticket.notFound`.
+
+### GET `/api/tickets/:id/messages`
+
+- Purpose: list paginated message history for the ticket thread.
+- Request params:
+  - `id`: mongo id
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `type` optional enum: `customer_message|public_reply|internal_note|system_event`
+  - `sort` optional allowlist: `createdAt|-createdAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "messages": [
+    {
+      "_id": "65f8...",
+      "workspaceId": "65aa...",
+      "conversationId": "65f7...",
+      "ticketId": "65f0...",
+      "mailboxId": "65f2...",
+      "channel": "manual",
+      "type": "internal_note",
+      "direction": null,
+      "bodyText": "Customer already called support.",
+      "attachmentFileIds": ["65f9..."],
+      "attachments": [
+        {
+          "_id": "65f9...",
+          "url": "/api/files/65f9.../download",
+          "originalName": "call-log.txt",
+          "mimeType": "text/plain",
+          "sizeBytes": 124
+        }
+      ],
+      "createdByUserId": "65fa...",
+      "createdBy": {
+        "_id": "65fa...",
+        "email": "agent@example.com",
+        "name": "Support Agent",
+        "avatar": null,
+        "status": "active"
+      },
+      "createdAt": "2026-03-13T11:00:00.000Z",
+      "updatedAt": "2026-03-13T11:00:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound`
+- Anti-enumeration note:
+  - the ticket id is always resolved inside the active workspace only.
+
+### POST `/api/tickets/:id/messages`
+
+- Purpose: append a message to the ticket thread and update ticket/conversation summaries.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "type": "public_reply",
+  "bodyText": "We have applied the fix and are waiting for your confirmation.",
+  "bodyHtml": null,
+  "attachmentFileIds": ["65f9..."]
+}
+```
+
+- Request rules:
+  - `type` allowed values: `customer_message|public_reply|internal_note`
+  - `bodyText` required, trimmed string (`1..50000`)
+  - `bodyHtml` optional nullable string
+  - `attachmentFileIds` optional unique mongo id array (`max 20`)
+  - file ids must resolve to current-workspace, non-deleted, storage-ready files
+  - files already attached to another message are rejected
+  - closed tickets accept `internal_note` only
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.messageCreated",
+  "message": "Ticket message created successfully.",
+  "messageRecord": {
+    "_id": "65f8...",
+    "ticketId": "65f0...",
+    "conversationId": "65f7...",
+    "type": "public_reply",
+    "direction": "outbound",
+    "bodyText": "We have applied the fix and are waiting for your confirmation.",
+    "attachmentFileIds": ["65f9..."],
+    "attachments": [
+      {
+        "_id": "65f9...",
+        "url": "/api/files/65f9.../download",
+        "originalName": "resolution.txt",
+        "mimeType": "text/plain",
+        "sizeBytes": 124
+      }
+    ]
+  },
+  "conversation": {
+    "_id": "65f7...",
+    "ticketId": "65f0...",
+    "messageCount": 2,
+    "publicMessageCount": 1,
+    "attachmentCount": 1,
+    "lastMessageType": "public_reply",
+    "lastMessagePreview": "We have applied the fix and are waiting for your confirmation."
+  },
+  "ticketSummary": {
+    "_id": "65f0...",
+    "status": "waiting_on_customer",
+    "messageCount": 2,
+    "publicMessageCount": 1,
+    "attachmentCount": 1,
+    "lastMessageType": "public_reply",
+    "lastMessagePreview": "We have applied the fix and are waiting for your confirmation.",
+    "sla": {
+      "firstResponseAt": "2026-03-13T12:10:00.000Z",
+      "resolvedAt": null
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound | errors.file.notFound`
+  - `409` `errors.ticket.closedMessageNotAllowed | errors.ticket.attachmentAlreadyLinked`
+  - `403` `errors.auth.forbiddenRole`
+- Anti-enumeration note:
+  - ticket and file ids are resolved only inside the active workspace.
+  - missing or cross-workspace refs collapse to workspace-scoped `404` responses.
+- Notes:
+  - `public_reply` moves the ticket to `waiting_on_customer`.
+  - `customer_message` reopens a solved ticket and sets status to `open`.
+  - `internal_note` does not change ticket status.
+
+### POST `/api/tickets/:id/assign`
+
+- Purpose: assign the ticket to an operational workspace member.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "assigneeId": "65fa..."
+}
+```
+
+- Request rules:
+  - `assigneeId` required mongo id
+  - assignee must be an active same-workspace member with role `owner|admin|agent`
+  - `viewer` cannot be assigned
+  - `owner|admin` can assign any eligible assignee
+  - agents should use `POST /api/tickets/:id/self-assign`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.assigned",
+  "message": "Ticket assigned successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "assigneeId": "65fa...",
+    "assignedAt": "2026-03-13T12:15:00.000Z",
+    "status": "open"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound | errors.ticket.assigneeNotFound`
+- Anti-enumeration note:
+  - missing or cross-workspace ticket/user ids collapse to workspace-scoped `404` responses.
+
+### POST `/api/tickets/:id/unassign`
+
+- Purpose: clear the current ticket assignee.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.unassigned",
+  "message": "Ticket unassigned successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "assigneeId": null,
+    "assignedAt": null
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole | errors.ticket.unassignNotAllowed`
+  - `404` `errors.ticket.notFound`
+- Anti-enumeration note:
+  - ticket lookup always stays inside the active workspace.
+- Notes:
+  - the operation is idempotent when the ticket is already unassigned.
+  - `agent` can unassign tickets assigned to themselves; `owner|admin` can unassign any ticket.
+
+### POST `/api/tickets/:id/self-assign`
+
+- Purpose: assign the ticket to the current authenticated operational user.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.selfAssigned",
+  "message": "Ticket assigned to you successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "assigneeId": "65fa...",
+    "assignedAt": "2026-03-13T12:15:00.000Z",
+    "status": "open"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+  - `409` `errors.ticket.selfAssignNotAvailable`
+- Anti-enumeration note:
+  - ticket lookup is resolved only inside the active workspace.
+- Notes:
+  - self-assignment works when the ticket is unassigned or already assigned to the current user.
+  - this endpoint does not allow silently taking tickets already assigned to another user.
+
+### POST `/api/tickets/:id/status`
+
+- Purpose: move the ticket through an allowed explicit non-close status transition.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "status": "pending"
+}
+```
+
+- Request rules:
+  - `status` required enum: `open|pending|waiting_on_customer|solved`
+  - allowed transitions:
+    - `new -> open|pending|waiting_on_customer|solved`
+    - `open -> pending|waiting_on_customer|solved`
+    - `pending -> open|waiting_on_customer|solved`
+    - `waiting_on_customer -> open|pending|solved`
+    - `solved -> open`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.statusUpdated",
+  "message": "Ticket status updated successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "status": "pending",
+    "statusChangedAt": "2026-03-13T12:20:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+  - `409` `errors.ticket.invalidStatusTransition`
+- Anti-enumeration note:
+  - cross-workspace ticket ids resolve as `404 errors.ticket.notFound`.
+
+### POST `/api/tickets/:id/solve`
+
+- Purpose: mark the ticket as solved through the explicit lifecycle action.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.solved",
+  "message": "Ticket marked as solved successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "status": "solved",
+    "statusChangedAt": "2026-03-13T12:25:00.000Z",
+    "sla": {
+      "resolvedAt": "2026-03-13T12:25:00.000Z"
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+  - `409` `errors.ticket.solveNotAllowed`
+- Anti-enumeration note:
+  - ticket lookup is restricted to the current workspace.
+
+### POST `/api/tickets/:id/close`
+
+- Purpose: close a solved ticket explicitly.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.closed",
+  "message": "Ticket closed successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "status": "closed",
+    "closedAt": "2026-03-13T12:30:00.000Z",
+    "statusChangedAt": "2026-03-13T12:30:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+  - `409` `errors.ticket.closeNotAllowed`
+- Anti-enumeration note:
+  - ticket lookup is resolved only in the active workspace.
+- Notes:
+  - closing preserves the existing ticket resolution marker.
+
+### POST `/api/tickets/:id/reopen`
+
+- Purpose: reopen a solved or closed ticket and return it to `open`.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.reopened",
+  "message": "Ticket reopened successfully.",
+  "ticket": {
+    "_id": "65f0...",
+    "status": "open",
+    "closedAt": null,
+    "statusChangedAt": "2026-03-13T12:35:00.000Z",
+    "sla": {
+      "resolvedAt": null
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+  - `409` `errors.ticket.reopenNotAllowed`
+- Anti-enumeration note:
+  - cross-workspace ticket ids collapse to `404 errors.ticket.notFound`.
+- Notes:
+  - reopening a closed ticket restores message writes for `customer_message` and `public_reply`.
+
+### GET `/api/tickets/:id/participants`
+
+- Purpose: list active internal participants linked to the ticket.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "participants": [
+    {
+      "_id": "65fb...",
+      "workspaceId": "65aa...",
+      "ticketId": "65f0...",
+      "userId": "65fa...",
+      "type": "watcher",
+      "createdAt": "2026-03-13T12:40:00.000Z",
+      "updatedAt": "2026-03-13T12:40:00.000Z",
+      "user": {
+        "_id": "65fa...",
+        "email": "viewer@example.com",
+        "name": "Viewer User",
+        "avatar": null,
+        "status": "active",
+        "roleKey": "viewer"
+      }
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticket.notFound`
+- Anti-enumeration note:
+  - ticket ids are resolved only inside the active workspace.
+
+### POST `/api/tickets/:id/participants`
+
+- Purpose: add or update an internal participant on the ticket.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "userId": "65fa...",
+  "type": "collaborator"
+}
+```
+
+- Request rules:
+  - `userId` required mongo id
+  - `type` required enum: `watcher|collaborator`
+  - target user must be an active same-workspace member
+  - participants are metadata only and may include viewers
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.participantSaved",
+  "message": "Ticket participant saved successfully.",
+  "participant": {
+    "_id": "65fb...",
+    "ticketId": "65f0...",
+    "userId": "65fa...",
+    "type": "collaborator"
+  },
+  "ticketSummary": {
+    "_id": "65f0...",
+    "participantCount": 1
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound | errors.ticket.participantUserNotFound`
+- Anti-enumeration note:
+  - missing or cross-workspace ticket/user ids resolve through workspace-scoped `404` responses.
+- Notes:
+  - re-posting the same `userId` updates the participant `type` instead of creating a duplicate active row.
+
+### DELETE `/api/tickets/:id/participants/:userId`
+
+- Purpose: remove an active participant from the ticket.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin|agent`
+- Request params:
+  - `id`: mongo id
+  - `userId`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticket.participantRemoved",
+  "message": "Ticket participant removed successfully.",
+  "ticketSummary": {
+    "_id": "65f0...",
+    "participantCount": 0
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticket.notFound`
+- Anti-enumeration note:
+  - the ticket is always resolved inside the active workspace before participant removal logic runs.
+- Notes:
+  - removing an already-absent participant is idempotent.
+
+### GET `/api/tickets/categories`
+
+- Purpose: list ticket categories with pagination, search, filters, and sort.
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` or `search` optional (partial search over `name`, `slug`, `path`)
+  - `parentId` optional mongo id
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+  - `sort` optional allowlist: `order|-order|name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "categories": [
+    {
+      "_id": "65f1...",
+      "workspaceId": "65aa...",
+      "name": "Customer Care",
+      "slug": "customer-care",
+      "parentId": null,
+      "path": "customer-care",
+      "order": 0,
+      "isActive": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant` for unauthorized inactive visibility requests
+- Anti-enumeration note:
+  - results are restricted to the current workspace only.
+
+### GET `/api/tickets/categories/options`
+
+- Purpose: return lightweight category options for selectors and typeaheads.
+- Request query:
+  - `q` or `search` optional
+  - `parentId` optional mongo id
+  - `limit` optional (`1..50`, default `20`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f1...",
+      "name": "Customer Care",
+      "slug": "customer-care",
+      "parentId": null,
+      "path": "customer-care"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Anti-enumeration note:
+  - only categories from the current workspace are returned.
+
+### GET `/api/tickets/categories/:id`
+
+- Purpose: fetch one ticket category in the current workspace.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "category": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Refund Requests",
+    "slug": "refund-requests",
+    "parentId": "65f0...",
+    "path": "customer-care/refund-requests",
+    "order": 0,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticketCategory.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketCategory.notFound`.
+  - inactive rows are hidden from `agent|viewer`.
+
+### POST `/api/tickets/categories`
+
+- Purpose: create a ticket category in the current workspace.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "name": "Refund Requests",
+  "slug": "refund-requests",
+  "parentId": "65f0...",
+  "order": 10
+}
+```
+
+- `name` required, `1..120`
+- `slug` optional, `1..140`; when omitted or blank, the service derives it from `name`
+- `parentId` optional, must reference a non-deleted category in the same workspace
+- `order` optional integer
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketCategory.created",
+  "message": "Ticket category created successfully.",
+  "category": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Refund Requests",
+    "slug": "refund-requests",
+    "parentId": "65f0...",
+    "path": "customer-care/refund-requests",
+    "order": 10,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketCategory.notFound | errors.workspace.notFound`
+  - `409` `errors.ticketCategory.slugAlreadyUsed`
+- Anti-enumeration note:
+  - cross-workspace or deleted parent ids collapse to `404 errors.ticketCategory.notFound`.
+
+### PATCH `/api/tickets/categories/:id`
+
+- Purpose: update ticket category metadata.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - updatable fields: `name`, `slug`, `parentId`, `order`
+  - at least one allowed field is required
+  - unknown fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketCategory.updated",
+  "message": "Ticket category updated successfully.",
+  "category": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Refund Requests",
+    "slug": "refund-requests",
+    "parentId": "65f0...",
+    "path": "customer-care/refund-requests",
+    "order": 20,
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketCategory.notFound | errors.workspace.notFound`
+  - `409` `errors.ticketCategory.slugAlreadyUsed`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketCategory.notFound`.
+- Notes:
+  - `parentId` cannot point to the same category.
+  - parent changes that would create ancestry cycles are rejected.
+  - parent or slug changes recalculate the category path and descendant paths.
+
+### POST `/api/tickets/categories/:id/activate`
+
+- Purpose: activate a ticket category.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketCategory.activated",
+  "message": "Ticket category activated successfully.",
+  "category": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketCategory.notFound | errors.workspace.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketCategory.notFound`.
+- Notes:
+  - the operation is idempotent.
+
+### POST `/api/tickets/categories/:id/deactivate`
+
+- Purpose: deactivate a ticket category.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketCategory.deactivated",
+  "message": "Ticket category deactivated successfully.",
+  "category": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "isActive": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketCategory.notFound | errors.workspace.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketCategory.notFound`.
+- Notes:
+  - the operation is idempotent.
+
+### GET `/api/tickets/tags`
+
+- Purpose: list ticket tags with pagination, search, filters, and sort.
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` or `search` optional (partial search over `name`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+  - `sort` optional allowlist: `name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "tags": [
+    {
+      "_id": "65f1...",
+      "workspaceId": "65aa...",
+      "name": "VIP",
+      "isActive": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant` for unauthorized inactive visibility requests
+- Anti-enumeration note:
+  - results are restricted to the current workspace only.
+
+### GET `/api/tickets/tags/options`
+
+- Purpose: return lightweight tag options for selectors and typeaheads.
+- Request query:
+  - `q` or `search` optional
+  - `limit` optional (`1..50`, default `20`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f1...",
+      "name": "VIP"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Anti-enumeration note:
+  - only tags from the current workspace are returned.
+
+### GET `/api/tickets/tags/:id`
+
+- Purpose: fetch one ticket tag in the current workspace.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "VIP",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.ticketTag.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
+  - inactive rows are hidden from `agent|viewer`.
+
+### POST `/api/tickets/tags`
+
+- Purpose: create a ticket tag in the current workspace.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "name": "VIP"
+}
+```
+
+- `name` required, `1..80`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketTag.created",
+  "message": "Ticket tag created successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "VIP",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+  - `409` `errors.ticketTag.nameAlreadyUsed`
+- Anti-enumeration note:
+  - tag creation always applies to the current workspace only.
+
+### PATCH `/api/tickets/tags/:id`
+
+- Purpose: update ticket tag metadata.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - updatable fields: `name`
+  - at least one allowed field is required
+  - unknown fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketTag.updated",
+  "message": "Ticket tag updated successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Priority VIP",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketTag.notFound | errors.workspace.notFound`
+  - `409` `errors.ticketTag.nameAlreadyUsed`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
+
+### POST `/api/tickets/tags/:id/activate`
+
+- Purpose: activate a ticket tag.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketTag.activated",
+  "message": "Ticket tag activated successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketTag.notFound | errors.workspace.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
+- Notes:
+  - the operation is idempotent.
+
+### POST `/api/tickets/tags/:id/deactivate`
+
+- Purpose: deactivate a ticket tag.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketTag.deactivated",
+  "message": "Ticket tag deactivated successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "isActive": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketTag.notFound | errors.workspace.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
+- Notes:
+  - the operation is idempotent.
