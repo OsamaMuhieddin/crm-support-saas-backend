@@ -236,6 +236,7 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       expect(ownerAssign.body.ticket.assigneeId).toBe(agent.userId);
       expect(ownerAssign.body.ticket.assignedAt).toBeTruthy();
       expect(ownerAssign.body.ticket.status).toBe(TICKET_STATUS.OPEN);
+      expect(ownerAssign.body.ticket).not.toHaveProperty('contact');
 
       const adminUnassign = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/unassign`)
@@ -246,6 +247,8 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       expect(adminUnassign.body.messageKey).toBe('success.ticket.unassigned');
       expect(adminUnassign.body.ticket.assigneeId).toBeNull();
       expect(adminUnassign.body.ticket.assignedAt).toBeNull();
+      expect(adminUnassign.body.ticket.status).toBe(TICKET_STATUS.OPEN);
+      expect(adminUnassign.body.ticket).not.toHaveProperty('mailbox');
 
       const agentSelfAssign = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/self-assign`)
@@ -258,6 +261,7 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       );
       expect(agentSelfAssign.body.ticket.assigneeId).toBe(agent.userId);
       expect(agentSelfAssign.body.ticket.status).toBe(TICKET_STATUS.OPEN);
+      expect(agentSelfAssign.body.ticket).not.toHaveProperty('conversation');
 
       const agentSelfAssignAgain = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/self-assign`)
@@ -353,6 +357,7 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       expect(pending.body.messageKey).toBe('success.ticket.statusUpdated');
       expect(pending.body.ticket.status).toBe(TICKET_STATUS.PENDING);
       expect(pending.body.ticket.statusChangedAt).toBeTruthy();
+      expect(pending.body.ticket).not.toHaveProperty('mailbox');
 
       const waiting = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/status`)
@@ -538,6 +543,12 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
           userId: viewer.userId,
           type: TICKET_PARTICIPANT_TYPE.COLLABORATOR,
         })
+      );
+      expect(listAfterUpsert.body.participants[0]).not.toHaveProperty(
+        'workspaceId'
+      );
+      expect(listAfterUpsert.body.participants[0]).not.toHaveProperty(
+        'ticketId'
       );
 
       const removeViewer = await request(app)

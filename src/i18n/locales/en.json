@@ -154,7 +154,7 @@
       "organizationMismatch": "Organization does not match the selected contact.",
       "assigneeNotFound": "Assignee is not available in this workspace.",
       "assignOthersNotAllowed": "You can only assign tickets to yourself from this endpoint.",
-      "selfAssignNotAvailable": "This ticket cannot be self-assigned right now.",
+      "selfAssignNotAvailable": "This ticket is already assigned to another user and cannot be self-assigned.",
       "unassignNotAllowed": "You are not allowed to unassign this ticket.",
       "invalidStatusTransition": "Cannot change ticket status from {{from}} to {{to}}.",
       "solveNotAllowed": "This ticket cannot be marked as solved from {{from}}.",

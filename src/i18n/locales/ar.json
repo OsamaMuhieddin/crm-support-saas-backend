@@ -154,7 +154,7 @@
       "organizationMismatch": "المؤسسة لا تطابق جهة الاتصال المحددة.",
       "assigneeNotFound": "المُسند إليه غير متاح في مساحة العمل هذه.",
       "assignOthersNotAllowed": "يمكنك إسناد التذكرة إلى نفسك فقط عبر هذا الإجراء.",
-      "selfAssignNotAvailable": "لا يمكن إسناد هذه التذكرة إلى نفسك حالياً.",
+      "selfAssignNotAvailable": "هذه التذكرة مسندة بالفعل إلى مستخدم آخر، ولا يمكن إسنادها إلى نفسك.",
       "unassignNotAllowed": "ليست لديك صلاحية إلغاء إسناد هذه التذكرة.",
       "invalidStatusTransition": "لا يمكن تغيير حالة التذكرة من {{from}} إلى {{to}}.",
       "solveNotAllowed": "لا يمكن تعليم هذه التذكرة كمحلولة انطلاقًا من الحالة {{from}}.",

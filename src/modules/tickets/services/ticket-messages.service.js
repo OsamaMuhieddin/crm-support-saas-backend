@@ -119,25 +119,16 @@ const USER_MESSAGE_SUMMARY_PROJECTION = {
   status: 1,
 };
 
-const ATTACHMENT_FILE_PROJECTION = {
+const ATTACHMENT_SUMMARY_PROJECTION = {
   _id: 1,
-  workspaceId: 1,
-  uploadedByUserId: 1,
   url: 1,
   sizeBytes: 1,
   mimeType: 1,
   originalName: 1,
-  extension: 1,
-  checksum: 1,
-  storageStatus: 1,
-  isPrivate: 1,
-  kind: 1,
-  source: 1,
-  metadata: 1,
-  lastAccessedAt: 1,
-  downloadCount: 1,
-  createdAt: 1,
-  updatedAt: 1,
+};
+
+const ATTACHMENT_LINK_PROJECTION = {
+  _id: 1,
 };
 
 const buildMessagePreview = (value) => {
@@ -177,23 +168,10 @@ const buildCreatedBySummaryView = (user) => ({
 
 const buildAttachmentSummaryView = (file) => ({
   _id: normalizeObjectId(file._id),
-  workspaceId: normalizeObjectId(file.workspaceId),
-  uploadedByUserId: normalizeObjectId(file.uploadedByUserId),
   url: file.url,
   sizeBytes: file.sizeBytes,
   mimeType: file.mimeType,
   originalName: file.originalName,
-  extension: file.extension,
-  checksum: file.checksum,
-  storageStatus: file.storageStatus,
-  isPrivate: Boolean(file.isPrivate),
-  kind: file.kind,
-  source: file.source,
-  metadata: file.metadata,
-  lastAccessedAt: file.lastAccessedAt || null,
-  downloadCount: Number(file.downloadCount || 0),
-  createdAt: file.createdAt,
-  updatedAt: file.updatedAt,
 });
 
 const buildMessagePartyView = ({ name = null, email = null } = {}) => ({
@@ -266,10 +244,6 @@ const buildMessageView = ({
   createdByUsersById,
 }) => ({
   _id: normalizeObjectId(message._id),
-  workspaceId: normalizeObjectId(message.workspaceId),
-  conversationId: normalizeObjectId(message.conversationId),
-  ticketId: normalizeObjectId(message.ticketId),
-  mailboxId: normalizeObjectId(message.mailboxId),
   channel: message.channel,
   type: message.type,
   direction: message.direction || null,
@@ -278,17 +252,11 @@ const buildMessageView = ({
   subject: message.subject || null,
   bodyText: message.bodyText,
   bodyHtml: message.bodyHtml || null,
-  attachmentFileIds: (message.attachmentFileIds || []).map((fileId) =>
-    normalizeObjectId(fileId)
-  ),
   attachments: (message.attachmentFileIds || [])
     .map((fileId) => attachmentsById.get(String(fileId)) || null)
     .filter(Boolean),
   sentAt: message.sentAt || null,
   receivedAt: message.receivedAt || null,
-  createdByUserId: message.createdByUserId
-    ? normalizeObjectId(message.createdByUserId)
-    : null,
   createdBy: message.createdByUserId
     ? createdByUsersById.get(String(message.createdByUserId)) || null
     : null,
@@ -601,7 +569,7 @@ const validateAndLoadAttachmentFiles = async ({
     deletedAt: null,
     storageStatus: 'ready',
   })
-    .select(ATTACHMENT_FILE_PROJECTION)
+    .select(ATTACHMENT_LINK_PROJECTION)
     .lean();
 
   if (files.length !== normalizedAttachmentIds.length) {
@@ -701,7 +669,7 @@ const hydrateMessages = async ({ workspaceId, messages }) => {
           workspaceId: toObjectIdIfValid(workspaceId),
           deletedAt: null,
         })
-          .select(ATTACHMENT_FILE_PROJECTION)
+          .select(ATTACHMENT_SUMMARY_PROJECTION)
           .lean()
       : [],
     createdByUserIds.size

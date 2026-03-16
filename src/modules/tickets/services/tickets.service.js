@@ -188,6 +188,41 @@ const buildTicketSlaView = (sla = {}) => ({
   isResolutionBreached: Boolean(sla?.isResolutionBreached)
 })
 
+const buildTicketAssignmentActionView = (ticket) => ({
+  _id: normalizeObjectId(ticket._id),
+  assigneeId: ticket.assigneeId ? normalizeObjectId(ticket.assigneeId) : null,
+  assignedAt: ticket.assignedAt || null,
+  status: ticket.status
+})
+
+const buildTicketStatusActionView = (ticket) => ({
+  _id: normalizeObjectId(ticket._id),
+  status: ticket.status,
+  statusChangedAt: ticket.statusChangedAt || null
+})
+
+const buildTicketSolveActionView = (ticket) => ({
+  ...buildTicketStatusActionView(ticket),
+  sla: {
+    resolvedAt: ticket?.sla?.resolvedAt || null
+  }
+})
+
+const buildTicketCloseActionView = (ticket) => ({
+  ...buildTicketStatusActionView(ticket),
+  closedAt: ticket.closedAt || null,
+  sla: {
+    resolvedAt: ticket?.sla?.resolvedAt || null
+  }
+})
+
+const buildTicketReopenActionView = (ticket) => ({
+  ...buildTicketCloseActionView(ticket),
+  sla: {
+    resolvedAt: ticket?.sla?.resolvedAt || null
+  }
+})
+
 const buildTicketView = ({ ticket, references }) => {
   const referenceMaps = references || {}
   const category = ticket.categoryId
@@ -852,10 +887,9 @@ export const assignTicket = async ({
     await ticket.save()
   }
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildTicketAssignmentActionView(ticket)
+  }
 }
 
 export const unassignTicket = async ({
@@ -883,19 +917,17 @@ export const unassignTicket = async ({
   }
 
   if (!ticket.assigneeId) {
-    return getTicketById({
-      workspaceId: workspaceObjectId,
-      ticketId: ticket._id
-    })
+    return {
+      ticket: buildTicketAssignmentActionView(ticket)
+    }
   }
 
   ticket.assigneeId = null
   await ticket.save()
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildTicketAssignmentActionView(ticket)
+  }
 }
 
 export const selfAssignTicket = async ({
@@ -938,17 +970,17 @@ export const selfAssignTicket = async ({
     await ticket.save()
   }
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildTicketAssignmentActionView(ticket)
+  }
 }
 
 const updateTicketStatusInternal = async ({
   workspaceId,
   ticketId,
   nextStatus,
-  errorMessageKey
+  errorMessageKey,
+  buildResponse = buildTicketStatusActionView
 }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId)
   const ticket = await findTicketInWorkspaceOrThrow({
@@ -975,10 +1007,9 @@ const updateTicketStatusInternal = async ({
     await ticket.save()
   }
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildResponse(ticket)
+  }
 }
 
 export const updateTicketStatus = async ({
@@ -998,7 +1029,8 @@ export const solveTicket = async ({ workspaceId, ticketId }) =>
     workspaceId,
     ticketId,
     nextStatus: TICKET_STATUS.SOLVED,
-    errorMessageKey: 'errors.ticket.solveNotAllowed'
+    errorMessageKey: 'errors.ticket.solveNotAllowed',
+    buildResponse: buildTicketSolveActionView
   })
 
 export const closeTicket = async ({ workspaceId, ticketId }) => {
@@ -1022,10 +1054,9 @@ export const closeTicket = async ({ workspaceId, ticketId }) => {
     await ticket.save()
   }
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildTicketCloseActionView(ticket)
+  }
 }
 
 export const reopenTicket = async ({ workspaceId, ticketId }) => {
@@ -1057,8 +1088,7 @@ export const reopenTicket = async ({ workspaceId, ticketId }) => {
     await ticket.save()
   }
 
-  return getTicketById({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
+  return {
+    ticket: buildTicketReopenActionView(ticket)
+  }
 }

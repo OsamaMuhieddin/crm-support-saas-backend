@@ -7,9 +7,9 @@ let smtpTransporter = null;
 const hasSendgrid = Boolean(authConfig.email.sendgridApiKey);
 const hasSmtp = Boolean(
   authConfig.email.smtp.host &&
-    authConfig.email.smtp.port &&
-    authConfig.email.smtp.user &&
-    authConfig.email.smtp.pass
+  authConfig.email.smtp.port &&
+  authConfig.email.smtp.user &&
+  authConfig.email.smtp.pass
 );
 
 if (hasSendgrid) {
@@ -28,8 +28,8 @@ const getSmtpTransporter = () => {
       secure: authConfig.email.smtp.port === 465,
       auth: {
         user: authConfig.email.smtp.user,
-        pass: authConfig.email.smtp.pass
-      }
+        pass: authConfig.email.smtp.pass,
+      },
     });
   }
 
@@ -49,7 +49,7 @@ const sendMail = async ({ to, subject, text, html, debugPayload }) => {
       from,
       subject,
       text,
-      html
+      html,
     });
     return;
   }
@@ -61,7 +61,7 @@ const sendMail = async ({ to, subject, text, html, debugPayload }) => {
       from: from || authConfig.email.smtp.user,
       subject,
       text,
-      html
+      html,
     });
     return;
   }
@@ -102,7 +102,7 @@ export const sendOtpEmail = async ({ to, purpose, code }) => {
     subject,
     text,
     html,
-    debugPayload: { purpose, code }
+    debugPayload: { purpose, code },
   });
 };
 
@@ -113,7 +113,7 @@ export const sendOtpEmailFireAndForget = (payload) => {
       console.error('OTP email send failed:', {
         to: payload?.to,
         purpose: payload?.purpose,
-        error: error?.message || 'unknown'
+        error: error?.message || 'unknown',
       });
     });
 };
@@ -124,7 +124,7 @@ export const sendInviteEmail = async ({
   workspaceName,
   inviteLinkOrToken,
   roleKey,
-  expiresAt
+  expiresAt,
 }) => {
   const subject = `You are invited to join ${workspaceName}`;
   const inviterText = invitedByName
@@ -145,7 +145,7 @@ export const sendInviteEmail = async ({
       workspaceName,
       inviteLinkOrToken,
       roleKey,
-      expiresAt
-    }
+      expiresAt,
+    },
   });
 };

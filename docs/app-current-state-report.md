@@ -364,8 +364,13 @@ Tickets notes:
 - The current ticket runtime surface includes core ticket records, conversation/message flows, and workspace-scoped category/tag dictionaries.
 - Ticket creation can include a minimal initial message (`customer_message` or `internal_note`) with uploaded-file attachments.
 - Ticket message attachments are linked to the message as the semantic owner and to the ticket for reverse lookup.
+- Ticket message attachment payloads are lightweight summaries only: `_id`, `url`, `originalName`, `mimeType`, `sizeBytes`.
+- Ticket message payloads omit route-redundant ids and duplicate id-only fields when hydrated objects are already returned.
 - Closed tickets accept `internal_note` only until explicit reopen.
 - Ticket writes require active category/tag refs, while ticket detail still hydrates already-linked inactive refs.
+- `PATCH /api/tickets/:id` accepts a partial editable body but returns the full hydrated updated ticket payload.
+- Assignment and lifecycle action endpoints return action-scoped ticket summaries instead of the full hydrated ticket detail payload.
+- Participant rows omit redundant `workspaceId` and `ticketId` fields because the route is already ticket-scoped.
 - `POST /api/tickets/:id/assign` is `owner|admin` only; agents use `POST /api/tickets/:id/self-assign` and cannot steal assigned tickets.
 
 #### Workspace Context and Invite Management Endpoints

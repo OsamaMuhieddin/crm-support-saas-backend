@@ -297,6 +297,27 @@ describe('Ticket conversation and message endpoints', () => {
         },
       });
       expect(firstMessage.status).toBe(200);
+      expect(firstMessage.body.messageRecord.attachments).toEqual([
+        {
+          _id: upload.body.file._id,
+          url: `/api/files/${upload.body.file._id}/download`,
+          originalName: 'message-thread.txt',
+          mimeType: 'text/plain',
+          sizeBytes: 10,
+        },
+      ]);
+      expect(firstMessage.body.messageRecord).not.toHaveProperty('workspaceId');
+      expect(firstMessage.body.messageRecord).not.toHaveProperty(
+        'conversationId'
+      );
+      expect(firstMessage.body.messageRecord).not.toHaveProperty('ticketId');
+      expect(firstMessage.body.messageRecord).not.toHaveProperty('mailboxId');
+      expect(firstMessage.body.messageRecord).not.toHaveProperty(
+        'attachmentFileIds'
+      );
+      expect(firstMessage.body.messageRecord).not.toHaveProperty(
+        'createdByUserId'
+      );
 
       const secondMessage = await createTicketMessageRequest({
         accessToken: owner.accessToken,
@@ -339,12 +360,33 @@ describe('Ticket conversation and message endpoints', () => {
         })
       );
       expect(listResponse.body.messages[0].attachments).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
+        [
+          {
             _id: upload.body.file._id,
+            url: `/api/files/${upload.body.file._id}/download`,
             originalName: 'message-thread.txt',
-          }),
-        ])
+            mimeType: 'text/plain',
+            sizeBytes: 10,
+          },
+        ]
+      );
+      expect(listResponse.body.messages[0].attachments[0]).not.toHaveProperty(
+        'checksum'
+      );
+      expect(listResponse.body.messages[0].attachments[0]).not.toHaveProperty(
+        'downloadCount'
+      );
+      expect(listResponse.body.messages[0]).not.toHaveProperty('workspaceId');
+      expect(listResponse.body.messages[0]).not.toHaveProperty(
+        'conversationId'
+      );
+      expect(listResponse.body.messages[0]).not.toHaveProperty('ticketId');
+      expect(listResponse.body.messages[0]).not.toHaveProperty('mailboxId');
+      expect(listResponse.body.messages[0]).not.toHaveProperty(
+        'attachmentFileIds'
+      );
+      expect(listResponse.body.messages[0]).not.toHaveProperty(
+        'createdByUserId'
       );
       expect(listResponse.body.messages[1]).toEqual(
         expect.objectContaining({

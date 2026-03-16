@@ -36,8 +36,6 @@ const syncTicketParticipantCount = async ({ workspaceId, ticketId }) => {
 
 const buildParticipantView = ({ participant, user }) => ({
   _id: normalizeObjectId(participant._id),
-  workspaceId: normalizeObjectId(participant.workspaceId),
-  ticketId: normalizeObjectId(participant.ticketId),
   userId: normalizeObjectId(participant.userId),
   type: participant.type,
   createdAt: participant.createdAt,

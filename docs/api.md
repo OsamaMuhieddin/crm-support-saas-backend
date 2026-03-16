@@ -1408,6 +1408,8 @@ npm run mailboxes:backfill-default
 - Ticket message attachments are linked to the message as the semantic owner and to the root ticket for reverse lookup.
 - Ticket list excludes `closed` tickets by default unless `includeClosed=true` is requested or an explicit `status` filter is supplied.
 - `assigneeId` lives on the ticket itself; assignment actions update `assignedAt` and move `new` tickets to `open`.
+- `PATCH /api/tickets/:id` returns the full hydrated ticket detail shape after applying a partial edit.
+- Assignment and lifecycle action endpoints return action-scoped ticket summaries instead of the full hydrated ticket detail payload.
 - Ticket participants are internal-only metadata (`watcher|collaborator`) and do not grant or revoke access.
 - `owner|admin` can assign any operational member (`owner|admin|agent`).
 - `agent` self-assignment uses `POST /api/tickets/:id/self-assign` only and is limited to unassigned tickets or tickets they already own.
@@ -1735,14 +1737,61 @@ npm run mailboxes:backfill-default
   "message": "Ticket updated successfully.",
   "ticket": {
     "_id": "65f0...",
+    "workspaceId": "65aa...",
+    "number": 42,
     "subject": "Updated billing issue subject",
+    "status": "new",
     "priority": "urgent",
     "mailboxId": "65f2...",
     "categoryId": "65f4...",
-    "tagIds": ["65f5..."]
+    "tagIds": ["65f5..."],
+    "contactId": "65f1...",
+    "organizationId": "65f3...",
+    "conversationId": "65f7...",
+    "messageCount": 0,
+    "publicMessageCount": 0,
+    "internalNoteCount": 0,
+    "attachmentCount": 0,
+    "participantCount": 0,
+    "mailbox": {
+      "_id": "65f2...",
+      "name": "Support",
+      "type": "email",
+      "emailAddress": null,
+      "isDefault": false,
+      "isActive": true
+    },
+    "category": {
+      "_id": "65f4...",
+      "name": "Billing",
+      "slug": "billing",
+      "path": "billing",
+      "isActive": true
+    },
+    "tags": [
+      {
+        "_id": "65f5...",
+        "name": "VIP",
+        "isActive": true
+      }
+    ],
+    "conversation": {
+      "_id": "65f7...",
+      "mailboxId": "65f2...",
+      "channel": "manual",
+      "messageCount": 0,
+      "publicMessageCount": 0,
+      "internalNoteCount": 0,
+      "attachmentCount": 0,
+      "lastMessageType": null,
+      "lastMessagePreview": null
+    }
   }
 }
 ```
+
+- Notes:
+  - the request body is partial, but the response returns the full updated ticket detail shape, including hydrated reference summaries, matching `GET /api/tickets/:id`.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -1818,17 +1867,14 @@ npm run mailboxes:backfill-default
   "messages": [
     {
       "_id": "65f8...",
-      "workspaceId": "65aa...",
-      "conversationId": "65f7...",
-      "ticketId": "65f0...",
-      "mailboxId": "65f2...",
       "channel": "manual",
       "type": "internal_note",
       "direction": null,
       "from": null,
       "to": [],
+      "subject": null,
       "bodyText": "Customer already called support.",
-      "attachmentFileIds": ["65f9..."],
+      "bodyHtml": null,
       "attachments": [
         {
           "_id": "65f9...",
@@ -1838,7 +1884,6 @@ npm run mailboxes:backfill-default
           "sizeBytes": 124
         }
       ],
-      "createdByUserId": "65fa...",
       "createdBy": {
         "_id": "65fa...",
         "email": "agent@example.com",
@@ -1846,12 +1891,18 @@ npm run mailboxes:backfill-default
         "avatar": null,
         "status": "active"
       },
+      "sentAt": null,
+      "receivedAt": null,
       "createdAt": "2026-03-13T11:00:00.000Z",
       "updatedAt": "2026-03-13T11:00:00.000Z"
     }
   ]
 }
 ```
+
+- Notes:
+  - each `attachments[]` entry is a lightweight file summary only: `_id`, `url`, `originalName`, `mimeType`, `sizeBytes`.
+  - each message row omits route-redundant ids such as `workspaceId`, `ticketId`, `conversationId`, and `mailboxId`, and also omits duplicate id-only fields when the richer object is already present.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -1893,8 +1944,7 @@ npm run mailboxes:backfill-default
   "message": "Ticket message created successfully.",
   "messageRecord": {
     "_id": "65f8...",
-    "ticketId": "65f0...",
-    "conversationId": "65f7...",
+    "channel": "manual",
     "type": "public_reply",
     "direction": "outbound",
     "from": {
@@ -1908,7 +1958,7 @@ npm run mailboxes:backfill-default
       }
     ],
     "bodyText": "We have applied the fix and are waiting for your confirmation.",
-    "attachmentFileIds": ["65f9..."],
+    "bodyHtml": null,
     "attachments": [
       {
         "_id": "65f9...",
@@ -1917,7 +1967,18 @@ npm run mailboxes:backfill-default
         "mimeType": "text/plain",
         "sizeBytes": 124
       }
-    ]
+    ],
+    "sentAt": null,
+    "receivedAt": null,
+    "createdBy": {
+      "_id": "65fa...",
+      "email": "agent@example.com",
+      "name": "Support Agent",
+      "avatar": null,
+      "status": "active"
+    },
+    "createdAt": "2026-03-13T12:10:00.000Z",
+    "updatedAt": "2026-03-13T12:10:00.000Z"
   },
   "conversation": {
     "_id": "65f7...",
@@ -1944,6 +2005,9 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Notes:
+  - `messageRecord` uses the same slim message DTO style as the message list and omits route-redundant ids plus duplicate id-only fields when hydrated objects are already returned.
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `404` `errors.ticket.notFound | errors.file.notFound`
@@ -1953,6 +2017,7 @@ npm run mailboxes:backfill-default
   - ticket and file ids are resolved only inside the active workspace.
   - missing or cross-workspace refs collapse to workspace-scoped `404` responses.
 - Notes:
+  - each `attachments[]` entry is a lightweight file summary only: `_id`, `url`, `originalName`, `mimeType`, `sizeBytes`.
   - `public_reply` moves the ticket to `waiting_on_customer`.
   - `customer_message` sets the ticket to `open` and reopens solved tickets.
   - `internal_note` does not change ticket status.
@@ -1994,6 +2059,9 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Notes:
+  - assignment actions return an action-scoped ticket summary, not the full hydrated ticket detail payload.
+
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenRole`
@@ -2019,7 +2087,8 @@ npm run mailboxes:backfill-default
   "ticket": {
     "_id": "65f0...",
     "assigneeId": null,
-    "assignedAt": null
+    "assignedAt": null,
+    "status": "open"
   }
 }
 ```
@@ -2057,6 +2126,9 @@ npm run mailboxes:backfill-default
   }
 }
 ```
+
+- Notes:
+  - assignment actions return an action-scoped ticket summary, not the full hydrated ticket detail payload.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -2167,7 +2239,10 @@ npm run mailboxes:backfill-default
     "_id": "65f0...",
     "status": "closed",
     "closedAt": "2026-03-13T12:30:00.000Z",
-    "statusChangedAt": "2026-03-13T12:30:00.000Z"
+    "statusChangedAt": "2026-03-13T12:30:00.000Z",
+    "sla": {
+      "resolvedAt": "2026-03-13T12:25:00.000Z"
+    }
   }
 }
 ```
@@ -2236,8 +2311,6 @@ npm run mailboxes:backfill-default
   "participants": [
     {
       "_id": "65fb...",
-      "workspaceId": "65aa...",
-      "ticketId": "65f0...",
       "userId": "65fa...",
       "type": "watcher",
       "createdAt": "2026-03-13T12:40:00.000Z",
@@ -2290,9 +2363,18 @@ npm run mailboxes:backfill-default
   "message": "Ticket participant saved successfully.",
   "participant": {
     "_id": "65fb...",
-    "ticketId": "65f0...",
     "userId": "65fa...",
-    "type": "collaborator"
+    "type": "collaborator",
+    "createdAt": "2026-03-13T12:40:00.000Z",
+    "updatedAt": "2026-03-13T12:40:00.000Z",
+    "user": {
+      "_id": "65fa...",
+      "email": "viewer@example.com",
+      "name": "Viewer User",
+      "avatar": null,
+      "status": "active",
+      "roleKey": "viewer"
+    }
   },
   "ticketSummary": {
     "_id": "65f0...",
