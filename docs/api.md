@@ -1411,6 +1411,8 @@ npm run mailboxes:backfill-default
 - Ticket participants are internal-only metadata (`watcher|collaborator`) and do not grant or revoke access.
 - `owner|admin` can assign any operational member (`owner|admin|agent`).
 - `agent` self-assignment uses `POST /api/tickets/:id/self-assign` only and is limited to unassigned tickets or tickets they already own.
+- Manual message writes populate `from/to` parties from the linked contact and mailbox for `customer_message` and `public_reply`.
+- `customer_message` moves the ticket to `open`; `public_reply` moves it to `waiting_on_customer`; `internal_note` leaves status unchanged.
 - Closed tickets accept `internal_note` only until they are reopened explicitly.
 - Explicit lifecycle actions control `solved`, `closed`, and `reopen` transitions and keep `statusChangedAt`, `closedAt`, and live resolution markers consistent.
 
@@ -1428,7 +1430,7 @@ npm run mailboxes:backfill-default
 - Requirements:
   - Authorization required
   - active user + active workspace membership
-  - role must be `owner|admin`
+  - role must be `owner|admin|agent`
 - Request body:
 
 ```json
@@ -1459,6 +1461,7 @@ npm run mailboxes:backfill-default
   - `initialMessage.bodyText` required when `initialMessage` is present
   - `initialMessage.attachmentFileIds` optional unique mongo id array (`max 20`)
   - attachment ids must reference current-workspace files with `storageStatus = ready`
+  - create-time `customer_message` opens the ticket; create-time `internal_note` leaves ticket status unchanged
 - Success `200`:
 
 ```json
@@ -1552,13 +1555,14 @@ npm run mailboxes:backfill-default
   - `page` optional (`>=1`, default `1`)
   - `limit` optional (`1..100`, default `20`)
   - `q` or `search` optional (searches ticket `number` and `subject` only)
-  - `status` optional enum
+  - `status` optional enum filter; accepts a single value, repeated query params, or comma-separated values
   - `priority` optional enum
   - `mailboxId`, `assigneeId`, `categoryId`, `tagId`, `contactId`, `organizationId` optional mongo ids
   - `unassigned` optional boolean
   - `channel` optional enum
   - `includeClosed` optional boolean
   - `createdFrom`, `createdTo`, `updatedFrom`, `updatedTo` optional ISO8601 timestamps
+  - each `from` date must be less than or equal to its matching `to` date
   - `sort` optional allowlist: `number|-number|subject|-subject|priority|-priority|createdAt|-createdAt|updatedAt|-updatedAt|lastMessageAt|-lastMessageAt`
 - Success `200`:
 
@@ -1821,6 +1825,8 @@ npm run mailboxes:backfill-default
       "channel": "manual",
       "type": "internal_note",
       "direction": null,
+      "from": null,
+      "to": [],
       "bodyText": "Customer already called support.",
       "attachmentFileIds": ["65f9..."],
       "attachments": [
@@ -1891,6 +1897,16 @@ npm run mailboxes:backfill-default
     "conversationId": "65f7...",
     "type": "public_reply",
     "direction": "outbound",
+    "from": {
+      "name": "Support",
+      "email": null
+    },
+    "to": [
+      {
+        "name": "Jane Doe",
+        "email": "jane@example.com"
+      }
+    ],
     "bodyText": "We have applied the fix and are waiting for your confirmation.",
     "attachmentFileIds": ["65f9..."],
     "attachments": [
@@ -1938,8 +1954,9 @@ npm run mailboxes:backfill-default
   - missing or cross-workspace refs collapse to workspace-scoped `404` responses.
 - Notes:
   - `public_reply` moves the ticket to `waiting_on_customer`.
-  - `customer_message` reopens a solved ticket and sets status to `open`.
+  - `customer_message` sets the ticket to `open` and reopens solved tickets.
   - `internal_note` does not change ticket status.
+  - manual `customer_message` and `public_reply` records populate `from/to` from the linked contact and mailbox.
 
 ### POST `/api/tickets/:id/assign`
 

@@ -55,29 +55,29 @@ Workspace roles:
 
 Current effective permissions by feature:
 
-| Feature | Owner | Admin | Agent | Viewer |
-|---|---|---|---|---|
-| Auth lifecycle (`signup/login/refresh/...`) | Yes | Yes | Yes | Yes |
-| List memberships (`GET /workspaces/mine`) | Yes | Yes | Yes | Yes |
-| Switch workspace (`POST /workspaces/switch`) | Yes (if member) | Yes (if member) | Yes (if member) | Yes (if member) |
-| Manage invites in workspace | Yes | Yes | No | No |
-| Accept invite (token-based, no auth) | Yes | Yes | Yes | Yes |
-| Upload files | Yes | Yes | Yes | No |
-| List/get/download files | Yes | Yes | Yes | Yes |
-| Delete files | Yes | Yes | No | No |
-| Create/update/activate/deactivate/set-default mailbox | Yes | Yes | No | No |
-| Read mailbox lists/options/details | Yes | Yes | Yes (inactive hidden) | Yes (inactive hidden) |
-| Create/update ticket records | Yes | Yes | Yes | No |
-| Read ticket lists/details | Yes | Yes | Yes | Yes |
-| Read ticket conversations/messages | Yes | Yes | Yes | Yes |
-| Create ticket messages | Yes | Yes | Yes | No |
-| Assign tickets | Yes | Yes | No | No |
-| Unassign/self-assign tickets | Yes | Yes | Yes | No |
-| Change ticket lifecycle/status | Yes | Yes | Yes | No |
-| Read ticket participants | Yes | Yes | Yes | Yes |
-| Add/remove ticket participants | Yes | Yes | Yes | No |
-| Create/update/activate/deactivate ticket categories/tags | Yes | Yes | No | No |
-| Read ticket category/tag lists/options/details | Yes | Yes | Yes (inactive hidden) | Yes (inactive hidden) |
+| Feature                                                  | Owner           | Admin           | Agent                 | Viewer                |
+| -------------------------------------------------------- | --------------- | --------------- | --------------------- | --------------------- |
+| Auth lifecycle (`signup/login/refresh/...`)              | Yes             | Yes             | Yes                   | Yes                   |
+| List memberships (`GET /workspaces/mine`)                | Yes             | Yes             | Yes                   | Yes                   |
+| Switch workspace (`POST /workspaces/switch`)             | Yes (if member) | Yes (if member) | Yes (if member)       | Yes (if member)       |
+| Manage invites in workspace                              | Yes             | Yes             | No                    | No                    |
+| Accept invite (token-based, no auth)                     | Yes             | Yes             | Yes                   | Yes                   |
+| Upload files                                             | Yes             | Yes             | Yes                   | No                    |
+| List/get/download files                                  | Yes             | Yes             | Yes                   | Yes                   |
+| Delete files                                             | Yes             | Yes             | No                    | No                    |
+| Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                    | No                    |
+| Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden) | Yes (inactive hidden) |
+| Create/update ticket records                             | Yes             | Yes             | Yes                   | No                    |
+| Read ticket lists/details                                | Yes             | Yes             | Yes                   | Yes                   |
+| Read ticket conversations/messages                       | Yes             | Yes             | Yes                   | Yes                   |
+| Create ticket messages                                   | Yes             | Yes             | Yes                   | No                    |
+| Assign tickets                                           | Yes             | Yes             | No                    | No                    |
+| Unassign/self-assign tickets                             | Yes             | Yes             | Yes                   | No                    |
+| Change ticket lifecycle/status                           | Yes             | Yes             | Yes                   | No                    |
+| Read ticket participants                                 | Yes             | Yes             | Yes                   | Yes                   |
+| Add/remove ticket participants                           | Yes             | Yes             | Yes                   | No                    |
+| Create/update/activate/deactivate ticket categories/tags | Yes             | Yes             | No                    | No                    |
+| Read ticket category/tag lists/options/details           | Yes             | Yes             | Yes (inactive hidden) | Yes (inactive hidden) |
 
 ### 2.3 Quick Start Flows (Implemented)
 
@@ -136,11 +136,11 @@ Current effective permissions by feature:
 3. Ticket creation allocates the next workspace-scoped ticket number and auto-creates a single conversation.
 4. Files are uploaded first through the files module and can then be linked to create-time or later ticket messages.
 5. Ticket conversation and message history can be read through dedicated conversation/message endpoints.
-6. Message writes update ticket/conversation counters, last-message summaries, and message-driven status side effects.
-7. Explicit assignment actions manage `assigneeId`, `assignedAt`, and safe self-assignment rules.
+6. Manual message writes populate `from/to` parties from the contact and mailbox, update ticket/conversation counters, and apply message-driven status rules (`customer_message -> open`, `public_reply -> waiting_on_customer`, `internal_note -> no status change`).
+7. Explicit assignment actions manage a single active `assigneeId`, `assignedAt`, and safe self-assignment rules.
 8. Explicit lifecycle actions manage `status`, `statusChangedAt`, `closedAt`, and live resolution markers.
 9. Participant endpoints manage internal watcher/collaborator metadata and keep `participantCount` synchronized.
-10. Ticket patch updates editable record fields only, and mailbox changes stop once the ticket has messages.
+10. Ticket patch updates editable record fields only, and mailbox changes stop once the ticket has messages while preserving the one-conversation mailbox invariant.
 
 ### 2.4 Business State Summary
 
@@ -294,28 +294,28 @@ Base prefix: `/api`
 
 #### Public Endpoints
 
-| Method | Path | Purpose | Notes |
-|---|---|---|---|
-| `GET` | `/health` | Health check | Returns `{ status: "ok" }` payload with localized success wrapper |
-| `POST` | `/workspaces/invites/accept` | Accept invite token | No bearer token required |
-| `POST` | `/auth/signup` | Start signup, send OTP | Public |
-| `POST` | `/auth/resend-otp` | Resend OTP by purpose | Public with anti-enumeration behavior |
-| `POST` | `/auth/verify-email` | Verify OTP and login | Public |
-| `POST` | `/auth/login` | Login | Public |
-| `POST` | `/auth/refresh` | Refresh session tokens | Public |
-| `POST` | `/auth/forgot-password` | Forgot password OTP | Public |
-| `POST` | `/auth/reset-password` | Reset password with OTP | Public |
-| `GET` | `/users` | Users stub list | Public placeholder |
-| `GET` | `/customers` | Customers stub list | Public placeholder |
+| Method | Path                         | Purpose                 | Notes                                                             |
+| ------ | ---------------------------- | ----------------------- | ----------------------------------------------------------------- |
+| `GET`  | `/health`                    | Health check            | Returns `{ status: "ok" }` payload with localized success wrapper |
+| `POST` | `/workspaces/invites/accept` | Accept invite token     | No bearer token required                                          |
+| `POST` | `/auth/signup`               | Start signup, send OTP  | Public                                                            |
+| `POST` | `/auth/resend-otp`           | Resend OTP by purpose   | Public with anti-enumeration behavior                             |
+| `POST` | `/auth/verify-email`         | Verify OTP and login    | Public                                                            |
+| `POST` | `/auth/login`                | Login                   | Public                                                            |
+| `POST` | `/auth/refresh`              | Refresh session tokens  | Public                                                            |
+| `POST` | `/auth/forgot-password`      | Forgot password OTP     | Public                                                            |
+| `POST` | `/auth/reset-password`       | Reset password with OTP | Public                                                            |
+| `GET`  | `/users`                     | Users stub list         | Public placeholder                                                |
+| `GET`  | `/customers`                 | Customers stub list     | Public placeholder                                                |
 
 #### Authenticated Auth Endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/auth/me` | Return canonical user + active workspace + role |
-| `POST` | `/auth/logout` | Revoke current session |
-| `POST` | `/auth/logout-all` | Revoke all sessions for current user |
-| `POST` | `/auth/change-password` | Change password and revoke all sessions |
+| Method | Path                    | Purpose                                         |
+| ------ | ----------------------- | ----------------------------------------------- |
+| `GET`  | `/auth/me`              | Return canonical user + active workspace + role |
+| `POST` | `/auth/logout`          | Revoke current session                          |
+| `POST` | `/auth/logout-all`      | Revoke all sessions for current user            |
+| `POST` | `/auth/change-password` | Change password and revoke all sessions         |
 
 Auth requirements:
 
@@ -324,39 +324,39 @@ Auth requirements:
 
 #### Tickets Endpoints
 
-| Method | Path | Purpose | Role requirements |
-|---|---|---|---|
-| `POST` | `/tickets` | Create ticket record + allocate number + create conversation | `owner/admin/agent` |
-| `GET` | `/tickets` | List tickets with pagination/filter/search/sort | Any active member (`owner/admin/agent/viewer`) |
-| `GET` | `/tickets/:id` | Get ticket detail | Any active member (`owner/admin/agent/viewer`) |
-| `POST` | `/tickets/:id/assign` | Assign ticket to an operational user | `owner/admin` |
-| `POST` | `/tickets/:id/unassign` | Clear ticket assignee | `owner/admin/agent` |
-| `POST` | `/tickets/:id/self-assign` | Assign ticket to current user | `owner/admin/agent` |
-| `POST` | `/tickets/:id/status` | Perform explicit non-close status transition | `owner/admin/agent` |
-| `POST` | `/tickets/:id/solve` | Mark ticket as solved | `owner/admin/agent` |
-| `POST` | `/tickets/:id/close` | Close solved ticket | `owner/admin/agent` |
-| `POST` | `/tickets/:id/reopen` | Reopen solved/closed ticket | `owner/admin/agent` |
-| `GET` | `/tickets/:id/conversation` | Get ticket conversation summary | Any active member (`owner/admin/agent/viewer`) |
-| `GET` | `/tickets/:id/messages` | List ticket messages | Any active member (`owner/admin/agent/viewer`) |
-| `POST` | `/tickets/:id/messages` | Create ticket message | `owner/admin/agent` |
-| `GET` | `/tickets/:id/participants` | List internal ticket participants | Any active member (`owner/admin/agent/viewer`) |
-| `POST` | `/tickets/:id/participants` | Add or update ticket participant | `owner/admin/agent` |
-| `DELETE` | `/tickets/:id/participants/:userId` | Remove ticket participant | `owner/admin/agent` |
-| `PATCH` | `/tickets/:id` | Update editable ticket fields | `owner/admin/agent` |
-| `GET` | `/tickets/categories` | List ticket categories | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/tickets/categories/options` | Lightweight ticket category options | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/tickets/categories/:id` | Get ticket category details | Any active member; inactive hidden for non-admin roles |
-| `POST` | `/tickets/categories` | Create ticket category | `owner/admin` |
-| `PATCH` | `/tickets/categories/:id` | Update ticket category | `owner/admin` |
-| `POST` | `/tickets/categories/:id/activate` | Activate ticket category | `owner/admin` |
-| `POST` | `/tickets/categories/:id/deactivate` | Deactivate ticket category | `owner/admin` |
-| `GET` | `/tickets/tags` | List ticket tags | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/tickets/tags/options` | Lightweight ticket tag options | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/tickets/tags/:id` | Get ticket tag details | Any active member; inactive hidden for non-admin roles |
-| `POST` | `/tickets/tags` | Create ticket tag | `owner/admin` |
-| `PATCH` | `/tickets/tags/:id` | Update ticket tag | `owner/admin` |
-| `POST` | `/tickets/tags/:id/activate` | Activate ticket tag | `owner/admin` |
-| `POST` | `/tickets/tags/:id/deactivate` | Deactivate ticket tag | `owner/admin` |
+| Method   | Path                                 | Purpose                                                      | Role requirements                                                     |
+| -------- | ------------------------------------ | ------------------------------------------------------------ | --------------------------------------------------------------------- |
+| `POST`   | `/tickets`                           | Create ticket record + allocate number + create conversation | `owner/admin/agent`                                                   |
+| `GET`    | `/tickets`                           | List tickets with pagination/filter/search/sort              | Any active member (`owner/admin/agent/viewer`)                        |
+| `GET`    | `/tickets/:id`                       | Get ticket detail                                            | Any active member (`owner/admin/agent/viewer`)                        |
+| `POST`   | `/tickets/:id/assign`                | Assign ticket to an operational user                         | `owner/admin`                                                         |
+| `POST`   | `/tickets/:id/unassign`              | Clear ticket assignee                                        | `owner/admin/agent`                                                   |
+| `POST`   | `/tickets/:id/self-assign`           | Assign ticket to current user                                | `owner/admin/agent`                                                   |
+| `POST`   | `/tickets/:id/status`                | Perform explicit non-close status transition                 | `owner/admin/agent`                                                   |
+| `POST`   | `/tickets/:id/solve`                 | Mark ticket as solved                                        | `owner/admin/agent`                                                   |
+| `POST`   | `/tickets/:id/close`                 | Close solved ticket                                          | `owner/admin/agent`                                                   |
+| `POST`   | `/tickets/:id/reopen`                | Reopen solved/closed ticket                                  | `owner/admin/agent`                                                   |
+| `GET`    | `/tickets/:id/conversation`          | Get ticket conversation summary                              | Any active member (`owner/admin/agent/viewer`)                        |
+| `GET`    | `/tickets/:id/messages`              | List ticket messages                                         | Any active member (`owner/admin/agent/viewer`)                        |
+| `POST`   | `/tickets/:id/messages`              | Create ticket message                                        | `owner/admin/agent`                                                   |
+| `GET`    | `/tickets/:id/participants`          | List internal ticket participants                            | Any active member (`owner/admin/agent/viewer`)                        |
+| `POST`   | `/tickets/:id/participants`          | Add or update ticket participant                             | `owner/admin/agent`                                                   |
+| `DELETE` | `/tickets/:id/participants/:userId`  | Remove ticket participant                                    | `owner/admin/agent`                                                   |
+| `PATCH`  | `/tickets/:id`                       | Update editable ticket fields                                | `owner/admin/agent`                                                   |
+| `GET`    | `/tickets/categories`                | List ticket categories                                       | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`    | `/tickets/categories/options`        | Lightweight ticket category options                          | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`    | `/tickets/categories/:id`            | Get ticket category details                                  | Any active member; inactive hidden for non-admin roles                |
+| `POST`   | `/tickets/categories`                | Create ticket category                                       | `owner/admin`                                                         |
+| `PATCH`  | `/tickets/categories/:id`            | Update ticket category                                       | `owner/admin`                                                         |
+| `POST`   | `/tickets/categories/:id/activate`   | Activate ticket category                                     | `owner/admin`                                                         |
+| `POST`   | `/tickets/categories/:id/deactivate` | Deactivate ticket category                                   | `owner/admin`                                                         |
+| `GET`    | `/tickets/tags`                      | List ticket tags                                             | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`    | `/tickets/tags/options`              | Lightweight ticket tag options                               | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`    | `/tickets/tags/:id`                  | Get ticket tag details                                       | Any active member; inactive hidden for non-admin roles                |
+| `POST`   | `/tickets/tags`                      | Create ticket tag                                            | `owner/admin`                                                         |
+| `PATCH`  | `/tickets/tags/:id`                  | Update ticket tag                                            | `owner/admin`                                                         |
+| `POST`   | `/tickets/tags/:id/activate`         | Activate ticket tag                                          | `owner/admin`                                                         |
+| `POST`   | `/tickets/tags/:id/deactivate`       | Deactivate ticket tag                                        | `owner/admin`                                                         |
 
 Tickets notes:
 
@@ -364,28 +364,31 @@ Tickets notes:
 - The current ticket runtime surface includes core ticket records, conversation/message flows, and workspace-scoped category/tag dictionaries.
 - Ticket creation can include a minimal initial message (`customer_message` or `internal_note`) with uploaded-file attachments.
 - Ticket message attachments are linked to the message as the semantic owner and to the ticket for reverse lookup.
+- Closed tickets accept `internal_note` only until explicit reopen.
+- Ticket writes require active category/tag refs, while ticket detail still hydrates already-linked inactive refs.
+- `POST /api/tickets/:id/assign` is `owner|admin` only; agents use `POST /api/tickets/:id/self-assign` and cannot steal assigned tickets.
 
 #### Workspace Context and Invite Management Endpoints
 
-| Method | Path | Purpose | Role requirements |
-|---|---|---|---|
-| `GET` | `/workspaces/mine` | List active memberships + current workspace id | Any authenticated active user |
-| `POST` | `/workspaces/switch` | Explicitly switch active workspace for session | Any authenticated active user who is active member in target |
-| `POST` | `/workspaces/:workspaceId/invites` | Create invite | `owner/admin` in token workspace + tenant match |
-| `GET` | `/workspaces/:workspaceId/invites` | List invites | `owner/admin` in token workspace + tenant match |
-| `GET` | `/workspaces/:workspaceId/invites/:inviteId` | Get invite | `owner/admin` in token workspace + tenant match |
-| `POST` | `/workspaces/:workspaceId/invites/:inviteId/resend` | Resend invite token/email | `owner/admin` in token workspace + tenant match |
-| `POST` | `/workspaces/:workspaceId/invites/:inviteId/revoke` | Revoke invite | `owner/admin` in token workspace + tenant match |
+| Method | Path                                                | Purpose                                        | Role requirements                                            |
+| ------ | --------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `GET`  | `/workspaces/mine`                                  | List active memberships + current workspace id | Any authenticated active user                                |
+| `POST` | `/workspaces/switch`                                | Explicitly switch active workspace for session | Any authenticated active user who is active member in target |
+| `POST` | `/workspaces/:workspaceId/invites`                  | Create invite                                  | `owner/admin` in token workspace + tenant match              |
+| `GET`  | `/workspaces/:workspaceId/invites`                  | List invites                                   | `owner/admin` in token workspace + tenant match              |
+| `GET`  | `/workspaces/:workspaceId/invites/:inviteId`        | Get invite                                     | `owner/admin` in token workspace + tenant match              |
+| `POST` | `/workspaces/:workspaceId/invites/:inviteId/resend` | Resend invite token/email                      | `owner/admin` in token workspace + tenant match              |
+| `POST` | `/workspaces/:workspaceId/invites/:inviteId/revoke` | Revoke invite                                  | `owner/admin` in token workspace + tenant match              |
 
 #### Files v1 Endpoints
 
-| Method | Path | Purpose | Role requirements |
-|---|---|---|---|
-| `POST` | `/files` | Upload single file | `owner/admin/agent` |
-| `GET` | `/files` | List files with filters/pagination | Any active member (`owner/admin/agent/viewer`) |
-| `GET` | `/files/:fileId` | Fetch file metadata | Any active member |
-| `GET` | `/files/:fileId/download` | Stream file content | Any active member |
-| `DELETE` | `/files/:fileId` | Delete file object + soft-delete record | `owner/admin` |
+| Method   | Path                      | Purpose                                 | Role requirements                              |
+| -------- | ------------------------- | --------------------------------------- | ---------------------------------------------- |
+| `POST`   | `/files`                  | Upload single file                      | `owner/admin/agent`                            |
+| `GET`    | `/files`                  | List files with filters/pagination      | Any active member (`owner/admin/agent/viewer`) |
+| `GET`    | `/files/:fileId`          | Fetch file metadata                     | Any active member                              |
+| `GET`    | `/files/:fileId/download` | Stream file content                     | Any active member                              |
+| `DELETE` | `/files/:fileId`          | Delete file object + soft-delete record | `owner/admin`                                  |
 
 Files notes:
 
@@ -395,16 +398,16 @@ Files notes:
 
 #### Mailboxes v1 Endpoints
 
-| Method | Path | Purpose | Role requirements |
-|---|---|---|---|
-| `GET` | `/mailboxes` | List mailboxes (pagination/filter/search/sort) | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/mailboxes/options` | Lightweight options list | Any active member; inactive visibility restricted for non-admin roles |
-| `GET` | `/mailboxes/:id` | Get mailbox details | Any active member; inactive hidden for non-admin roles |
-| `POST` | `/mailboxes` | Create mailbox | `owner/admin` |
-| `PATCH` | `/mailboxes/:id` | Update mailbox | `owner/admin` |
-| `POST` | `/mailboxes/:id/set-default` | Set workspace default mailbox | `owner/admin` |
-| `POST` | `/mailboxes/:id/activate` | Activate mailbox | `owner/admin` |
-| `POST` | `/mailboxes/:id/deactivate` | Deactivate mailbox | `owner/admin` |
+| Method  | Path                         | Purpose                                        | Role requirements                                                     |
+| ------- | ---------------------------- | ---------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/mailboxes`                 | List mailboxes (pagination/filter/search/sort) | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/mailboxes/options`         | Lightweight options list                       | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/mailboxes/:id`             | Get mailbox details                            | Any active member; inactive hidden for non-admin roles                |
+| `POST`  | `/mailboxes`                 | Create mailbox                                 | `owner/admin`                                                         |
+| `PATCH` | `/mailboxes/:id`             | Update mailbox                                 | `owner/admin`                                                         |
+| `POST`  | `/mailboxes/:id/set-default` | Set workspace default mailbox                  | `owner/admin`                                                         |
+| `POST`  | `/mailboxes/:id/activate`    | Activate mailbox                               | `owner/admin`                                                         |
+| `POST`  | `/mailboxes/:id/deactivate`  | Deactivate mailbox                             | `owner/admin`                                                         |
 
 Mailbox notes:
 
@@ -424,25 +427,25 @@ Any request under those paths currently falls through to 404.
 
 ### 3.5 Module Implementation Status
 
-| Module | Router Mounted | Runtime API Behavior | Service/Model State |
-|---|---|---|---|
-| `health` | Yes | Implemented | Simple health service |
-| `auth` | Yes | Implemented | Full OTP/JWT/session lifecycle |
-| `workspaces` | Yes | Implemented | Membership resolution, switch, invite lifecycle |
-| `files` | Yes | Implemented | Upload/list/get/download/delete + storage abstraction |
-| `mailboxes` | Yes | Implemented | CRUD-like v1 + default invariants + backfill |
-| `users` | Yes | Stub (`GET /users`) | Model implemented, service placeholder |
-| `customers` | Yes | Stub (`GET /customers`) | Models implemented, service placeholder |
-| `tickets` | Yes | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows |
-| `inbox` | Yes | Empty router | Placeholder |
-| `sla` | Yes | Empty router | Models implemented, API not implemented |
-| `integrations` | Yes | Empty router | Models implemented, API not implemented |
-| `admin` | Yes | Empty router | Placeholder |
-| `automations` | No | No API | Model implemented only |
-| `billing` | No | No API | Models implemented only |
-| `notifications` | No | No API | Model implemented only |
-| `platform` | No | No API | Models implemented only |
-| `roles` | No | No API | No schema content yet |
+| Module          | Router Mounted | Runtime API Behavior                                                                                   | Service/Model State                                                                                                                                                 |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health`        | Yes            | Implemented                                                                                            | Simple health service                                                                                                                                               |
+| `auth`          | Yes            | Implemented                                                                                            | Full OTP/JWT/session lifecycle                                                                                                                                      |
+| `workspaces`    | Yes            | Implemented                                                                                            | Membership resolution, switch, invite lifecycle                                                                                                                     |
+| `files`         | Yes            | Implemented                                                                                            | Upload/list/get/download/delete + storage abstraction                                                                                                               |
+| `mailboxes`     | Yes            | Implemented                                                                                            | CRUD-like v1 + default invariants + backfill                                                                                                                        |
+| `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                              |
+| `customers`     | Yes            | Stub (`GET /customers`)                                                                                | Models implemented, service placeholder                                                                                                                             |
+| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows |
+| `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
+| `sla`           | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
+| `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
+| `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
+| `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                              |
+| `billing`       | No             | No API                                                                                                 | Models implemented only                                                                                                                                             |
+| `notifications` | No             | No API                                                                                                 | Model implemented only                                                                                                                                              |
+| `platform`      | No             | No API                                                                                                 | Models implemented only                                                                                                                                             |
+| `roles`         | No             | No API                                                                                                 | No schema content yet                                                                                                                                               |
 
 ### 3.6 Database Design (Mongoose)
 
@@ -456,95 +459,95 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.2 Core Identity and Tenancy Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `User` | End-user identity/account | `email`, `emailNormalized`, `passwordHash`, `isEmailVerified`, `status`, `defaultWorkspaceId`, `lastWorkspaceId`, `platformRole` | Unique `emailNormalized`; indexes on `defaultWorkspaceId`, `platformRole` |
-| `Session` | Refresh-session persistence | `userId`, `workspaceId`, `refreshTokenHash`, `expiresAt`, `revokedAt` | TTL on `expiresAt`; index `refreshTokenHash`; index on (`userId`, `revokedAt`, `expiresAt`) |
-| `OtpCode` | OTP verification/password reset codes | `emailNormalized`, `userId`, `purpose`, `codeHash`, `expiresAt`, `consumedAt`, `attemptCount`, `lastSentAt` | TTL on `expiresAt`; index (`emailNormalized`, `purpose`, `createdAt`) |
-| `Workspace` | Tenant root | `name`, `slug`, `status`, `ownerUserId`, `defaultMailboxId`, `defaultSlaPolicyId`, `settings.timeZone` | Unique partial `slug` when not deleted; indexes `ownerUserId`, `status` |
-| `WorkspaceMember` | User membership in workspace | `workspaceId`, `userId`, `roleKey`, `status`, `joinedAt`, `removedAt` | Unique (`workspaceId`, `userId`); indexes (`workspaceId`, `status`), (`workspaceId`, `roleKey`) |
-| `WorkspaceInvite` | Invite tokens and state | `workspaceId`, `emailNormalized`, `roleKey`, `tokenHash`, `status`, `expiresAt`, `acceptedAt` | Unique `tokenHash`; unique partial pending invite on (`workspaceId`, `emailNormalized`); TTL on `expiresAt` |
+| Model             | Purpose                               | Key Fields                                                                                                                       | Important Indexes/Constraints                                                                               |
+| ----------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `User`            | End-user identity/account             | `email`, `emailNormalized`, `passwordHash`, `isEmailVerified`, `status`, `defaultWorkspaceId`, `lastWorkspaceId`, `platformRole` | Unique `emailNormalized`; indexes on `defaultWorkspaceId`, `platformRole`                                   |
+| `Session`         | Refresh-session persistence           | `userId`, `workspaceId`, `refreshTokenHash`, `expiresAt`, `revokedAt`                                                            | TTL on `expiresAt`; index `refreshTokenHash`; index on (`userId`, `revokedAt`, `expiresAt`)                 |
+| `OtpCode`         | OTP verification/password reset codes | `emailNormalized`, `userId`, `purpose`, `codeHash`, `expiresAt`, `consumedAt`, `attemptCount`, `lastSentAt`                      | TTL on `expiresAt`; index (`emailNormalized`, `purpose`, `createdAt`)                                       |
+| `Workspace`       | Tenant root                           | `name`, `slug`, `status`, `ownerUserId`, `defaultMailboxId`, `defaultSlaPolicyId`, `settings.timeZone`                           | Unique partial `slug` when not deleted; indexes `ownerUserId`, `status`                                     |
+| `WorkspaceMember` | User membership in workspace          | `workspaceId`, `userId`, `roleKey`, `status`, `joinedAt`, `removedAt`                                                            | Unique (`workspaceId`, `userId`); indexes (`workspaceId`, `status`), (`workspaceId`, `roleKey`)             |
+| `WorkspaceInvite` | Invite tokens and state               | `workspaceId`, `emailNormalized`, `roleKey`, `tokenHash`, `status`, `expiresAt`, `acceptedAt`                                    | Unique `tokenHash`; unique partial pending invite on (`workspaceId`, `emailNormalized`); TTL on `expiresAt` |
 
 #### 3.6.3 Mailbox Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `Mailbox` | Workspace support queue mailbox | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
-| `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive` | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`) |
+| Model          | Purpose                             | Key Fields                                                                       | Important Indexes/Constraints                                                                                                                                                           |
+| -------------- | ----------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Mailbox`      | Workspace support queue mailbox     | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
+| `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                   | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
 
 #### 3.6.4 Files Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `File` | Physical storage metadata | `workspaceId`, `uploadedByUserId`, `provider`, `bucket`, `objectKey`, `mimeType`, `originalNameNormalized`, `storageStatus`, `deletedAt` | Unique (`provider`, `bucket`, `objectKey`); workspace-scoped indexes for query filters/sorting |
-| `FileLink` | Polymorphic relation of files to entities | `workspaceId`, `fileId`, `entityType`, `entityId`, `relationType`, `deletedAt` | Unique partial relation tuple (`workspaceId`,`fileId`,`entityType`,`entityId`,`relationType`) when not deleted; indexes for entity/file lookups |
+| Model      | Purpose                                   | Key Fields                                                                                                                               | Important Indexes/Constraints                                                                                                                   |
+| ---------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `File`     | Physical storage metadata                 | `workspaceId`, `uploadedByUserId`, `provider`, `bucket`, `objectKey`, `mimeType`, `originalNameNormalized`, `storageStatus`, `deletedAt` | Unique (`provider`, `bucket`, `objectKey`); workspace-scoped indexes for query filters/sorting                                                  |
+| `FileLink` | Polymorphic relation of files to entities | `workspaceId`, `fileId`, `entityType`, `entityId`, `relationType`, `deletedAt`                                                           | Unique partial relation tuple (`workspaceId`,`fileId`,`entityType`,`entityId`,`relationType`) when not deleted; indexes for entity/file lookups |
 
 #### 3.6.5 Customers Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `Organization` | Customer company record | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt` | Indexes on (`workspaceId`,`nameNormalized`), partial (`workspaceId`,`domain`), (`workspaceId`,`createdAt`) |
-| `Contact` | Customer person record | `workspaceId`, `organizationId`, `fullName`, `nameNormalized`, `emailNormalized`, `phone`, `tags` | Partial index (`workspaceId`,`emailNormalized`); indexes (`workspaceId`,`organizationId`), (`workspaceId`,`nameNormalized`) |
-| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `valueNormalized`, `verifiedAt` | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`) |
+| Model             | Purpose                      | Key Fields                                                                                        | Important Indexes/Constraints                                                                                               |
+| ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `Organization`    | Customer company record      | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt`                                    | Indexes on (`workspaceId`,`nameNormalized`), partial (`workspaceId`,`domain`), (`workspaceId`,`createdAt`)                  |
+| `Contact`         | Customer person record       | `workspaceId`, `organizationId`, `fullName`, `nameNormalized`, `emailNormalized`, `phone`, `tags` | Partial index (`workspaceId`,`emailNormalized`); indexes (`workspaceId`,`organizationId`), (`workspaceId`,`nameNormalized`) |
+| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `valueNormalized`, `verifiedAt`                               | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`)                 |
 
 #### 3.6.6 Tickets Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `TicketCategory` | Ticket category tree | `workspaceId`, `name`, `slug`, `parentId`, `path`, `order`, `isActive` | Unique partial (`workspaceId`,`slug`); indexes (`workspaceId`,`parentId`) and partial (`workspaceId`,`path`) |
-| `TicketTag` | Workspace tag dictionary | `workspaceId`, `name`, `nameNormalized`, `isActive` | Unique partial (`workspaceId`,`nameNormalized`) when not deleted |
-| `TicketCounter` | Atomic sequence source for ticket numbers | `workspaceId`, `seq` | Unique (`workspaceId`); static allocator increments sequence |
-| `Ticket` | Core support ticket | `workspaceId`, `mailboxId`, `number`, `subjectNormalized`, `status`, `priority`, `channel`, `contactId`, `organizationId`, `assigneeId`, `conversationId`, `tagIds`, summary/count/timestamp fields, `sla` | Unique (`workspaceId`,`number`); operational indexes by status/assignee/category/tag/channel/mailbox/contact/organization/recency |
-| `Conversation` | Ticket conversation channel metadata | `workspaceId`, `ticketId`, `mailboxId`, `channel`, `lastMessageAt`, `messageCount`, message summary/count fields | Unique (`workspaceId`,`ticketId`); indexes by mailbox and recency |
-| `Message` | Message records within conversations | `workspaceId`, `conversationId`, `ticketId`, `type`, transport `direction`, `from`, `to`, `bodyText`, `attachmentFileIds` | Workspace-scoped indexes by conversation/ticket/mailbox/type/direction + createdAt |
-| `TicketParticipant` | Watchers/collaborators on tickets | `workspaceId`, `ticketId`, `userId`, `type` | Unique partial (`workspaceId`,`ticketId`,`userId`) when not deleted |
+| Model               | Purpose                                   | Key Fields                                                                                                                                                                                                 | Important Indexes/Constraints                                                                                                     |
+| ------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `TicketCategory`    | Ticket category tree                      | `workspaceId`, `name`, `slug`, `parentId`, `path`, `order`, `isActive`                                                                                                                                     | Unique partial (`workspaceId`,`slug`); indexes (`workspaceId`,`parentId`) and partial (`workspaceId`,`path`)                      |
+| `TicketTag`         | Workspace tag dictionary                  | `workspaceId`, `name`, `nameNormalized`, `isActive`                                                                                                                                                        | Unique partial (`workspaceId`,`nameNormalized`) when not deleted                                                                  |
+| `TicketCounter`     | Atomic sequence source for ticket numbers | `workspaceId`, `seq`                                                                                                                                                                                       | Unique (`workspaceId`); static allocator increments sequence                                                                      |
+| `Ticket`            | Core support ticket                       | `workspaceId`, `mailboxId`, `number`, `subjectNormalized`, `status`, `priority`, `channel`, `contactId`, `organizationId`, `assigneeId`, `conversationId`, `tagIds`, summary/count/timestamp fields, `sla` | Unique (`workspaceId`,`number`); operational indexes by status/assignee/category/tag/channel/mailbox/contact/organization/recency |
+| `Conversation`      | Ticket conversation channel metadata      | `workspaceId`, `ticketId`, `mailboxId`, `channel`, `lastMessageAt`, `messageCount`, message summary/count fields                                                                                           | Unique (`workspaceId`,`ticketId`); indexes by mailbox and recency                                                                 |
+| `Message`           | Message records within conversations      | `workspaceId`, `conversationId`, `ticketId`, `type`, transport `direction`, `from`, `to`, `bodyText`, `attachmentFileIds`                                                                                  | Workspace-scoped indexes by conversation/ticket/mailbox/type/direction + createdAt                                                |
+| `TicketParticipant` | Watchers/collaborators on tickets         | `workspaceId`, `ticketId`, `userId`, `type`                                                                                                                                                                | Unique partial (`workspaceId`,`ticketId`,`userId`) when not deleted                                                               |
 
 #### 3.6.7 SLA Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `BusinessHours` | Workspace business schedule | `workspaceId`, `timezone`, `weeklySchedule[]`, `holidays[]` | Index (`workspaceId`) |
-| `SlaPolicy` | SLA policy definitions by priority | `workspaceId`, `name`, `isDefault`, `rulesByPriority`, `businessHoursId` | Index (`workspaceId`,`isDefault`) |
+| Model           | Purpose                            | Key Fields                                                               | Important Indexes/Constraints     |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------- |
+| `BusinessHours` | Workspace business schedule        | `workspaceId`, `timezone`, `weeklySchedule[]`, `holidays[]`              | Index (`workspaceId`)             |
+| `SlaPolicy`     | SLA policy definitions by priority | `workspaceId`, `name`, `isDefault`, `rulesByPriority`, `businessHoursId` | Index (`workspaceId`,`isDefault`) |
 
 #### 3.6.8 Integrations Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `ApiKey` | Workspace API key metadata | `workspaceId`, `name`, `keyHash`, `scopes`, `revokedAt`, `lastUsedAt` | Unique `keyHash`; index (`workspaceId`,`createdAt`) |
-| `Webhook` | Outbound webhook configuration | `workspaceId`, `url`, `secretHash`, `events`, `enabled` | Index (`workspaceId`,`enabled`) |
+| Model     | Purpose                        | Key Fields                                                            | Important Indexes/Constraints                       |
+| --------- | ------------------------------ | --------------------------------------------------------------------- | --------------------------------------------------- |
+| `ApiKey`  | Workspace API key metadata     | `workspaceId`, `name`, `keyHash`, `scopes`, `revokedAt`, `lastUsedAt` | Unique `keyHash`; index (`workspaceId`,`createdAt`) |
+| `Webhook` | Outbound webhook configuration | `workspaceId`, `url`, `secretHash`, `events`, `enabled`               | Index (`workspaceId`,`enabled`)                     |
 
 #### 3.6.9 Billing Domain Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `Plan` | Plan catalog | `key`, `name`, `price`, `currency`, `limits`, `features` | Unique `key` |
-| `Addon` | Addon catalog | `key`, `name`, `type`, `price`, `currency`, `effects` | Unique `key` |
-| `Subscription` | Workspace subscription state | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `stripeCustomerId`, `stripeSubscriptionId`, period fields | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId` |
-| `Entitlement` | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `computedAt`, `sourceSnapshot` | Unique partial `workspaceId` when not deleted |
-| `UsageMeter` | Monthly usage counters | `workspaceId`, `periodKey`, usage counters | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`) |
+| Model          | Purpose                         | Key Fields                                                                                                            | Important Indexes/Constraints                                                      |
+| -------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `Plan`         | Plan catalog                    | `key`, `name`, `price`, `currency`, `limits`, `features`                                                              | Unique `key`                                                                       |
+| `Addon`        | Addon catalog                   | `key`, `name`, `type`, `price`, `currency`, `effects`                                                                 | Unique `key`                                                                       |
+| `Subscription` | Workspace subscription state    | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `stripeCustomerId`, `stripeSubscriptionId`, period fields | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId` |
+| `Entitlement`  | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `computedAt`, `sourceSnapshot`                                                   | Unique partial `workspaceId` when not deleted                                      |
+| `UsageMeter`   | Monthly usage counters          | `workspaceId`, `periodKey`, usage counters                                                                            | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`)              |
 
 #### 3.6.10 Automations, Notifications, Platform Collections
 
-| Model | Purpose | Key Fields | Important Indexes/Constraints |
-|---|---|---|---|
-| `AutomationRule` | Workspace automation rules | `workspaceId`, `name`, `enabled`, `trigger`, `actions` | Index (`workspaceId`,`enabled`) |
-| `Notification` | User notifications | `workspaceId`, `userId`, `type`, `entity`, `payload`, `readAt`, `expiresAt` | Indexes on (`userId`,`readAt`), (`workspaceId`,`userId`,`createdAt`), (`workspaceId`,`type`,`createdAt`) |
-| `PlatformAdmin` | Platform-level admin accounts | `emailNormalized`, `passwordHash`, `role`, `status` | Unique `emailNormalized`; indexes `role`, `status` |
-| `PlatformSession` | Platform-admin sessions | `platformAdminId`, `refreshTokenHash`, `expiresAt`, `revokedAt` | Unique `refreshTokenHash`; index (`platformAdminId`,`createdAt`); TTL on `expiresAt` |
-| `PlatformMetricDaily` | Daily platform metrics snapshot | `dateKey`, `totals` | Unique `dateKey` |
+| Model                 | Purpose                         | Key Fields                                                                  | Important Indexes/Constraints                                                                            |
+| --------------------- | ------------------------------- | --------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `AutomationRule`      | Workspace automation rules      | `workspaceId`, `name`, `enabled`, `trigger`, `actions`                      | Index (`workspaceId`,`enabled`)                                                                          |
+| `Notification`        | User notifications              | `workspaceId`, `userId`, `type`, `entity`, `payload`, `readAt`, `expiresAt` | Indexes on (`userId`,`readAt`), (`workspaceId`,`userId`,`createdAt`), (`workspaceId`,`type`,`createdAt`) |
+| `PlatformAdmin`       | Platform-level admin accounts   | `emailNormalized`, `passwordHash`, `role`, `status`                         | Unique `emailNormalized`; indexes `role`, `status`                                                       |
+| `PlatformSession`     | Platform-admin sessions         | `platformAdminId`, `refreshTokenHash`, `expiresAt`, `revokedAt`             | Unique `refreshTokenHash`; index (`platformAdminId`,`createdAt`); TTL on `expiresAt`                     |
+| `PlatformMetricDaily` | Daily platform metrics snapshot | `dateKey`, `totals`                                                         | Unique `dateKey`                                                                                         |
 
 #### 3.6.11 Sub-Schemas in Use
 
-| Sub-Schema | Used By | Purpose |
-|---|---|---|
-| `user-profile.schema` | `User.profile` | User profile fields (`name`, `avatar`) |
-| `workspace-settings.schema` | `Workspace.settings` | Workspace settings (`timeZone`) |
-| `subscription-addon-item.schema` | `Subscription.addonItems[]` | Addon item references + quantity |
-| `business-hours-day.schema` | `BusinessHours.weeklySchedule[]` | Weekly open/close windows |
-| `business-hours-holiday.schema` | `BusinessHours.holidays[]` | Holiday dates/labels |
-| `ticket-sla.schema` | `Ticket.sla` | SLA due/breach timestamps and flags |
-| `message-party.schema` | `Message.from/to` | Simple message party descriptors |
-| `notification-entity.schema` | `Notification.entity` | Entity reference container |
+| Sub-Schema                       | Used By                          | Purpose                                |
+| -------------------------------- | -------------------------------- | -------------------------------------- |
+| `user-profile.schema`            | `User.profile`                   | User profile fields (`name`, `avatar`) |
+| `workspace-settings.schema`      | `Workspace.settings`             | Workspace settings (`timeZone`)        |
+| `subscription-addon-item.schema` | `Subscription.addonItems[]`      | Addon item references + quantity       |
+| `business-hours-day.schema`      | `BusinessHours.weeklySchedule[]` | Weekly open/close windows              |
+| `business-hours-holiday.schema`  | `BusinessHours.holidays[]`       | Holiday dates/labels                   |
+| `ticket-sla.schema`              | `Ticket.sla`                     | SLA due/breach timestamps and flags    |
+| `message-party.schema`           | `Message.from/to`                | Simple message party descriptors       |
+| `notification-entity.schema`     | `Notification.entity`            | Entity reference container             |
 
 ### 3.7 Storage and Files Design
 
@@ -657,24 +660,24 @@ Not fully covered by runtime tests:
 
 ### 3.13 Defined Enums and Constants (Current)
 
-| Constant Group | Values |
-|---|---|
-| `WORKSPACE_ROLES` | `owner`, `admin`, `agent`, `viewer` |
-| `WORKSPACE_STATUS` | `active`, `trial`, `suspended` |
-| `MEMBER_STATUS` | `active`, `suspended`, `removed` |
-| `INVITE_STATUS` | `pending`, `accepted`, `revoked`, `expired` |
-| `OTP_PURPOSE` | `verifyEmail`, `login`, `resetPassword`, `changeEmail` |
-| `MAILBOX_TYPE` | `email`, `chat`, `form` (API validators currently allow only `email`) |
-| `FILE_PROVIDER` | `minio`, `s3`, `local` |
-| `TICKET_STATUS` | `new`, `open`, `pending`, `waiting_on_customer`, `solved`, `closed` |
-| `TICKET_PRIORITY` | `low`, `normal`, `high`, `urgent` |
-| `TICKET_CHANNEL` | `manual`, `email`, `widget`, `api`, `system` |
-| `MESSAGE_DIRECTION` | `inbound`, `outbound` |
-| `TICKET_MESSAGE_TYPE` | `customer_message`, `public_reply`, `internal_note`, `system_event` |
-| `NOTIFICATION_TYPE` | `ticket_assigned`, `ticket_mention`, `ticket_reply`, `system`, `billing` |
-| `BILLING_SUBSCRIPTION_STATUS` | `trialing`, `active`, `past_due`, `canceled`, `incomplete` |
-| `BILLING_ADDON_TYPE` | `seat`, `usage`, `feature` |
-| `PLATFORM_ROLES` | `super_admin`, `platform_admin`, `platform_support` |
+| Constant Group                | Values                                                                   |
+| ----------------------------- | ------------------------------------------------------------------------ |
+| `WORKSPACE_ROLES`             | `owner`, `admin`, `agent`, `viewer`                                      |
+| `WORKSPACE_STATUS`            | `active`, `trial`, `suspended`                                           |
+| `MEMBER_STATUS`               | `active`, `suspended`, `removed`                                         |
+| `INVITE_STATUS`               | `pending`, `accepted`, `revoked`, `expired`                              |
+| `OTP_PURPOSE`                 | `verifyEmail`, `login`, `resetPassword`, `changeEmail`                   |
+| `MAILBOX_TYPE`                | `email`, `chat`, `form` (API validators currently allow only `email`)    |
+| `FILE_PROVIDER`               | `minio`, `s3`, `local`                                                   |
+| `TICKET_STATUS`               | `new`, `open`, `pending`, `waiting_on_customer`, `solved`, `closed`      |
+| `TICKET_PRIORITY`             | `low`, `normal`, `high`, `urgent`                                        |
+| `TICKET_CHANNEL`              | `manual`, `email`, `widget`, `api`, `system`                             |
+| `MESSAGE_DIRECTION`           | `inbound`, `outbound`                                                    |
+| `TICKET_MESSAGE_TYPE`         | `customer_message`, `public_reply`, `internal_note`, `system_event`      |
+| `NOTIFICATION_TYPE`           | `ticket_assigned`, `ticket_mention`, `ticket_reply`, `system`, `billing` |
+| `BILLING_SUBSCRIPTION_STATUS` | `trialing`, `active`, `past_due`, `canceled`, `incomplete`               |
+| `BILLING_ADDON_TYPE`          | `seat`, `usage`, `feature`                                               |
+| `PLATFORM_ROLES`              | `super_admin`, `platform_admin`, `platform_support`                      |
 
 ## 4) Complete Endpoint Checklist (Current)
 

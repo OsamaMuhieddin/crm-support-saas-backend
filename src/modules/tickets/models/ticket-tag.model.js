@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import { normalizeName } from '../../../shared/utils/normalize.js';
 
 const ticketTagSchema = new mongoose.Schema(
@@ -7,34 +7,38 @@ const ticketTagSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
-      index: true
+      index: true,
     },
     name: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 80
+      maxlength: 80,
     },
     nameNormalized: {
       type: String,
       required: true,
       trim: true,
       maxlength: 80,
-      set: normalizeName
+      set: normalizeName,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
     },
     deletedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     deletedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null
-    }
+      default: null,
+    },
   },
   {
     strict: true,
-    timestamps: true
+    timestamps: true,
   }
 );
 
@@ -50,10 +54,15 @@ ticketTagSchema.index(
   { workspaceId: 1, nameNormalized: 1 },
   {
     unique: true,
-    partialFilterExpression: { deletedAt: null }
+    partialFilterExpression: { deletedAt: null },
   }
 );
+ticketTagSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  isActive: 1,
+  nameNormalized: 1,
+});
 
 export const TicketTag =
   mongoose.models.TicketTag || mongoose.model('TicketTag', ticketTagSchema);
-

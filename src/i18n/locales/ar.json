@@ -33,6 +33,32 @@
       "defaultSet": "تم تحديث صندوق البريد الافتراضي بنجاح.",
       "activated": "تم تفعيل صندوق البريد بنجاح.",
       "deactivated": "تم تعطيل صندوق البريد بنجاح."
+    },
+    "ticketCategory": {
+      "created": "تم إنشاء فئة التذاكر بنجاح.",
+      "updated": "تم تحديث فئة التذاكر بنجاح.",
+      "activated": "تم تفعيل فئة التذاكر بنجاح.",
+      "deactivated": "تم تعطيل فئة التذاكر بنجاح."
+    },
+    "ticketTag": {
+      "created": "تم إنشاء وسم التذاكر بنجاح.",
+      "updated": "تم تحديث وسم التذاكر بنجاح.",
+      "activated": "تم تفعيل وسم التذاكر بنجاح.",
+      "deactivated": "تم تعطيل وسم التذاكر بنجاح."
+    },
+    "ticket": {
+      "created": "تم إنشاء التذكرة بنجاح.",
+      "updated": "تم تحديث التذكرة بنجاح.",
+      "messageCreated": "تم إنشاء رسالة التذكرة بنجاح.",
+      "assigned": "تم إسناد التذكرة بنجاح.",
+      "unassigned": "تم إلغاء إسناد التذكرة بنجاح.",
+      "selfAssigned": "تم إسناد التذكرة إليك بنجاح.",
+      "statusUpdated": "تم تحديث حالة التذكرة بنجاح.",
+      "solved": "تم تعليم التذكرة كمحلولة بنجاح.",
+      "closed": "تم إغلاق التذكرة بنجاح.",
+      "reopened": "تمت إعادة فتح التذكرة بنجاح.",
+      "participantSaved": "تم حفظ مشارك التذكرة بنجاح.",
+      "participantRemoved": "تمت إزالة مشارك التذكرة بنجاح."
     }
   },
   "errors": {
@@ -51,6 +77,8 @@
       "invalidNumber": "رقم غير صالح.",
       "invalidBoolean": "قيمة منطقية غير صالحة.",
       "invalidDate": "تاريخ غير صالح.",
+      "invalidDateRange": "يجب ألا يكون تاريخ البداية بعد تاريخ النهاية.",
+      "duplicateValues": "لا يُسمح بالقيم المكررة.",
       "unknownField": "هذا الحقل غير مسموح.",
       "bodyRequiresAtLeastOneField": "يجب إرسال حقل واحد على الأقل للتحديث.",
       "entityTypeRequiredWithEntityId": "يجب إرسال نوع الكيان عند إرسال معرف الكيان."
@@ -108,6 +136,50 @@
       "defaultCannotDeactivate": "لا يمكن تعطيل صندوق البريد الافتراضي.",
       "lastActiveCannotDeactivate": "لا يمكن تعطيل آخر صندوق بريد نشط.",
       "defaultConflict": "تعذر تحديث صندوق البريد الافتراضي. يرجى إعادة المحاولة."
+    },
+    "ticketCategory": {
+      "notFound": "لم يتم العثور على فئة التذاكر.",
+      "slugAlreadyUsed": "المعرّف المختصر لفئة التذاكر مستخدم مسبقًا في مساحة العمل هذه.",
+      "parentCannotBeSelf": "لا يمكن تعيين فئة التذاكر كأصل لنفسها.",
+      "parentCycle": "لا يمكن إنشاء دورة في شجرة فئات التذاكر."
+    },
+    "ticketTag": {
+      "notFound": "لم يتم العثور على وسم التذاكر.",
+      "nameAlreadyUsed": "اسم وسم التذاكر مستخدم مسبقًا في مساحة العمل هذه."
+    },
+    "ticket": {
+      "notFound": "لم يتم العثور على التذكرة.",
+      "contactNotFound": "لم يتم العثور على جهة الاتصال الخاصة بهذه التذكرة.",
+      "organizationNotFound": "لم يتم العثور على المؤسسة الخاصة بهذه التذكرة.",
+      "organizationMismatch": "المؤسسة لا تطابق جهة الاتصال المحددة.",
+      "assigneeNotFound": "المُسند إليه غير متاح في مساحة العمل هذه.",
+      "assignOthersNotAllowed": "يمكنك إسناد التذكرة إلى نفسك فقط عبر هذا الإجراء.",
+      "selfAssignNotAvailable": "لا يمكن إسناد هذه التذكرة إلى نفسك حالياً.",
+      "unassignNotAllowed": "ليست لديك صلاحية إلغاء إسناد هذه التذكرة.",
+      "invalidStatusTransition": "لا يمكن تغيير حالة التذكرة من {{from}} إلى {{to}}.",
+      "solveNotAllowed": "لا يمكن تعليم هذه التذكرة كمحلولة انطلاقًا من الحالة {{from}}.",
+      "closeNotAllowed": "لا يمكن إغلاق هذه التذكرة من الحالة {{from}}. يجب أن تكون {{requiredFrom}} أولًا.",
+      "reopenNotAllowed": "لا يمكن إعادة فتح هذه التذكرة من الحالة {{from}}. يُسمح بإعادة الفتح فقط من حالتي {{allowedFromOne}} أو {{allowedFromTwo}}.",
+      "participantUserNotFound": "المستخدم المراد إضافته كمشارك غير متاح في مساحة العمل هذه.",
+      "mailboxChangeNotAllowed": "لا يمكن تغيير صندوق البريد بعد وجود رسائل على التذكرة. عدد الرسائل الحالي: {{messageCount}}.",
+      "attachmentsNotSupportedYet": "مرفقات الرسالة الأولى غير مدعومة بعد.",
+      "conversationInvariantFailed": "محادثة التذكرة مفقودة أو غير متسقة.",
+      "closedMessageNotAllowed": "لا يمكن إضافة {{type}} بينما التذكرة {{status}}. يُسمح فقط بـ {{allowedType}} حتى تُعاد فتح التذكرة.",
+      "attachmentAlreadyLinked": "هناك ملف واحد أو أكثر مرتبط بالفعل برسالة أخرى."
     }
+  },
+  "ticketStatus": {
+    "new": "جديدة",
+    "open": "مفتوحة",
+    "pending": "معلّقة",
+    "waiting_on_customer": "بانتظار العميل",
+    "solved": "محلولة",
+    "closed": "مغلقة"
+  },
+  "ticketMessageType": {
+    "customer_message": "رسالة عميل",
+    "public_reply": "رد عام",
+    "internal_note": "ملاحظة داخلية",
+    "system_event": "حدث نظام"
   }
 }

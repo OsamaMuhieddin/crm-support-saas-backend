@@ -33,6 +33,32 @@
       "defaultSet": "Default mailbox updated successfully.",
       "activated": "Mailbox activated successfully.",
       "deactivated": "Mailbox deactivated successfully."
+    },
+    "ticketCategory": {
+      "created": "Ticket category created successfully.",
+      "updated": "Ticket category updated successfully.",
+      "activated": "Ticket category activated successfully.",
+      "deactivated": "Ticket category deactivated successfully."
+    },
+    "ticketTag": {
+      "created": "Ticket tag created successfully.",
+      "updated": "Ticket tag updated successfully.",
+      "activated": "Ticket tag activated successfully.",
+      "deactivated": "Ticket tag deactivated successfully."
+    },
+    "ticket": {
+      "created": "Ticket created successfully.",
+      "updated": "Ticket updated successfully.",
+      "messageCreated": "Ticket message created successfully.",
+      "assigned": "Ticket assigned successfully.",
+      "unassigned": "Ticket unassigned successfully.",
+      "selfAssigned": "Ticket assigned to you successfully.",
+      "statusUpdated": "Ticket status updated successfully.",
+      "solved": "Ticket marked as solved successfully.",
+      "closed": "Ticket closed successfully.",
+      "reopened": "Ticket reopened successfully.",
+      "participantSaved": "Ticket participant saved successfully.",
+      "participantRemoved": "Ticket participant removed successfully."
     }
   },
   "errors": {
@@ -51,6 +77,8 @@
       "invalidNumber": "Invalid number.",
       "invalidBoolean": "Invalid boolean value.",
       "invalidDate": "Invalid date.",
+      "invalidDateRange": "Start date must not be later than end date.",
+      "duplicateValues": "Duplicate values are not allowed.",
       "unknownField": "This field is not allowed.",
       "bodyRequiresAtLeastOneField": "At least one updatable field is required.",
       "entityTypeRequiredWithEntityId": "entityType is required when entityId is provided."
@@ -108,6 +136,50 @@
       "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
       "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
       "defaultConflict": "Unable to update default mailbox. Please retry."
+    },
+    "ticketCategory": {
+      "notFound": "Ticket category not found.",
+      "slugAlreadyUsed": "Ticket category slug is already used in this workspace.",
+      "parentCannotBeSelf": "Ticket category cannot be its own parent.",
+      "parentCycle": "Ticket category parent would create a cycle."
+    },
+    "ticketTag": {
+      "notFound": "Ticket tag not found.",
+      "nameAlreadyUsed": "Ticket tag name is already used in this workspace."
+    },
+    "ticket": {
+      "notFound": "Ticket not found.",
+      "contactNotFound": "Contact not found for this ticket.",
+      "organizationNotFound": "Organization not found for this ticket.",
+      "organizationMismatch": "Organization does not match the selected contact.",
+      "assigneeNotFound": "Assignee is not available in this workspace.",
+      "assignOthersNotAllowed": "You can only assign tickets to yourself from this endpoint.",
+      "selfAssignNotAvailable": "This ticket cannot be self-assigned right now.",
+      "unassignNotAllowed": "You are not allowed to unassign this ticket.",
+      "invalidStatusTransition": "Cannot change ticket status from {{from}} to {{to}}.",
+      "solveNotAllowed": "This ticket cannot be marked as solved from {{from}}.",
+      "closeNotAllowed": "This ticket cannot be closed from {{from}}. It must be {{requiredFrom}} first.",
+      "reopenNotAllowed": "This ticket cannot be reopened from {{from}}. Only {{allowedFromOne}} or {{allowedFromTwo}} tickets can be reopened.",
+      "participantUserNotFound": "Participant user is not available in this workspace.",
+      "mailboxChangeNotAllowed": "Mailbox cannot be changed after messages already exist on the ticket. Current message count: {{messageCount}}.",
+      "attachmentsNotSupportedYet": "Initial message attachments are not supported yet.",
+      "conversationInvariantFailed": "Ticket conversation is missing or inconsistent.",
+      "closedMessageNotAllowed": "Cannot add a {{type}} while the ticket is {{status}}. Only {{allowedType}} is allowed until the ticket is reopened.",
+      "attachmentAlreadyLinked": "One or more files are already attached to another message."
     }
+  },
+  "ticketStatus": {
+    "new": "new",
+    "open": "open",
+    "pending": "pending",
+    "waiting_on_customer": "waiting on customer",
+    "solved": "solved",
+    "closed": "closed"
+  },
+  "ticketMessageType": {
+    "customer_message": "customer message",
+    "public_reply": "public reply",
+    "internal_note": "internal note",
+    "system_event": "system event"
   }
 }

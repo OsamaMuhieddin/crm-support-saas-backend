@@ -1,6 +1,8 @@
-﻿import mongoose from 'mongoose';
-
-const TICKET_PARTICIPANT_TYPES = Object.freeze(['watcher', 'collaborator']);
+import mongoose from 'mongoose';
+import {
+  TICKET_PARTICIPANT_TYPE,
+  TICKET_PARTICIPANT_TYPE_VALUES,
+} from '../../../constants/ticket-participant-type.js';
 
 const ticketParticipantSchema = new mongoose.Schema(
   {
@@ -8,37 +10,37 @@ const ticketParticipantSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
-      index: true
+      index: true,
     },
     ticketId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Ticket',
-      required: true
+      required: true,
     },
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true
+      required: true,
     },
     type: {
       type: String,
       required: true,
-      enum: TICKET_PARTICIPANT_TYPES,
-      default: 'watcher'
+      enum: TICKET_PARTICIPANT_TYPE_VALUES,
+      default: TICKET_PARTICIPANT_TYPE.WATCHER,
     },
     deletedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     deletedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null
-    }
+      default: null,
+    },
   },
   {
     strict: true,
-    timestamps: true
+    timestamps: true,
   }
 );
 
@@ -46,11 +48,16 @@ ticketParticipantSchema.index(
   { workspaceId: 1, ticketId: 1, userId: 1 },
   {
     unique: true,
-    partialFilterExpression: { deletedAt: null }
+    partialFilterExpression: { deletedAt: null },
   }
 );
+ticketParticipantSchema.index({
+  workspaceId: 1,
+  ticketId: 1,
+  deletedAt: 1,
+  createdAt: 1,
+});
 
 export const TicketParticipant =
   mongoose.models.TicketParticipant ||
   mongoose.model('TicketParticipant', ticketParticipantSchema);
-

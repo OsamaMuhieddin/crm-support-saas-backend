@@ -4,11 +4,13 @@ const normalizeSlug = (value) => {
     return undefined;
   }
 
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-_]/g, '') || undefined;
+  return (
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-z0-9-_]/g, '') || undefined
+  );
 };
 
 const ticketCategorySchema = new mongoose.Schema(
@@ -17,13 +19,13 @@ const ticketCategorySchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
-      index: true
+      index: true,
     },
     name: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 120
+      maxlength: 120,
     },
     slug: {
       type: String,
@@ -31,39 +33,39 @@ const ticketCategorySchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       maxlength: 140,
-      set: normalizeSlug
+      set: normalizeSlug,
     },
     parentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'TicketCategory',
-      default: null
+      default: null,
     },
     path: {
       type: String,
       trim: true,
-      default: null
+      default: null,
     },
     order: {
       type: Number,
-      default: 0
+      default: 0,
     },
     isActive: {
       type: Boolean,
-      default: true
+      default: true,
     },
     deletedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     deletedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null
-    }
+      default: null,
+    },
   },
   {
     strict: true,
-    timestamps: true
+    timestamps: true,
   }
 );
 
@@ -71,7 +73,7 @@ ticketCategorySchema.index(
   { workspaceId: 1, slug: 1 },
   {
     unique: true,
-    partialFilterExpression: { deletedAt: null }
+    partialFilterExpression: { deletedAt: null },
   }
 );
 ticketCategorySchema.index({ workspaceId: 1, parentId: 1 });
@@ -79,8 +81,14 @@ ticketCategorySchema.index(
   { workspaceId: 1, path: 1 },
   { partialFilterExpression: { path: { $type: 'string' } } }
 );
+ticketCategorySchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  isActive: 1,
+  parentId: 1,
+  order: 1,
+});
 
 export const TicketCategory =
   mongoose.models.TicketCategory ||
   mongoose.model('TicketCategory', ticketCategorySchema);
-

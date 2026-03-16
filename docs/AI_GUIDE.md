@@ -18,6 +18,7 @@ This repository is a backend foundation for a multi-tenant helpdesk/CRM SaaS:
 - `src/shared/*`: shared errors/middlewares/utils/validators
 - `src/infra/*`: db + placeholders for jobs/storage
 - `src/config/*`: env config
+- Module-local pure helpers may live under `src/modules/<module>/utils`; use that instead of `services/` when the code is not business logic and is not shared across modules
 
 ## Localization
 
@@ -74,3 +75,30 @@ This repository is a backend foundation for a multi-tenant helpdesk/CRM SaaS:
   - provisioning happens in `ensureWorkspaceForVerifiedUser` new-workspace branch
 - Backfill command for existing data:
   - `npm run mailboxes:backfill-default`
+
+## Tickets v1 Notes
+
+- Tickets module is implemented under `src/modules/tickets`.
+- All ticket routes are protected and workspace-scoped through the active session workspace.
+- One conversation exists per ticket and is created automatically on ticket creation.
+- Ticket numbers are allocated per workspace through `TicketCounter`.
+- Create/update RBAC:
+  - `POST /api/tickets`: `owner|admin|agent`
+  - ticket record/message/lifecycle/participant writes: `owner|admin|agent`
+  - category/tag mutations and `/tickets/:id/assign`: `owner|admin`
+- `mailboxId` defaults from the workspace default mailbox on create.
+- Ticket mailbox is mutable only before the first message; ticket and conversation mailbox ids must stay aligned.
+- Ticket writes require active category/tag refs in the same workspace.
+- Ticket detail may still hydrate already-linked inactive category/tag refs for historical integrity.
+- Manual message flow in v1:
+  - `customer_message`: requester/contact -> mailbox, status moves to `open`
+  - `public_reply`: mailbox -> requester/contact, status moves to `waiting_on_customer`
+  - `internal_note`: internal-only, no status change
+- Closed tickets accept `internal_note` only until explicit reopen.
+- Message attachments are uploaded through the files module first, then linked to both:
+  - the message as semantic owner
+  - the ticket for reverse lookup
+- Assignment is single-owner only:
+  - `owner|admin` assign operational members (`owner|admin|agent`)
+  - `agent` self-assigns only and cannot take tickets assigned to another user
+- Participants are internal metadata only and do not affect access control.

@@ -6,12 +6,32 @@ export const SUPPORTED_LANGS = new Set(['en', 'ar']);
 
 const dictionaries = { en, ar };
 
+function resolveInterpolationValue(value, lang = DEFAULT_LANG) {
+  if (value === undefined || value === null) {
+    return '';
+  }
+
+  if (typeof value === 'object') {
+    const nestedKey =
+      typeof value.messageKey === 'string'
+        ? value.messageKey
+        : typeof value.key === 'string'
+          ? value.key
+          : null;
+
+    if (nestedKey) {
+      return t(nestedKey, lang, value.args || {});
+    }
+  }
+
+  return String(value);
+}
+
 // Very small template replace: "Hello {{name}}"
-function interpolate(str, args = {}) {
+function interpolate(str, lang = DEFAULT_LANG, args = {}) {
   if (typeof str !== 'string') return str;
   return str.replace(/\{\{(\w+)\}\}/g, (_, k) => {
-    const v = args[k];
-    return v === undefined || v === null ? '' : String(v);
+    return resolveInterpolationValue(args[k], lang);
   });
 }
 
@@ -27,7 +47,7 @@ export function t(key, lang = DEFAULT_LANG, args = {}) {
       dict
     );
 
-  if (typeof value === 'string') return interpolate(value, args);
+  if (typeof value === 'string') return interpolate(value, safeLang, args);
 
   // fallback: return key itself so you can spot missing translations
   return key;
