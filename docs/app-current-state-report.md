@@ -33,7 +33,8 @@ Implemented business pillars:
 
 Partially implemented business pillars:
 
-- Customers and users API surfaces exist only as list stubs.
+- Customers v1 currently covers workspace-scoped organizations, contacts, and a minimal ContactIdentity surface, while richer customer workflows are still pending.
+- Users API surface is still a list stub.
 
 Planned business pillars with data models but no live API flows yet:
 
@@ -129,7 +130,17 @@ Current effective permissions by feature:
 5. Default mailbox cannot be deactivated; last active mailbox cannot be deactivated.
 6. Backfill script repairs default mailbox consistency across existing workspaces.
 
-#### Flow G: Tickets Core
+#### Flow G: Customers v1
+
+1. Workspace members create organizations when customer contacts should be grouped under a company/account record.
+2. Workspace members create contacts as external requester/customer records, with optional organization linkage.
+3. Contact list/detail/options responses stay intentionally lean and workspace-scoped.
+4. Contact email is normalized for matching and future-safe lookup flows, while optional phone values are validated professionally and stored in normalized international form.
+5. Ticket creation continues to reference `contactId`, and organization context can still be derived from the linked contact.
+6. Ticket list/detail reads continue to hydrate only lightweight contact and organization summaries instead of broad customer graphs.
+7. ContactIdentity v1 now exposes lightweight list/create endpoints under contacts without adding verification, delete/archive, or customer-auth flows.
+
+#### Flow H: Tickets Core
 
 1. Owner/Admin maintains ticket categories and tags inside the active workspace when structured routing metadata is needed.
 2. Owner/Admin/Agent creates ticket records with `POST /api/tickets`.
@@ -151,6 +162,7 @@ Production-ready business slices:
 - Workspace switching.
 - File operations v1.
 - Mailboxes v1.
+- Customers organizations, contacts, and minimal contact identities v1.
 - Tickets core record flow.
 - Ticket assignment, lifecycle, and participants flows.
 - Ticket conversation/message flow with attachment linking.
@@ -158,7 +170,7 @@ Production-ready business slices:
 
 Foundation-only slices:
 
-- Customers/Users API stubs.
+- Users API stub.
 - Admin/SLA/Inbox/Integrations routes mounted but empty.
 - Billing/automations/notifications/platform models are present but no runtime product flows.
 
@@ -306,7 +318,6 @@ Base prefix: `/api`
 | `POST` | `/auth/forgot-password`      | Forgot password OTP     | Public                                                            |
 | `POST` | `/auth/reset-password`       | Reset password with OTP | Public                                                            |
 | `GET`  | `/users`                     | Users stub list         | Public placeholder                                                |
-| `GET`  | `/customers`                 | Customers stub list     | Public placeholder                                                |
 
 #### Authenticated Auth Endpoints
 
@@ -401,6 +412,38 @@ Files notes:
 - Upload validation enforces mime/extension allowlists and max size.
 - Download contract is fixed at `/api/files/:fileId/download`.
 
+#### Customers / Organizations v1 + Contacts v1 + ContactIdentity v1 Endpoints
+
+| Method  | Path                            | Purpose                                              | Role requirements                              |
+| ------- | ------------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
+| `GET`   | `/customers/organizations`      | List organizations (pagination/search/filter/sort)   | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/organizations/options` | Lightweight organization options                  | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/organizations/:id`  | Get organization details                             | Any active member (`owner/admin/agent/viewer`) |
+| `POST`  | `/customers/organizations`      | Create organization                                  | `owner/admin/agent`                            |
+| `PATCH` | `/customers/organizations/:id`  | Update organization                                  | `owner/admin/agent`                            |
+| `GET`   | `/customers/contacts`           | List contacts (pagination/search/filter/sort)        | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/options`   | Lightweight contact options                          | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/:id`       | Get contact details                                  | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/:id/identities` | List lightweight contact identities             | Any active member (`owner/admin/agent/viewer`) |
+| `POST`  | `/customers/contacts`           | Create contact                                       | `owner/admin/agent`                            |
+| `PATCH` | `/customers/contacts/:id`       | Update contact                                       | `owner/admin/agent`                            |
+| `POST`  | `/customers/contacts/:id/identities` | Create contact identity                         | `owner/admin/agent`                            |
+
+Customers notes:
+
+- Organization and contact endpoints are protected and workspace-scoped through the active session workspace.
+- Organization and contact writes reject unknown body fields and use partial-update validation with at-least-one-field enforcement.
+- Organization search matches `name` and `domain`; contact search matches `fullName` and `email`.
+- Contact responses stay intentionally scoped to the resource itself, with only lightweight organization summaries when linked.
+- Ticket reads continue to reuse lightweight same-workspace customer summaries for contact/organization context rather than embedding larger customer payloads.
+- ContactIdentity list/create endpoints require resolving the parent contact inside the active workspace before reading or writing identities.
+- ContactIdentity uniqueness is enforced on normalized workspace-scoped values, so email case and phone formatting variants are treated as the same identity.
+- Stored ContactIdentity `email` values are normalized to lowercase, and stored `phone` / `whatsapp` values are normalized to stable international form.
+- Contact and ContactIdentity phone values are validated as plausible numbers and normalized consistently, without introducing OTP, verification, or customer-auth semantics.
+- ContactIdentity responses stay intentionally lightweight and do not expose `valueNormalized`, verification workflows, or unrelated linked collections.
+- No delete/archive organization or contact endpoint exists in v1.
+- ContactIdentity v1 does not include update/delete/archive, OTP, widget session, or customer-auth behavior.
+
 #### Mailboxes v1 Endpoints
 
 | Method  | Path                         | Purpose                                        | Role requirements                                                     |
@@ -440,7 +483,7 @@ Any request under those paths currently falls through to 404.
 | `files`         | Yes            | Implemented                                                                                            | Upload/list/get/download/delete + storage abstraction                                                                                                               |
 | `mailboxes`     | Yes            | Implemented                                                                                            | CRUD-like v1 + default invariants + backfill                                                                                                                        |
 | `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                              |
-| `customers`     | Yes            | Stub (`GET /customers`)                                                                                | Models implemented, service placeholder                                                                                                                             |
+| `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                            | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows |
 | `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows |
 | `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
 | `sla`           | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
@@ -491,9 +534,9 @@ Any request under those paths currently falls through to 404.
 
 | Model             | Purpose                      | Key Fields                                                                                        | Important Indexes/Constraints                                                                                               |
 | ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `Organization`    | Customer company record      | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt`                                    | Indexes on (`workspaceId`,`nameNormalized`), partial (`workspaceId`,`domain`), (`workspaceId`,`createdAt`)                  |
-| `Contact`         | Customer person record       | `workspaceId`, `organizationId`, `fullName`, `nameNormalized`, `emailNormalized`, `phone`, `tags` | Partial index (`workspaceId`,`emailNormalized`); indexes (`workspaceId`,`organizationId`), (`workspaceId`,`nameNormalized`) |
-| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `valueNormalized`, `verifiedAt`                               | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`)                 |
+| `Organization`    | Customer company record      | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt`                                    | Partial active-row indexes on (`workspaceId`,`nameNormalized`), (`workspaceId`,`domain`), (`workspaceId`,`createdAt`), (`workspaceId`,`updatedAt`)           |
+| `Contact`         | Customer person record       | `workspaceId`, `organizationId`, `fullName`, `nameNormalized`, `emailNormalized`, `phone`, `tags`, `customFields` | Partial index (`workspaceId`,`emailNormalized`) for active rows; partial active-row indexes (`workspaceId`,`organizationId`), (`workspaceId`,`nameNormalized`), (`workspaceId`,`updatedAt`) |
+| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `value`, `valueNormalized`, `verifiedAt`                      | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`)                 |
 
 #### 3.6.6 Tickets Domain Collections
 
@@ -656,7 +699,8 @@ Not fully covered by runtime tests:
 
 ### 3.12 Known Current Gaps and Implementation Notes
 
-- `users` and `customers` APIs are still public list stubs returning empty arrays.
+- `users` API is still a public list stub returning an empty array.
+- `customers` currently exposes Organizations v1, Contacts v1, and minimal ContactIdentity list/create endpoints; ticket integration continues using lean same-workspace customer summaries, and identity update/delete/verification/widget flows are not implemented yet.
 - `tickets` currently expose core ticket records, assignment/lifecycle actions, participant metadata, conversation/message flows, and category/tag dictionary APIs.
 - Mounted route groups `inbox`, `sla`, `integrations`, and `admin` are empty.
 - Several domains currently ship schema/model groundwork without exposed APIs.
@@ -732,11 +776,25 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/mailboxes/:id/activate`
 - `POST /api/mailboxes/:id/deactivate`
 
+### Customers
+
+- `GET /api/customers/organizations`
+- `GET /api/customers/organizations/options`
+- `GET /api/customers/organizations/:id`
+- `POST /api/customers/organizations`
+- `PATCH /api/customers/organizations/:id`
+- `GET /api/customers/contacts`
+- `GET /api/customers/contacts/options`
+- `GET /api/customers/contacts/:id`
+- `GET /api/customers/contacts/:id/identities`
+- `POST /api/customers/contacts`
+- `PATCH /api/customers/contacts/:id`
+- `POST /api/customers/contacts/:id/identities`
+
 ### Foundation/Public Stubs
 
 - `GET /api/health`
 - `GET /api/users`
-- `GET /api/customers`
 
 ### Tickets
 

@@ -1,6 +1,7 @@
-import mongoose from 'mongoose';
-
-export const normalizeObjectId = (value) => String(value || '');
+export {
+  normalizeObjectId,
+  toObjectIdIfValid
+} from '../../../shared/utils/object-id.js';
 
 export const normalizeNullableString = (value) => {
   if (value === undefined) {
@@ -13,18 +14,6 @@ export const normalizeNullableString = (value) => {
 
   const normalized = String(value).trim();
   return normalized.length > 0 ? normalized : null;
-};
-
-export const toObjectIdIfValid = (value) => {
-  if (value instanceof mongoose.Types.ObjectId) {
-    return value;
-  }
-
-  if (typeof value === 'string' && mongoose.Types.ObjectId.isValid(value)) {
-    return new mongoose.Types.ObjectId(value);
-  }
-
-  return value;
 };
 
 export const parseNullableBoolean = (value) => {

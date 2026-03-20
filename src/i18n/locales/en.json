@@ -34,6 +34,17 @@
       "activated": "Mailbox activated successfully.",
       "deactivated": "Mailbox deactivated successfully."
     },
+    "organization": {
+      "created": "Organization created successfully.",
+      "updated": "Organization updated successfully."
+    },
+    "contact": {
+      "created": "Contact created successfully.",
+      "updated": "Contact updated successfully."
+    },
+    "contactIdentity": {
+      "created": "Contact identity created successfully."
+    },
     "ticketCategory": {
       "created": "Ticket category created successfully.",
       "updated": "Ticket category updated successfully.",
@@ -69,6 +80,7 @@
       "invalid": "Invalid value.",
       "required": "This field is required.",
       "invalidEmail": "Invalid email address.",
+      "invalidPhone": "Invalid phone number.",
       "invalidEnum": "Invalid value.",
       "maxLength": "Value exceeds the maximum allowed length.",
       "lengthRange": "Value length is out of range.",
@@ -76,6 +88,7 @@
       "invalidId": "Invalid ID.",
       "invalidNumber": "Invalid number.",
       "invalidBoolean": "Invalid boolean value.",
+      "invalidDomain": "Invalid domain name.",
       "invalidDate": "Invalid date.",
       "invalidDateRange": "Start date must not be later than end date.",
       "duplicateValues": "Duplicate values are not allowed.",
@@ -136,6 +149,15 @@
       "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
       "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
       "defaultConflict": "Unable to update default mailbox. Please retry."
+    },
+    "organization": {
+      "notFound": "Organization not found."
+    },
+    "contact": {
+      "notFound": "Contact not found."
+    },
+    "contactIdentity": {
+      "alreadyExists": "This identity already exists in this workspace."
     },
     "ticketCategory": {
       "notFound": "Ticket category not found.",

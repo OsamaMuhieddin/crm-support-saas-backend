@@ -1,5 +1,12 @@
-﻿import mongoose from 'mongoose';
-import { normalizeName } from '../../../shared/utils/normalize.js';
+import mongoose from 'mongoose';
+import {
+  normalizeDomain,
+  normalizeName
+} from '../../../shared/utils/normalize.js';
+import {
+  isNormalizedDomainLike,
+  normalizeNullableDomainForWriteOrThrow
+} from '../utils/customer.helpers.js';
 
 const organizationSchema = new mongoose.Schema(
   {
@@ -26,11 +33,19 @@ const organizationSchema = new mongoose.Schema(
       type: String,
       trim: true,
       lowercase: true,
+      maxlength: 253,
+      set: normalizeDomain,
+      validate: {
+        validator: (value) =>
+          value === null || value === undefined || isNormalizedDomainLike(value),
+        message: 'errors.validation.invalidDomain'
+      },
       default: null
     },
     notes: {
       type: String,
       trim: true,
+      maxlength: 5000,
       default: null
     },
     deletedAt: {
@@ -50,20 +65,46 @@ const organizationSchema = new mongoose.Schema(
 );
 
 organizationSchema.pre('validate', function normalizeNameFields(next) {
-  if (this.isModified('name') || !this.nameNormalized) {
-    this.nameNormalized = normalizeName(this.name);
-  }
+  try {
+    if (this.isModified('name') || !this.nameNormalized) {
+      this.nameNormalized = normalizeName(this.name);
+    }
 
-  next();
+    if (this.isModified('domain')) {
+      this.domain = normalizeNullableDomainForWriteOrThrow({
+        value: this.domain,
+        field: 'domain'
+      });
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
-organizationSchema.index({ workspaceId: 1, nameNormalized: 1 });
+organizationSchema.index(
+  { workspaceId: 1, nameNormalized: 1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
 organizationSchema.index(
   { workspaceId: 1, domain: 1 },
-  { partialFilterExpression: { domain: { $type: 'string' } } }
+  {
+    partialFilterExpression: {
+      deletedAt: null,
+      domain: { $type: 'string' }
+    }
+  }
 );
-organizationSchema.index({ workspaceId: 1, createdAt: -1 });
+organizationSchema.index(
+  { workspaceId: 1, createdAt: -1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
+organizationSchema.index(
+  { workspaceId: 1, updatedAt: -1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
 
 export const Organization =
-  mongoose.models.Organization || mongoose.model('Organization', organizationSchema);
-
+  mongoose.models.Organization ||
+  mongoose.model('Organization', organizationSchema);

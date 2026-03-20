@@ -1,4 +1,4 @@
-# API Reference (MVP Auth + Workspace Invites + Workspace Switching)
+# CRM Support SaaS Backend API Reference
 
 ## 1) Overview
 
@@ -156,7 +156,21 @@ Session-context endpoints:
 7. Default mailbox cannot be deactivated; set another mailbox as default first.
 8. Mailbox v1 has no delete endpoint.
 
-### Flow F: Ticket Categories and Tags
+### Flow F: Customer Organizations, Contacts, and Contact Identities v1
+
+1. Authenticate normally and keep an access token scoped to the active workspace session.
+2. Create organizations with `POST /api/customers/organizations` when a contact should be linked to a company/customer account.
+3. Create contacts with `POST /api/customers/contacts`; `organizationId` is optional and must reference a same-workspace active organization when provided.
+4. Use `GET /api/customers/organizations` and `GET /api/customers/contacts` for paginated list/search/filter reads.
+5. Use `/options` endpoints for lightweight selector data:
+   - `GET /api/customers/organizations/options`
+   - `GET /api/customers/contacts/options`
+6. Use `GET /api/customers/organizations/:id` and `GET /api/customers/contacts/:id` for detail reads, then `PATCH` those same resource paths for partial edits.
+7. Ticket create can continue referencing `contactId`; when the contact is linked to an organization, the ticket organization can still be derived from that contact.
+8. Use `GET /api/customers/contacts/:id/identities` to read the linked identity records for one contact and `POST /api/customers/contacts/:id/identities` to add one.
+9. ContactIdentity v1 is intentionally minimal: no update/delete/archive endpoints, no verification lifecycle, and no customer-auth/widget session behavior.
+
+### Flow G: Ticket Categories and Tags
 
 1. Owner/Admin creates ticket categories and tags inside the current workspace.
 2. Use `GET /api/tickets/categories` and `GET /api/tickets/tags` for paginated admin/operator reads.
@@ -164,7 +178,7 @@ Session-context endpoints:
 4. Operational users (`owner|admin|agent|viewer`) can read active dictionaries.
 5. Category/tag activation state is managed explicitly through activate/deactivate endpoints.
 
-### Flow G: Tickets Core
+### Flow H: Tickets Core
 
 1. Authenticate normally and keep an access token scoped to the active workspace session.
 2. Create and maintain ticket categories/tags when structured routing is needed.
@@ -1036,7 +1050,614 @@ Requirements:
   - If object is already missing in storage, endpoint still soft-deletes the DB record.
   - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
 
-## 9) Mailboxes Endpoints Reference (Mailbox v1)
+## 9) Customers Endpoints Reference (Organizations v1 + Contacts v1 + ContactIdentity v1)
+
+### Auth model + authorization rules
+
+- All customer organization/contact/contact-identity endpoints are protected and require Authorization header.
+- All customer endpoints are session-context endpoints scoped to the token workspace (`wid` / `session.workspaceId`).
+- Role rules:
+  - `owner|admin|agent`: create, update, read
+  - `viewer`: read-only
+- Organizations and contacts are workspace-scoped customer records intended for contact selection, requester linkage, and ticket context.
+- Organization domains are normalized to lowercase on write.
+- Contact emails are normalized to lowercase on write and remain the primary future-safe matching anchor.
+- ContactIdentity v1 currently exposes list/create only for `email`, `phone`, and `whatsapp` identity records linked to a parent contact.
+- Ticket create/list/detail flows continue to resolve same-workspace customer records and expose only lightweight contact/organization summaries relevant to the ticket payload.
+- Customers v1 does not include delete/archive, merge, import/export, or customer-auth/widget flows.
+
+### GET `/api/customers/organizations`
+
+- Purpose: list workspace organizations with pagination, safe partial search, optional exact-domain filter, and allowlisted sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>= 1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` or `search` optional (`1..120`), searches organization `name` and `domain`
+  - `domain` optional exact domain filter (`1..253`, FQDN format)
+  - `sort` optional: `name | -name | domain | -domain | createdAt | -createdAt | updatedAt | -updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "organizations": [
+    {
+      "_id": "65f1...",
+      "workspaceId": "65aa...",
+      "name": "Acme Inc",
+      "domain": "acme.example",
+      "notes": "Priority enterprise customer.",
+      "createdAt": "2026-03-20T12:00:00.000Z",
+      "updatedAt": "2026-03-20T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Search input is escaped before regex construction.
+  - The list excludes soft-deleted organizations.
+  - Domain filter is exact-match after normalization.
+- Anti-enumeration note:
+  - The endpoint is always scoped to the active workspace from the token.
+
+### GET `/api/customers/organizations/options`
+
+- Purpose: lightweight organization options endpoint for selectors/dropdowns.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` or `search` optional (`1..120`)
+  - `limit` optional (`1..50`, default `20`)
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f1...",
+      "name": "Acme Inc",
+      "domain": "acme.example"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Intended for fast UI selector/typeahead usage.
+  - The payload is intentionally lightweight.
+
+### GET `/api/customers/organizations/:id`
+
+- Purpose: fetch one organization in the current workspace.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "organization": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Acme Inc",
+    "domain": "acme.example",
+    "notes": "Priority enterprise customer.",
+    "createdAt": "2026-03-20T12:00:00.000Z",
+    "updatedAt": "2026-03-20T12:30:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.organization.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Anti-enumeration note:
+  - Cross-workspace ids resolve as `404 errors.organization.notFound`.
+
+### POST `/api/customers/organizations`
+
+- Purpose: create a customer organization in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role is `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "name": "Acme Inc",
+  "domain": "acme.example",
+  "notes": "Priority enterprise customer."
+}
+```
+
+- Request rules:
+  - `name` required, trimmed string (`1..180`)
+  - `domain` optional nullable string (`1..253`) and must be a valid domain/FQDN when provided
+  - `notes` optional nullable string (`1..5000`)
+  - unknown body fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.organization.created",
+  "message": "Organization created successfully.",
+  "organization": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Acme Inc",
+    "domain": "acme.example",
+    "notes": "Priority enterprise customer.",
+    "createdAt": "2026-03-20T12:00:00.000Z",
+    "updatedAt": "2026-03-20T12:00:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.workspace.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Notes:
+  - Response returns only the created organization resource; it does not expand contacts, tickets, or counts.
+
+### PATCH `/api/customers/organizations/:id`
+
+- Purpose: partially update editable organization fields in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role is `owner|admin|agent`
+- Request params:
+  - `id`: mongo id
+- Request body:
+
+```json
+{
+  "domain": "acme.io",
+  "notes": "Updated sales notes."
+}
+```
+
+- Request rules:
+  - allowed fields: `name`, `domain`, `notes`
+  - at least one allowed field is required
+  - `domain` may be set to `null` to clear it
+  - `notes` may be set to `null` to clear it
+  - unknown body fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.organization.updated",
+  "message": "Organization updated successfully.",
+  "organization": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "name": "Acme Inc",
+    "domain": "acme.io",
+    "notes": "Updated sales notes.",
+    "createdAt": "2026-03-20T12:00:00.000Z",
+    "updatedAt": "2026-03-20T12:30:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.organization.notFound | errors.workspace.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Anti-enumeration note:
+  - Cross-workspace ids resolve as `404 errors.organization.notFound`.
+- Notes:
+  - Response returns only the updated organization resource; it does not expand contacts, tickets, or counts.
+
+### GET `/api/customers/contacts`
+
+- Purpose: list workspace contacts with pagination, safe partial search, optional organization/email filters, and allowlisted sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>= 1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` or `search` optional (`1..120`), searches contact `fullName` and `email`
+  - `organizationId` optional mongo id filter
+  - `email` optional exact email filter
+  - `sort` optional: `fullName | -fullName | email | -email | createdAt | -createdAt | updatedAt | -updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "contacts": [
+    {
+      "_id": "65f2...",
+      "workspaceId": "65aa...",
+      "organizationId": "65f1...",
+      "organization": {
+        "_id": "65f1...",
+        "name": "Acme Inc",
+        "domain": "acme.example"
+      },
+      "fullName": "Jane Requester",
+      "email": "jane.requester@example.com",
+      "phone": "+963955555555",
+      "tags": ["VIP"],
+      "createdAt": "2026-03-20T12:10:00.000Z",
+      "updatedAt": "2026-03-20T12:10:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Search input is escaped before regex construction.
+  - The list excludes soft-deleted contacts.
+  - `email` filter is exact-match after normalization.
+  - Response items stay intentionally lean and do not expand tickets, identities, or other linked collections.
+- Anti-enumeration note:
+  - The endpoint is always scoped to the active workspace from the token.
+
+### GET `/api/customers/contacts/options`
+
+- Purpose: lightweight contact options endpoint for selectors/dropdowns and requester lookups.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` or `search` optional (`1..120`)
+  - `organizationId` optional mongo id filter
+  - `email` optional exact email filter
+  - `limit` optional (`1..50`, default `20`)
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f2...",
+      "fullName": "Jane Requester",
+      "email": "jane.requester@example.com",
+      "phone": "+963955555555",
+      "organizationId": "65f1...",
+      "organization": {
+        "_id": "65f1...",
+        "name": "Acme Inc",
+        "domain": "acme.example"
+      }
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Intended for fast UI selector/typeahead usage.
+  - The payload is intentionally lightweight and excludes `customFields`.
+
+### GET `/api/customers/contacts/:id`
+
+- Purpose: fetch one contact in the current workspace.
+- Request params:
+  - `id`: mongo id
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "contact": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "organizationId": "65f1...",
+    "organization": {
+      "_id": "65f1...",
+      "name": "Acme Inc",
+      "domain": "acme.example"
+    },
+    "fullName": "Jane Requester",
+    "email": "jane.requester@example.com",
+    "phone": "+963955555555",
+    "tags": ["VIP"],
+    "customFields": {
+      "source": "Manual"
+    },
+    "createdAt": "2026-03-20T12:10:00.000Z",
+    "updatedAt": "2026-03-20T12:30:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.contact.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - Response returns only the contact resource plus an optional lightweight organization summary.
+  - It does not expand identities, tickets, or organization member lists.
+- Anti-enumeration note:
+  - Cross-workspace ids resolve as `404 errors.contact.notFound`.
+
+### POST `/api/customers/contacts`
+
+- Purpose: create a workspace-scoped customer contact.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role is `owner|admin|agent`
+- Request body:
+
+```json
+{
+  "fullName": "Jane Requester",
+  "organizationId": "65f1...",
+  "email": "jane.requester@example.com",
+  "phone": "+963955555555",
+  "tags": ["VIP"],
+  "customFields": {
+    "source": "Manual"
+  }
+}
+```
+
+- Request rules:
+  - `fullName` required, trimmed string (`1..180`)
+  - `organizationId` optional nullable mongo id and must reference a same-workspace non-deleted organization when provided
+  - `email` optional nullable email (`max 320`), normalized to lowercase
+  - `phone` optional nullable plausible phone number (`max 40` input chars), normalized to E.164-style storage when provided
+  - `tags` optional nullable array (`max 20`) of unique trimmed strings (`1..50`)
+  - `customFields` optional nullable flat object (`max 20` keys); values are limited to string/number/boolean/null
+  - unknown body fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.contact.created",
+  "message": "Contact created successfully.",
+  "contact": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "organizationId": "65f1...",
+    "organization": {
+      "_id": "65f1...",
+      "name": "Acme Inc",
+      "domain": "acme.example"
+    },
+    "fullName": "Jane Requester",
+    "email": "jane.requester@example.com",
+    "phone": "+963955555555",
+    "tags": ["VIP"],
+    "customFields": {
+      "source": "Manual"
+    },
+    "createdAt": "2026-03-20T12:10:00.000Z",
+    "updatedAt": "2026-03-20T12:10:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.organization.notFound | errors.workspace.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Notes:
+  - A contact may be created without `email` or `phone` for manual workflows.
+  - Stored contact phone values are normalized to a stable international format when accepted.
+  - Response returns only the created contact resource plus an optional lightweight organization summary.
+
+### PATCH `/api/customers/contacts/:id`
+
+- Purpose: partially update editable contact fields in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role is `owner|admin|agent`
+- Request params:
+  - `id`: mongo id
+- Request body:
+
+```json
+{
+  "organizationId": "65f1...",
+  "email": "jane.requester@example.com",
+  "tags": ["VIP", "Escalated"],
+  "customFields": {
+    "source": "Manual"
+  }
+}
+```
+
+- Request rules:
+  - allowed fields: `fullName`, `organizationId`, `email`, `phone`, `tags`, `customFields`
+  - at least one allowed field is required
+  - `organizationId`, `email`, `phone`, `tags`, and `customFields` may be set to `null` to clear their stored value
+  - `organizationId` must reference a same-workspace non-deleted organization when provided as a value
+  - non-null `phone` values must be plausible phone numbers and are normalized to stable international storage
+  - unknown body fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.contact.updated",
+  "message": "Contact updated successfully.",
+  "contact": {
+    "_id": "65f2...",
+    "workspaceId": "65aa...",
+    "organizationId": "65f1...",
+    "organization": {
+      "_id": "65f1...",
+      "name": "Acme Inc",
+      "domain": "acme.example"
+    },
+    "fullName": "Jane Requester",
+    "email": "jane.requester@example.com",
+    "phone": null,
+    "tags": ["VIP", "Escalated"],
+    "customFields": {
+      "source": "Manual"
+    },
+    "createdAt": "2026-03-20T12:10:00.000Z",
+    "updatedAt": "2026-03-20T12:30:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.contact.notFound | errors.organization.notFound | errors.workspace.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Notes:
+  - Response returns only the updated contact resource plus an optional lightweight organization summary.
+  - The endpoint does not expand tickets, identities, or any linked collections.
+- Anti-enumeration note:
+  - Cross-workspace ids resolve as `404 errors.contact.notFound`.
+
+### GET `/api/customers/contacts/:id/identities`
+
+- Purpose: list the lightweight identity records linked to one contact in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request params:
+  - `id`: mongo id of the parent contact
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "identities": [
+    {
+      "_id": "6601...",
+      "workspaceId": "65aa...",
+      "contactId": "65f2...",
+      "type": "email",
+      "value": "requester@example.com",
+      "verifiedAt": null,
+      "createdAt": "2026-03-20T12:40:00.000Z",
+      "updatedAt": "2026-03-20T12:40:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.contact.notFound`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - The parent contact must belong to the active workspace and must not be deleted.
+  - The response returns identity rows only; it does not expand the contact, organization, tickets, or any other linked data.
+  - `valueNormalized` is intentionally not exposed.
+- Anti-enumeration note:
+  - Cross-workspace parent contact ids resolve as `404 errors.contact.notFound`.
+
+### POST `/api/customers/contacts/:id/identities`
+
+- Purpose: add one lightweight identity record to an existing contact in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role is `owner|admin|agent`
+- Request params:
+  - `id`: mongo id of the parent contact
+- Request body:
+
+```json
+{
+  "type": "email",
+  "value": "requester@example.com"
+}
+```
+
+- Request rules:
+  - allowed fields: `type`, `value`
+  - `type` required enum: `email | phone | whatsapp`
+  - `value` required trimmed string
+  - `email` identities require a valid email format (`max 320`) and are stored/returned as lowercase-trimmed values
+  - `phone` and `whatsapp` identities require a plausible phone number (`max 40` input chars) and are normalized to stable international storage
+  - parent contact must reference a same-workspace non-deleted contact
+  - duplicate active identities in the workspace are rejected with a business conflict response
+  - unknown body fields are rejected
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.contactIdentity.created",
+  "message": "Contact identity created successfully.",
+  "identity": {
+    "_id": "6601...",
+    "workspaceId": "65aa...",
+    "contactId": "65f2...",
+    "type": "email",
+    "value": "requester@example.com",
+    "verifiedAt": null,
+    "createdAt": "2026-03-20T12:40:00.000Z",
+    "updatedAt": "2026-03-20T12:40:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.contact.notFound`
+  - `409` `errors.contactIdentity.alreadyExists`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+- Notes:
+  - `verifiedAt` remains `null` in normal v1 flows because verification lifecycle endpoints are intentionally out of scope.
+  - Identity uniqueness is enforced on normalized workspace-scoped values, so email case and phone formatting variants conflict cleanly instead of creating duplicates.
+  - `email` identity values are persisted and returned in normalized lowercase form; `phone` and `whatsapp` values are persisted and returned in normalized international form.
+  - The response returns only the created identity record and does not expose `valueNormalized`.
+  - ContactIdentity v1 does not include update/delete/archive endpoints.
+- Anti-enumeration note:
+  - Cross-workspace parent contact ids resolve as `404 errors.contact.notFound`.
+
+## 10) Mailboxes Endpoints Reference (Mailbox v1)
 
 ### Auth model + authorization rules
 
@@ -1356,7 +1977,7 @@ Requirements:
   - Last active mailbox cannot be deactivated.
   - Ticket/conversation/message mailbox references are preserved.
 
-## 10) Mailbox Backfill Command
+## 11) Mailbox Backfill Command
 
 - Purpose: idempotently repair workspaces with missing/invalid mailbox defaults.
 - Command:
@@ -1375,7 +1996,7 @@ npm run mailboxes:backfill-default
   - safe to run multiple times (idempotent)
   - does not create duplicate default mailboxes when rerun
 
-## 11) Tickets Endpoints Reference
+## 12) Tickets Endpoints Reference
 
 ### Auth model + authorization rules
 

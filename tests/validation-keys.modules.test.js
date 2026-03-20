@@ -16,6 +16,9 @@ const extractValidationKeys = (content) =>
 
 const validatorFiles = [
   '../src/modules/workspaces/validators/workspaces.validators.js',
+  '../src/modules/customers/validators/contacts.validators.js',
+  '../src/modules/customers/validators/contact-identities.validators.js',
+  '../src/modules/customers/validators/organizations.validators.js',
   '../src/modules/mailboxes/validators/mailboxes.validators.js',
   '../src/modules/files/validators/files.validators.js',
   '../src/modules/tickets/validators/ticket-categories.validators.js',
@@ -26,7 +29,7 @@ const validatorFiles = [
 ];
 
 describe('module validation i18n keys', () => {
-  test('all workspace/mailbox/file/ticket validation keys exist in en/ar locales', () => {
+  test('all workspace/customer/mailbox/file/ticket validation keys exist in en/ar locales', () => {
     const usedKeys = new Set();
 
     for (const file of validatorFiles) {

@@ -6,6 +6,14 @@ import { WorkspaceMember } from '../../workspaces/models/workspace-member.model.
 import { Mailbox } from '../../mailboxes/models/mailbox.model.js';
 import { Contact } from '../../customers/models/contact.model.js';
 import { Organization } from '../../customers/models/organization.model.js';
+import {
+  buildContactSummaryView,
+  CONTACT_SUMMARY_PROJECTION
+} from '../../../shared/utils/customer-reference.js';
+import {
+  buildOrganizationSummaryView,
+  ORGANIZATION_SUMMARY_PROJECTION
+} from '../../../shared/utils/customer-reference.js';
 import { User } from '../../users/models/user.model.js';
 import { Conversation } from '../models/conversation.model.js';
 import { TicketCategory } from '../models/ticket-category.model.js';
@@ -29,20 +37,6 @@ const MAILBOX_SUMMARY_PROJECTION = {
   emailAddress: 1,
   isDefault: 1,
   isActive: 1,
-};
-
-const CONTACT_SUMMARY_PROJECTION = {
-  _id: 1,
-  organizationId: 1,
-  fullName: 1,
-  email: 1,
-  phone: 1,
-};
-
-const ORGANIZATION_SUMMARY_PROJECTION = {
-  _id: 1,
-  name: 1,
-  domain: 1,
 };
 
 const USER_SUMMARY_PROJECTION = {
@@ -90,22 +84,6 @@ export const buildMailboxSummaryView = (mailbox) => ({
   emailAddress: mailbox.emailAddress || null,
   isDefault: Boolean(mailbox.isDefault),
   isActive: Boolean(mailbox.isActive),
-});
-
-export const buildContactSummaryView = (contact) => ({
-  _id: normalizeObjectId(contact._id),
-  organizationId: contact.organizationId
-    ? normalizeObjectId(contact.organizationId)
-    : null,
-  fullName: contact.fullName,
-  email: contact.email || null,
-  phone: contact.phone || null,
-});
-
-export const buildOrganizationSummaryView = (organization) => ({
-  _id: normalizeObjectId(organization._id),
-  name: organization.name,
-  domain: organization.domain || null,
 });
 
 export const buildAssigneeSummaryView = ({ user, member = null }) => ({

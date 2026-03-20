@@ -1,18 +1,9 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 import {
-  normalizeEmail,
-  normalizePhone
-} from '../../../shared/utils/normalize.js';
-
-const CONTACT_IDENTITY_TYPES = Object.freeze(['email', 'phone', 'whatsapp']);
-
-const normalizeIdentityValue = (type, value) => {
-  if (type === 'email') {
-    return normalizeEmail(value);
-  }
-
-  return normalizePhone(value);
-};
+  CONTACT_IDENTITY_TYPES,
+  normalizeContactIdentityTypeOrThrow,
+  normalizeContactIdentityValueForWriteOrThrow
+} from '../utils/contact-identity.helpers.js';
 
 const contactIdentitySchema = new mongoose.Schema(
   {
@@ -64,11 +55,29 @@ const contactIdentitySchema = new mongoose.Schema(
 );
 
 contactIdentitySchema.pre('validate', function normalizeIdentityFields(next) {
-  if (this.isModified('type') || this.isModified('value') || !this.valueNormalized) {
-    this.valueNormalized = normalizeIdentityValue(this.type, this.value);
-  }
+  try {
+    if (
+      this.isModified('type') ||
+      this.isModified('value') ||
+      !this.valueNormalized
+    ) {
+      const normalizedType = normalizeContactIdentityTypeOrThrow({
+        type: this.type
+      });
+      const normalizedValue = normalizeContactIdentityValueForWriteOrThrow({
+        type: normalizedType,
+        value: this.value
+      });
 
-  next();
+      this.type = normalizedType;
+      this.value = normalizedValue;
+      this.valueNormalized = normalizedValue;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 contactIdentitySchema.index(
@@ -83,4 +92,3 @@ contactIdentitySchema.index({ workspaceId: 1, contactId: 1 });
 export const ContactIdentity =
   mongoose.models.ContactIdentity ||
   mongoose.model('ContactIdentity', contactIdentitySchema);
-

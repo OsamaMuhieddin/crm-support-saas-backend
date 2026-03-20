@@ -1,5 +1,13 @@
-﻿import mongoose from 'mongoose';
-import { normalizeEmail, normalizeName } from '../../../shared/utils/normalize.js';
+import mongoose from 'mongoose';
+import {
+  normalizeEmail,
+  normalizeName,
+  normalizePhone
+} from '../../../shared/utils/normalize.js';
+import {
+  isNormalizedEmailLike,
+  normalizeNullableEmailForWriteOrThrow
+} from '../utils/customer.helpers.js';
 
 const contactSchema = new mongoose.Schema(
   {
@@ -31,6 +39,10 @@ const contactSchema = new mongoose.Schema(
       type: String,
       trim: true,
       maxlength: 320,
+      validate: {
+        validator: (value) => value === null || value === undefined || isNormalizedEmailLike(value),
+        message: 'errors.validation.invalidEmail'
+      },
       default: null
     },
     emailNormalized: {
@@ -43,10 +55,18 @@ const contactSchema = new mongoose.Schema(
     phone: {
       type: String,
       trim: true,
+      maxlength: 40,
+      set: normalizePhone,
       default: null
     },
     tags: {
-      type: [String],
+      type: [
+        {
+          type: String,
+          trim: true,
+          maxlength: 50
+        }
+      ],
       default: []
     },
     customFields: {
@@ -70,24 +90,48 @@ const contactSchema = new mongoose.Schema(
 );
 
 contactSchema.pre('validate', function normalizeContactFields(next) {
-  if (this.isModified('fullName') || !this.nameNormalized) {
-    this.nameNormalized = normalizeName(this.fullName);
-  }
+  try {
+    if (this.isModified('fullName') || !this.nameNormalized) {
+      this.nameNormalized = normalizeName(this.fullName);
+    }
 
-  if (this.isModified('email')) {
-    this.emailNormalized = normalizeEmail(this.email);
-  }
+    if (this.isModified('email')) {
+      const normalizedEmail = normalizeNullableEmailForWriteOrThrow({
+        value: this.email,
+        field: 'email'
+      });
 
-  next();
+      this.email = normalizedEmail;
+      this.emailNormalized = normalizedEmail;
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 contactSchema.index(
   { workspaceId: 1, emailNormalized: 1 },
-  { partialFilterExpression: { emailNormalized: { $type: 'string' } } }
+  {
+    partialFilterExpression: {
+      deletedAt: null,
+      emailNormalized: { $type: 'string' }
+    }
+  }
 );
-contactSchema.index({ workspaceId: 1, organizationId: 1 });
-contactSchema.index({ workspaceId: 1, nameNormalized: 1 });
+contactSchema.index(
+  { workspaceId: 1, organizationId: 1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
+contactSchema.index(
+  { workspaceId: 1, nameNormalized: 1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
+contactSchema.index(
+  { workspaceId: 1, updatedAt: -1 },
+  { partialFilterExpression: { deletedAt: null } }
+);
 
 export const Contact =
   mongoose.models.Contact || mongoose.model('Contact', contactSchema);
-

@@ -341,7 +341,7 @@ Invite links in emails are built from `FRONTEND_BASE_URL`.
 
 ### API reference
 
-- See [docs/api.md](docs/api.md) for auth and invite endpoints, request samples, and invite acceptance finalization flow.
+- See [docs/api.md](docs/api.md) for the backend API reference, including auth, workspace, files, customers, mailboxes, and tickets.
 - Localization header is supported across endpoints: `x-lang: en|ar`.
 
 ## Backend Files v1 (MinIO)

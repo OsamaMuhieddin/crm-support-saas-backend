@@ -34,6 +34,17 @@
       "activated": "تم تفعيل صندوق البريد بنجاح.",
       "deactivated": "تم تعطيل صندوق البريد بنجاح."
     },
+    "organization": {
+      "created": "تم إنشاء المؤسسة بنجاح.",
+      "updated": "تم تحديث المؤسسة بنجاح."
+    },
+    "contact": {
+      "created": "تم إنشاء جهة الاتصال بنجاح.",
+      "updated": "تم تحديث جهة الاتصال بنجاح."
+    },
+    "contactIdentity": {
+      "created": "تم إنشاء هوية جهة الاتصال بنجاح."
+    },
     "ticketCategory": {
       "created": "تم إنشاء فئة التذاكر بنجاح.",
       "updated": "تم تحديث فئة التذاكر بنجاح.",
@@ -69,6 +80,7 @@
       "invalid": "قيمة غير صالحة.",
       "required": "هذا الحقل مطلوب.",
       "invalidEmail": "بريد إلكتروني غير صالح.",
+      "invalidPhone": "رقم هاتف غير صالح.",
       "invalidEnum": "قيمة غير صالحة.",
       "maxLength": "القيمة تتجاوز الحد الأقصى للطول.",
       "lengthRange": "طول القيمة خارج النطاق.",
@@ -76,6 +88,7 @@
       "invalidId": "معرّف غير صالح.",
       "invalidNumber": "رقم غير صالح.",
       "invalidBoolean": "قيمة منطقية غير صالحة.",
+      "invalidDomain": "اسم النطاق غير صالح.",
       "invalidDate": "تاريخ غير صالح.",
       "invalidDateRange": "يجب ألا يكون تاريخ البداية بعد تاريخ النهاية.",
       "duplicateValues": "لا يُسمح بالقيم المكررة.",
@@ -136,6 +149,15 @@
       "defaultCannotDeactivate": "لا يمكن تعطيل صندوق البريد الافتراضي.",
       "lastActiveCannotDeactivate": "لا يمكن تعطيل آخر صندوق بريد نشط.",
       "defaultConflict": "تعذر تحديث صندوق البريد الافتراضي. يرجى إعادة المحاولة."
+    },
+    "organization": {
+      "notFound": "لم يتم العثور على المؤسسة."
+    },
+    "contact": {
+      "notFound": "لم يتم العثور على جهة الاتصال."
+    },
+    "contactIdentity": {
+      "alreadyExists": "هذه الهوية موجودة بالفعل في مساحة العمل هذه."
     },
     "ticketCategory": {
       "notFound": "لم يتم العثور على فئة التذاكر.",
