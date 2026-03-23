@@ -1,13 +1,18 @@
-import { TICKET_STATUS } from '../../../constants/ticket-status.js'
-import { TICKET_PRIORITY } from '../../../constants/ticket-priority.js'
-import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js'
-import { createError } from '../../../shared/errors/createError.js'
-import { buildPagination } from '../../../shared/utils/pagination.js'
-import { escapeRegex } from '../../../shared/utils/regex.js'
-import { normalizeSubject } from '../../../shared/utils/normalize.js'
-import { Conversation } from '../models/conversation.model.js'
-import { TicketCounter } from '../models/ticket-counter.model.js'
-import { Ticket } from '../models/ticket.model.js'
+import { TICKET_STATUS } from '../../../constants/ticket-status.js';
+import { TICKET_PRIORITY } from '../../../constants/ticket-priority.js';
+import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
+import { createError } from '../../../shared/errors/createError.js';
+import { buildPagination } from '../../../shared/utils/pagination.js';
+import { escapeRegex } from '../../../shared/utils/regex.js';
+import { normalizeSubject } from '../../../shared/utils/normalize.js';
+import { Conversation } from '../models/conversation.model.js';
+import { TicketCounter } from '../models/ticket-counter.model.js';
+import { Ticket } from '../models/ticket.model.js';
+import {
+  applyTicketStatusTransitionSla,
+  deriveTicketSlaState,
+  resolveTicketSlaSnapshot,
+} from '../../sla/services/sla-ticket-runtime.service.js';
 import {
   findWorkspaceForTicketWritesOrThrow,
   loadTicketReferenceBundle,
@@ -16,17 +21,17 @@ import {
   resolveTicketAssigneeForWrite,
   resolveTicketContactForWrite,
   resolveTicketMailboxForWrite,
-  resolveTicketOrganizationForWrite
-} from './ticket-reference.service.js'
-import { findTicketInWorkspaceOrThrow } from './ticket-query.service.js'
+  resolveTicketOrganizationForWrite,
+} from './ticket-reference.service.js';
+import { findTicketInWorkspaceOrThrow } from './ticket-query.service.js';
 import {
   buildTicketStatusI18nArg,
   normalizeObjectId,
   normalizeNullableString,
   parseNullableBoolean,
-  toObjectIdIfValid
-} from '../utils/ticket.helpers.js'
-import { createTicketMessage } from './ticket-messages.service.js'
+  toObjectIdIfValid,
+} from '../utils/ticket.helpers.js';
+import { createTicketMessage } from './ticket-messages.service.js';
 
 const SORT_ALLOWLIST = Object.freeze({
   number: { number: 1, _id: 1 },
@@ -40,44 +45,44 @@ const SORT_ALLOWLIST = Object.freeze({
   updatedAt: { updatedAt: 1, _id: 1 },
   '-updatedAt': { updatedAt: -1, _id: 1 },
   lastMessageAt: { lastMessageAt: 1, _id: 1 },
-  '-lastMessageAt': { lastMessageAt: -1, _id: 1 }
-})
+  '-lastMessageAt': { lastMessageAt: -1, _id: 1 },
+});
 
 const DEFAULT_LIST_SORT = {
   updatedAt: -1,
-  _id: 1
-}
+  _id: 1,
+};
 
 const ELEVATED_WORKSPACE_ROLES = new Set([
   WORKSPACE_ROLES.OWNER,
-  WORKSPACE_ROLES.ADMIN
-])
+  WORKSPACE_ROLES.ADMIN,
+]);
 
 const EXPLICIT_STATUS_TRANSITIONS = Object.freeze({
   [TICKET_STATUS.NEW]: new Set([
     TICKET_STATUS.OPEN,
     TICKET_STATUS.PENDING,
     TICKET_STATUS.WAITING_ON_CUSTOMER,
-    TICKET_STATUS.SOLVED
+    TICKET_STATUS.SOLVED,
   ]),
   [TICKET_STATUS.OPEN]: new Set([
     TICKET_STATUS.PENDING,
     TICKET_STATUS.WAITING_ON_CUSTOMER,
-    TICKET_STATUS.SOLVED
+    TICKET_STATUS.SOLVED,
   ]),
   [TICKET_STATUS.PENDING]: new Set([
     TICKET_STATUS.OPEN,
     TICKET_STATUS.WAITING_ON_CUSTOMER,
-    TICKET_STATUS.SOLVED
+    TICKET_STATUS.SOLVED,
   ]),
   [TICKET_STATUS.WAITING_ON_CUSTOMER]: new Set([
     TICKET_STATUS.OPEN,
     TICKET_STATUS.PENDING,
-    TICKET_STATUS.SOLVED
+    TICKET_STATUS.SOLVED,
   ]),
   [TICKET_STATUS.SOLVED]: new Set([TICKET_STATUS.OPEN]),
-  [TICKET_STATUS.CLOSED]: new Set()
-})
+  [TICKET_STATUS.CLOSED]: new Set(),
+});
 
 const TICKET_BASE_PROJECTION = {
   _id: 1,
@@ -111,129 +116,136 @@ const TICKET_BASE_PROJECTION = {
   closedAt: 1,
   sla: 1,
   createdAt: 1,
-  updatedAt: 1
-}
+  updatedAt: 1,
+};
 
 const isElevatedWorkspaceRole = (roleKey) =>
-  ELEVATED_WORKSPACE_ROLES.has(String(roleKey || '').toLowerCase())
-
-const ensureTicketSlaObject = (ticket) => {
-  if (!ticket.sla || typeof ticket.sla !== 'object') {
-    ticket.sla = {}
-  }
-
-  return ticket.sla
-}
+  ELEVATED_WORKSPACE_ROLES.has(String(roleKey || '').toLowerCase());
 
 const maybeMoveAssignedNewTicketToOpen = (ticket) => {
   if (ticket.status !== TICKET_STATUS.NEW) {
-    return false
+    return false;
   }
 
-  ticket.status = TICKET_STATUS.OPEN
-  return true
-}
-
-const applyResolvedMarkerForStatusChange = ({
-  ticket,
-  currentStatus,
-  nextStatus
-}) => {
-  const sla = ensureTicketSlaObject(ticket)
-
-  if (nextStatus === TICKET_STATUS.SOLVED) {
-    if (!sla.resolvedAt || currentStatus !== TICKET_STATUS.SOLVED) {
-      sla.resolvedAt = new Date()
-    }
-
-    return
-  }
-
-  if (
-    (currentStatus === TICKET_STATUS.SOLVED ||
-      currentStatus === TICKET_STATUS.CLOSED) &&
-    nextStatus !== TICKET_STATUS.CLOSED
-  ) {
-    sla.resolvedAt = null
-  }
-}
+  ticket.status = TICKET_STATUS.OPEN;
+  return true;
+};
 
 const assertExplicitStatusTransitionAllowed = ({
   currentStatus,
   nextStatus,
-  errorMessageKey = 'errors.ticket.invalidStatusTransition'
+  errorMessageKey = 'errors.ticket.invalidStatusTransition',
 }) => {
   if (currentStatus === nextStatus) {
-    return
+    return;
   }
 
-  const allowedStatuses = EXPLICIT_STATUS_TRANSITIONS[currentStatus]
+  const allowedStatuses = EXPLICIT_STATUS_TRANSITIONS[currentStatus];
 
   if (!allowedStatuses || !allowedStatuses.has(nextStatus)) {
     throw createError(errorMessageKey, 409, null, {
       from: buildTicketStatusI18nArg(currentStatus),
-      to: buildTicketStatusI18nArg(nextStatus)
-    })
+      to: buildTicketStatusI18nArg(nextStatus),
+    });
   }
-}
+};
 
-const buildTicketSlaView = (sla = {}) => ({
-  policyId: sla?.policyId ? normalizeObjectId(sla.policyId) : null,
-  firstResponseDueAt: sla?.firstResponseDueAt || null,
-  nextResponseDueAt: sla?.nextResponseDueAt || null,
-  resolutionDueAt: sla?.resolutionDueAt || null,
-  firstResponseAt: sla?.firstResponseAt || null,
-  resolvedAt: sla?.resolvedAt || null,
-  isFirstResponseBreached: Boolean(sla?.isFirstResponseBreached),
-  isResolutionBreached: Boolean(sla?.isResolutionBreached)
-})
+const buildTicketSlaView = ({
+  sla = {},
+  now = new Date(),
+  mode = 'detail',
+}) => {
+  const derived = deriveTicketSlaState({
+    sla,
+    now,
+  });
+  const baseView = {
+    policyId: sla?.policyId ? normalizeObjectId(sla.policyId) : null,
+    firstResponseDueAt: sla?.firstResponseDueAt || null,
+    nextResponseDueAt: sla?.nextResponseDueAt || null,
+    resolutionDueAt: sla?.resolutionDueAt || null,
+    firstResponseAt: sla?.firstResponseAt || null,
+    resolvedAt: sla?.resolvedAt || null,
+    isFirstResponseBreached: derived.isFirstResponseBreached,
+    isResolutionBreached: derived.isResolutionBreached,
+    firstResponseStatus: derived.firstResponseStatus,
+    resolutionStatus: derived.resolutionStatus,
+    isApplicable: derived.isApplicable,
+    isBreached: derived.isBreached,
+  };
+
+  if (mode === 'list') {
+    return baseView;
+  }
+
+  return {
+    ...baseView,
+    policySource: sla?.policySource || null,
+    businessHoursId: sla?.businessHoursId
+      ? normalizeObjectId(sla.businessHoursId)
+      : null,
+    businessHoursTimezone: sla?.businessHoursTimezone || null,
+    firstResponseTargetMinutes: sla?.firstResponseTargetMinutes ?? null,
+    firstResponseBreachedAt: sla?.firstResponseBreachedAt || null,
+    resolutionTargetMinutes: sla?.resolutionTargetMinutes ?? null,
+    resolutionBreachedAt: sla?.resolutionBreachedAt || null,
+    resolutionConsumedBusinessMinutes:
+      sla?.resolutionConsumedBusinessMinutes ?? null,
+    resolutionRemainingBusinessMinutes:
+      sla?.resolutionRemainingBusinessMinutes ?? null,
+    resolutionPausedAt: sla?.resolutionPausedAt || null,
+    isResolutionPaused: Boolean(sla?.isResolutionPaused),
+    reopenCount: Number(sla?.reopenCount || 0),
+  };
+};
 
 const buildTicketAssignmentActionView = (ticket) => ({
   _id: normalizeObjectId(ticket._id),
   assigneeId: ticket.assigneeId ? normalizeObjectId(ticket.assigneeId) : null,
   assignedAt: ticket.assignedAt || null,
-  status: ticket.status
-})
+  status: ticket.status,
+});
 
 const buildTicketStatusActionView = (ticket) => ({
   _id: normalizeObjectId(ticket._id),
   status: ticket.status,
-  statusChangedAt: ticket.statusChangedAt || null
-})
-
+  statusChangedAt: ticket.statusChangedAt || null,
+  sla: buildTicketSlaView({
+    sla: ticket.sla,
+    now: new Date(),
+    mode: 'detail',
+  }),
+});
 const buildTicketSolveActionView = (ticket) => ({
   ...buildTicketStatusActionView(ticket),
-  sla: {
-    resolvedAt: ticket?.sla?.resolvedAt || null
-  }
-})
+});
 
 const buildTicketCloseActionView = (ticket) => ({
   ...buildTicketStatusActionView(ticket),
   closedAt: ticket.closedAt || null,
-  sla: {
-    resolvedAt: ticket?.sla?.resolvedAt || null
-  }
-})
+});
 
 const buildTicketReopenActionView = (ticket) => ({
   ...buildTicketCloseActionView(ticket),
-  sla: {
-    resolvedAt: ticket?.sla?.resolvedAt || null
-  }
-})
+});
 
-const buildTicketView = ({ ticket, references }) => {
-  const referenceMaps = references || {}
+const buildTicketView = ({
+  ticket,
+  references,
+  now = new Date(),
+  mode = 'detail',
+}) => {
+  const referenceMaps = references || {};
   const category = ticket.categoryId
     ? referenceMaps.categoriesById?.get(String(ticket.categoryId)) || null
-    : null
+    : null;
   const tags = (ticket.tagIds || [])
     .map((tagId) => referenceMaps.tagsById?.get(String(tagId)) || null)
-    .filter(Boolean)
+    .filter(Boolean);
   const conversation = ticket.conversationId
-    ? referenceMaps.conversationsById?.get(String(ticket.conversationId)) || null
-    : null
+    ? referenceMaps.conversationsById?.get(String(ticket.conversationId)) ||
+      null
+    : null;
 
   return {
     _id: normalizeObjectId(ticket._id),
@@ -271,22 +283,27 @@ const buildTicketView = ({ ticket, references }) => {
     statusChangedAt: ticket.statusChangedAt || null,
     assignedAt: ticket.assignedAt || null,
     closedAt: ticket.closedAt || null,
-    sla: buildTicketSlaView(ticket.sla),
+    sla: buildTicketSlaView({
+      sla: ticket.sla,
+      now,
+      mode,
+    }),
     createdAt: ticket.createdAt,
     updatedAt: ticket.updatedAt,
     mailbox: referenceMaps.mailboxesById?.get(String(ticket.mailboxId)) || null,
     contact: referenceMaps.contactsById?.get(String(ticket.contactId)) || null,
     organization: ticket.organizationId
-      ? referenceMaps.organizationsById?.get(String(ticket.organizationId)) || null
+      ? referenceMaps.organizationsById?.get(String(ticket.organizationId)) ||
+        null
       : null,
     assignee: ticket.assigneeId
       ? referenceMaps.assigneesById?.get(String(ticket.assigneeId)) || null
       : null,
     category,
     tags,
-    conversation
-  }
-}
+    conversation,
+  };
+};
 
 const normalizeCreatePayload = (payload = {}) => ({
   subject: String(payload.subject || '').trim(),
@@ -296,43 +313,47 @@ const normalizeCreatePayload = (payload = {}) => ({
   priority: payload.priority || TICKET_PRIORITY.NORMAL,
   categoryId: normalizeNullableString(payload.categoryId),
   tagIds: Array.isArray(payload.tagIds)
-    ? payload.tagIds.map((tagId) => normalizeNullableString(tagId)).filter(Boolean)
+    ? payload.tagIds
+        .map((tagId) => normalizeNullableString(tagId))
+        .filter(Boolean)
     : [],
   assigneeId: normalizeNullableString(payload.assigneeId),
-  initialMessage: payload.initialMessage || null
-})
+  initialMessage: payload.initialMessage || null,
+});
 
 const normalizeUpdatePayload = (payload = {}) => {
-  const normalized = {}
+  const normalized = {};
 
   if (Object.prototype.hasOwnProperty.call(payload, 'subject')) {
-    normalized.subject = String(payload.subject || '').trim()
+    normalized.subject = String(payload.subject || '').trim();
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'priority')) {
-    normalized.priority = payload.priority
+    normalized.priority = payload.priority;
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'categoryId')) {
-    normalized.categoryId = normalizeNullableString(payload.categoryId)
+    normalized.categoryId = normalizeNullableString(payload.categoryId);
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'tagIds')) {
     normalized.tagIds = Array.isArray(payload.tagIds)
-      ? payload.tagIds.map((tagId) => normalizeNullableString(tagId)).filter(Boolean)
-      : []
+      ? payload.tagIds
+          .map((tagId) => normalizeNullableString(tagId))
+          .filter(Boolean)
+      : [];
   }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'mailboxId')) {
-    normalized.mailboxId = normalizeNullableString(payload.mailboxId)
+    normalized.mailboxId = normalizeNullableString(payload.mailboxId);
   }
 
-  return normalized
-}
+  return normalized;
+};
 
 const normalizeInitialMessagePayload = (payload = null) => {
   if (!payload) {
-    return null
+    return null;
   }
 
   return {
@@ -343,55 +364,55 @@ const normalizeInitialMessagePayload = (payload = null) => {
       ? payload.attachmentFileIds
           .map((fileId) => normalizeNullableString(fileId))
           .filter(Boolean)
-      : []
-  }
-}
+      : [],
+  };
+};
 
 const buildSearchClause = (q) => {
-  const normalized = normalizeSubject(q)
+  const normalized = normalizeSubject(q);
   if (!normalized) {
-    return null
+    return null;
   }
 
-  const escaped = escapeRegex(normalized)
+  const escaped = escapeRegex(normalized);
   const clauses = [
     {
       subjectNormalized: {
         $regex: escaped,
-        $options: 'i'
-      }
-    }
-  ]
+        $options: 'i',
+      },
+    },
+  ];
 
   if (/^\d+$/.test(normalized)) {
-    clauses.push({ number: Number(normalized) })
+    clauses.push({ number: Number(normalized) });
   }
 
-  return { $or: clauses }
-}
+  return { $or: clauses };
+};
 
-const buildSort = (sort) => SORT_ALLOWLIST[sort] || DEFAULT_LIST_SORT
+const buildSort = (sort) => SORT_ALLOWLIST[sort] || DEFAULT_LIST_SORT;
 
 const buildDateRange = ({ from, to }) => {
-  const range = {}
+  const range = {};
 
   if (from) {
-    range.$gte = new Date(from)
+    range.$gte = new Date(from);
   }
 
   if (to) {
-    range.$lte = new Date(to)
+    range.$lte = new Date(to);
   }
 
-  return Object.keys(range).length > 0 ? range : null
-}
+  return Object.keys(range).length > 0 ? range : null;
+};
 
 const normalizeStatusFilter = (status) => {
   if (status === undefined || status === null) {
-    return []
+    return [];
   }
 
-  const values = Array.isArray(status) ? status : [status]
+  const values = Array.isArray(status) ? status : [status];
 
   return [
     ...new Set(
@@ -399,9 +420,9 @@ const normalizeStatusFilter = (status) => {
         .flatMap((value) => String(value || '').split(','))
         .map((value) => value.trim())
         .filter(Boolean)
-    )
-  ]
-}
+    ),
+  ];
+};
 
 const buildTicketListQuery = ({
   workspaceId,
@@ -420,108 +441,108 @@ const buildTicketListQuery = ({
   createdFrom = null,
   createdTo = null,
   updatedFrom = null,
-  updatedTo = null
+  updatedTo = null,
 }) => {
   const query = {
     workspaceId: toObjectIdIfValid(workspaceId),
-    deletedAt: null
-  }
-  const normalizedStatuses = normalizeStatusFilter(status)
+    deletedAt: null,
+  };
+  const normalizedStatuses = normalizeStatusFilter(status);
 
   if (normalizedStatuses.length === 1) {
-    query.status = normalizedStatuses[0]
+    query.status = normalizedStatuses[0];
   } else if (normalizedStatuses.length > 1) {
-    query.status = { $in: normalizedStatuses }
+    query.status = { $in: normalizedStatuses };
   } else if (parseNullableBoolean(includeClosed) !== true) {
-    query.status = { $ne: TICKET_STATUS.CLOSED }
+    query.status = { $ne: TICKET_STATUS.CLOSED };
   }
 
   if (priority) {
-    query.priority = priority
+    query.priority = priority;
   }
 
   if (mailboxId) {
-    query.mailboxId = toObjectIdIfValid(mailboxId)
+    query.mailboxId = toObjectIdIfValid(mailboxId);
   }
 
   if (assigneeId) {
-    query.assigneeId = toObjectIdIfValid(assigneeId)
+    query.assigneeId = toObjectIdIfValid(assigneeId);
   }
 
-  const parsedUnassigned = parseNullableBoolean(unassigned)
+  const parsedUnassigned = parseNullableBoolean(unassigned);
 
   if (parsedUnassigned === true) {
-    query.assigneeId = null
+    query.assigneeId = null;
   } else if (parsedUnassigned === false && !assigneeId) {
-    query.assigneeId = { $ne: null }
+    query.assigneeId = { $ne: null };
   }
 
   if (categoryId) {
-    query.categoryId = toObjectIdIfValid(categoryId)
+    query.categoryId = toObjectIdIfValid(categoryId);
   }
 
   if (tagId) {
-    query.tagIds = toObjectIdIfValid(tagId)
+    query.tagIds = toObjectIdIfValid(tagId);
   }
 
   if (contactId) {
-    query.contactId = toObjectIdIfValid(contactId)
+    query.contactId = toObjectIdIfValid(contactId);
   }
 
   if (organizationId) {
-    query.organizationId = toObjectIdIfValid(organizationId)
+    query.organizationId = toObjectIdIfValid(organizationId);
   }
 
   if (channel) {
-    query.channel = channel
+    query.channel = channel;
   }
 
   const createdAtRange = buildDateRange({
     from: createdFrom,
-    to: createdTo
-  })
+    to: createdTo,
+  });
   if (createdAtRange) {
-    query.createdAt = createdAtRange
+    query.createdAt = createdAtRange;
   }
 
   const updatedAtRange = buildDateRange({
     from: updatedFrom,
-    to: updatedTo
-  })
+    to: updatedTo,
+  });
   if (updatedAtRange) {
-    query.updatedAt = updatedAtRange
+    query.updatedAt = updatedAtRange;
   }
 
-  const searchClause = buildSearchClause(search)
+  const searchClause = buildSearchClause(search);
   if (searchClause) {
-    Object.assign(query, searchClause)
+    Object.assign(query, searchClause);
   }
 
-  return query
-}
+  return query;
+};
 
 const syncConversationMailboxForTicketOrThrow = async ({
   workspaceId,
   ticket,
-  mailboxId
+  mailboxId,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const conversationQuery = {
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticket._id),
-    deletedAt: null
-  }
+    deletedAt: null,
+  };
 
   if (ticket.conversationId) {
-    conversationQuery._id = toObjectIdIfValid(ticket.conversationId)
+    conversationQuery._id = toObjectIdIfValid(ticket.conversationId);
   }
 
   const conversation = await Conversation.findOne(conversationQuery)
     .select('_id mailboxId')
-    .lean()
+    .lean();
 
   if (!conversation) {
-    throw createError('errors.ticket.conversationInvariantFailed', 500)
+    throw createError('errors.ticket.conversationInvariantFailed', 500);
   }
 
   const updateResult = await Conversation.updateOne(
@@ -529,64 +550,74 @@ const syncConversationMailboxForTicketOrThrow = async ({
       _id: conversation._id,
       workspaceId: workspaceObjectId,
       ticketId: toObjectIdIfValid(ticket._id),
-      deletedAt: null
+      deletedAt: null,
     },
     {
       $set: {
-        mailboxId
-      }
+        mailboxId,
+      },
     }
-  )
+  );
 
   if (Number(updateResult.matchedCount || 0) !== 1) {
-    throw createError('errors.ticket.conversationInvariantFailed', 500)
+    throw createError('errors.ticket.conversationInvariantFailed', 500);
   }
 
-  return conversation
-}
+  return conversation;
+};
 
 export const createTicket = async ({
   workspaceId,
   createdByUserId = null,
-  payload
+  payload,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
-  const normalized = normalizeCreatePayload(payload)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
+  const normalized = normalizeCreatePayload(payload);
   const workspace = await findWorkspaceForTicketWritesOrThrow({
-    workspaceId: workspaceObjectId
-  })
+    workspaceId: workspaceObjectId,
+  });
   const mailbox = await resolveTicketMailboxForWrite({
     workspaceId: workspaceObjectId,
     workspace,
-    mailboxId: normalized.mailboxId
-  })
+    mailboxId: normalized.mailboxId,
+  });
   const contact = await resolveTicketContactForWrite({
     workspaceId: workspaceObjectId,
-    contactId: normalized.contactId
-  })
+    contactId: normalized.contactId,
+  });
   const organization = await resolveTicketOrganizationForWrite({
     workspaceId: workspaceObjectId,
     organizationId: normalized.organizationId,
-    contact
-  })
+    contact,
+  });
   const assignee = await resolveTicketAssigneeForWrite({
     workspaceId: workspaceObjectId,
-    assigneeId: normalized.assigneeId
-  })
+    assigneeId: normalized.assigneeId,
+  });
   const category = await resolveActiveTicketCategoryForWrite({
     workspaceId: workspaceObjectId,
-    categoryId: normalized.categoryId
-  })
+    categoryId: normalized.categoryId,
+  });
   const tags = await resolveActiveTicketTagsForWrite({
     workspaceId: workspaceObjectId,
-    tagIds: normalized.tagIds
-  })
-  const initialMessage = normalizeInitialMessagePayload(normalized.initialMessage)
+    tagIds: normalized.tagIds,
+  });
+  const initialMessage = normalizeInitialMessagePayload(
+    normalized.initialMessage
+  );
+  const eventAt = new Date();
+  const slaSnapshot = await resolveTicketSlaSnapshot({
+    workspaceId: workspaceObjectId,
+    workspace,
+    mailbox,
+    priority: normalized.priority,
+    createdAt: eventAt,
+  });
 
-  const number = await TicketCounter.allocateNextNumber(workspaceObjectId)
+  const number = await TicketCounter.allocateNextNumber(workspaceObjectId);
 
-  let ticket = null
-  let conversation = null
+  let ticket = null;
+  let conversation = null;
 
   try {
     ticket = await Ticket.create({
@@ -601,41 +632,50 @@ export const createTicket = async ({
       contactId: contact._id,
       organizationId: organization?._id || null,
       assigneeId: assignee?._id || null,
-      createdByUserId: createdByUserId ? toObjectIdIfValid(createdByUserId) : null
-    })
+      createdByUserId: createdByUserId
+        ? toObjectIdIfValid(createdByUserId)
+        : null,
+      sla: slaSnapshot,
+      createdAt: eventAt,
+      updatedAt: eventAt,
+    });
 
     conversation = await Conversation.create({
       workspaceId: workspaceObjectId,
       ticketId: ticket._id,
       mailboxId: mailbox._id,
-      channel: ticket.channel
-    })
+      channel: ticket.channel,
+    });
 
-    ticket.conversationId = conversation._id
-    await ticket.save()
+    ticket.conversationId = conversation._id;
+    await ticket.save();
 
     if (initialMessage) {
       await createTicketMessage({
         workspaceId: workspaceObjectId,
         ticketId: ticket._id,
         createdByUserId,
-        payload: initialMessage
-      })
+        payload: initialMessage,
+      });
     }
   } catch (error) {
-    await Promise.allSettled([
-      conversation?._id ? Conversation.deleteOne({ _id: conversation._id }) : null,
-      ticket?._id ? Ticket.deleteOne({ _id: ticket._id }) : null
-    ].filter(Boolean))
+    await Promise.allSettled(
+      [
+        conversation?._id
+          ? Conversation.deleteOne({ _id: conversation._id })
+          : null,
+        ticket?._id ? Ticket.deleteOne({ _id: ticket._id }) : null,
+      ].filter(Boolean)
+    );
 
-    throw error
+    throw error;
   }
 
   return getTicketById({
     workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
-}
+    ticketId: ticket._id,
+  });
+};
 
 export const listTickets = async ({
   workspaceId,
@@ -658,11 +698,12 @@ export const listTickets = async ({
   createdTo = null,
   updatedFrom = null,
   updatedTo = null,
-  sort = null
+  sort = null,
 }) => {
-  const safePage = Math.max(1, Number(page) || 1)
-  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20))
-  const skip = (safePage - 1) * safeLimit
+  const now = new Date();
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+  const skip = (safePage - 1) * safeLimit;
   const query = buildTicketListQuery({
     workspaceId,
     status,
@@ -680,9 +721,9 @@ export const listTickets = async ({
     createdFrom,
     createdTo,
     updatedFrom,
-    updatedTo
-  })
-  const sortQuery = buildSort(String(sort || '').trim())
+    updatedTo,
+  });
+  const sortQuery = buildSort(String(sort || '').trim());
 
   const [total, tickets] = await Promise.all([
     Ticket.countDocuments(query),
@@ -691,115 +732,121 @@ export const listTickets = async ({
       .skip(skip)
       .limit(safeLimit)
       .select(TICKET_BASE_PROJECTION)
-      .lean()
-  ])
+      .lean(),
+  ]);
   const references = await loadTicketReferenceBundle({
     workspaceId: toObjectIdIfValid(workspaceId),
-    tickets
-  })
+    tickets,
+  });
 
   return {
     ...buildPagination({
       page: safePage,
       limit: safeLimit,
       total,
-      results: tickets.length
+      results: tickets.length,
     }),
     tickets: tickets.map((ticket) =>
       buildTicketView({
         ticket,
-        references
+        references,
+        now,
+        mode: 'list',
       })
-    )
-  }
-}
+    ),
+  };
+};
 
 export const getTicketById = async ({ workspaceId, ticketId }) => {
+  const now = new Date();
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: toObjectIdIfValid(workspaceId),
     ticketId: toObjectIdIfValid(ticketId),
     lean: true,
-    projection: TICKET_BASE_PROJECTION
-  })
+    projection: TICKET_BASE_PROJECTION,
+  });
   const references = await loadTicketReferenceBundle({
     workspaceId: toObjectIdIfValid(workspaceId),
-    tickets: [ticket]
-  })
+    tickets: [ticket],
+  });
 
   return {
     ticket: buildTicketView({
       ticket,
-      references
-    })
-  }
-}
+      references,
+      now,
+      mode: 'detail',
+    }),
+  };
+};
 
 export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
-  const normalized = normalizeUpdatePayload(payload)
+    projection: TICKET_BASE_PROJECTION,
+  });
+  const normalized = normalizeUpdatePayload(payload);
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'subject')) {
-    ticket.subject = normalized.subject
+    ticket.subject = normalized.subject;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'priority')) {
-    ticket.priority = normalized.priority
+    ticket.priority = normalized.priority;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'categoryId')) {
     const category = await resolveActiveTicketCategoryForWrite({
       workspaceId: workspaceObjectId,
-      categoryId: normalized.categoryId
-    })
-    ticket.categoryId = category?._id || null
+      categoryId: normalized.categoryId,
+    });
+    ticket.categoryId = category?._id || null;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'tagIds')) {
     const tags = await resolveActiveTicketTagsForWrite({
       workspaceId: workspaceObjectId,
-      tagIds: normalized.tagIds
-    })
-    ticket.tagIds = tags.map((tag) => tag._id)
+      tagIds: normalized.tagIds,
+    });
+    ticket.tagIds = tags.map((tag) => tag._id);
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'mailboxId')) {
-    const nextMailboxId = toObjectIdIfValid(normalized.mailboxId)
-    const currentMailboxId = ticket.mailboxId
-      ? String(ticket.mailboxId)
-      : null
+    const nextMailboxId = toObjectIdIfValid(normalized.mailboxId);
+    const currentMailboxId = ticket.mailboxId ? String(ticket.mailboxId) : null;
 
-    if (String(nextMailboxId) !== currentMailboxId && Number(ticket.messageCount || 0) > 0) {
+    if (
+      String(nextMailboxId) !== currentMailboxId &&
+      Number(ticket.messageCount || 0) > 0
+    ) {
       throw createError('errors.ticket.mailboxChangeNotAllowed', 409, null, {
-        messageCount: Number(ticket.messageCount || 0)
-      })
+        messageCount: Number(ticket.messageCount || 0),
+      });
     }
 
     if (String(nextMailboxId) !== currentMailboxId) {
       const mailbox = await resolveTicketMailboxForWrite({
         workspaceId: workspaceObjectId,
-        mailboxId: normalized.mailboxId
-      })
-      const previousMailboxId = ticket.mailboxId
+        mailboxId: normalized.mailboxId,
+      });
+      const previousMailboxId = ticket.mailboxId;
       const conversation = await syncConversationMailboxForTicketOrThrow({
         workspaceId: workspaceObjectId,
         ticket,
-        mailboxId: mailbox._id
-      })
+        mailboxId: mailbox._id,
+      });
 
-      ticket.mailboxId = mailbox._id
+      ticket.mailboxId = mailbox._id;
 
       if (!ticket.conversationId) {
-        ticket.conversationId = conversation._id
+        ticket.conversationId = conversation._id;
       }
 
       try {
-        await ticket.save()
+        await ticket.save();
       } catch (error) {
         await Promise.allSettled([
           Conversation.updateOne(
@@ -807,59 +854,59 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
               _id: conversation._id,
               workspaceId: workspaceObjectId,
               ticketId: toObjectIdIfValid(ticket._id),
-              deletedAt: null
+              deletedAt: null,
             },
             {
               $set: {
-                mailboxId: previousMailboxId
-              }
+                mailboxId: previousMailboxId,
+              },
             }
-          )
-        ])
+          ),
+        ]);
 
-        throw error
+        throw error;
       }
 
       return getTicketById({
         workspaceId: workspaceObjectId,
-        ticketId: ticket._id
-      })
+        ticketId: ticket._id,
+      });
     }
   }
 
-  await ticket.save()
+  await ticket.save();
 
   return getTicketById({
     workspaceId: workspaceObjectId,
-    ticketId: ticket._id
-  })
-}
+    ticketId: ticket._id,
+  });
+};
 
 export const assignTicket = async ({
   workspaceId,
   ticketId,
   currentUserId,
   currentRoleKey,
-  assigneeId
+  assigneeId,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
-  const currentUserObjectId = toObjectIdIfValid(currentUserId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
+  const currentUserObjectId = toObjectIdIfValid(currentUserId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
+    projection: TICKET_BASE_PROJECTION,
+  });
   const assignee = await resolveTicketAssigneeForWrite({
     workspaceId: workspaceObjectId,
-    assigneeId
-  })
+    assigneeId,
+  });
 
   if (
     !isElevatedWorkspaceRole(currentRoleKey) &&
     String(assignee._id) !== String(currentUserObjectId)
   ) {
-    throw createError('errors.ticket.assignOthersNotAllowed', 403)
+    throw createError('errors.ticket.assignOthersNotAllowed', 403);
   }
 
   if (
@@ -867,162 +914,162 @@ export const assignTicket = async ({
     ticket.assigneeId &&
     String(ticket.assigneeId) !== String(currentUserObjectId)
   ) {
-    throw createError('errors.ticket.selfAssignNotAvailable', 409)
+    throw createError('errors.ticket.selfAssignNotAvailable', 409);
   }
 
-  const nextAssigneeId = toObjectIdIfValid(assignee._id)
-  const currentAssigneeId = ticket.assigneeId ? String(ticket.assigneeId) : null
-  let shouldSave = false
+  const nextAssigneeId = toObjectIdIfValid(assignee._id);
+  const currentAssigneeId = ticket.assigneeId
+    ? String(ticket.assigneeId)
+    : null;
+  let shouldSave = false;
 
   if (currentAssigneeId !== String(nextAssigneeId)) {
-    ticket.assigneeId = nextAssigneeId
-    shouldSave = true
+    ticket.assigneeId = nextAssigneeId;
+    shouldSave = true;
   }
 
   if (maybeMoveAssignedNewTicketToOpen(ticket)) {
-    shouldSave = true
+    shouldSave = true;
   }
 
   if (shouldSave) {
-    await ticket.save()
+    await ticket.save();
   }
 
   return {
-    ticket: buildTicketAssignmentActionView(ticket)
-  }
-}
+    ticket: buildTicketAssignmentActionView(ticket),
+  };
+};
 
 export const unassignTicket = async ({
   workspaceId,
   ticketId,
   currentUserId,
-  currentRoleKey
+  currentRoleKey,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
-  const currentUserObjectId = toObjectIdIfValid(currentUserId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
+  const currentUserObjectId = toObjectIdIfValid(currentUserId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
-  const isElevated = isElevatedWorkspaceRole(currentRoleKey)
+    projection: TICKET_BASE_PROJECTION,
+  });
+  const isElevated = isElevatedWorkspaceRole(currentRoleKey);
 
   if (
     !isElevated &&
     ticket.assigneeId &&
     String(ticket.assigneeId) !== String(currentUserObjectId)
   ) {
-    throw createError('errors.ticket.unassignNotAllowed', 403)
+    throw createError('errors.ticket.unassignNotAllowed', 403);
   }
 
   if (!ticket.assigneeId) {
     return {
-      ticket: buildTicketAssignmentActionView(ticket)
-    }
+      ticket: buildTicketAssignmentActionView(ticket),
+    };
   }
 
-  ticket.assigneeId = null
-  await ticket.save()
+  ticket.assigneeId = null;
+  await ticket.save();
 
   return {
-    ticket: buildTicketAssignmentActionView(ticket)
-  }
-}
+    ticket: buildTicketAssignmentActionView(ticket),
+  };
+};
 
 export const selfAssignTicket = async ({
   workspaceId,
   ticketId,
-  currentUserId
+  currentUserId,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
-  const currentUserObjectId = toObjectIdIfValid(currentUserId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
+  const currentUserObjectId = toObjectIdIfValid(currentUserId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
+    projection: TICKET_BASE_PROJECTION,
+  });
   const currentUserAssignee = await resolveTicketAssigneeForWrite({
     workspaceId: workspaceObjectId,
-    assigneeId: currentUserObjectId
-  })
+    assigneeId: currentUserObjectId,
+  });
 
   if (
     ticket.assigneeId &&
     String(ticket.assigneeId) !== String(currentUserObjectId)
   ) {
-    throw createError('errors.ticket.selfAssignNotAvailable', 409)
+    throw createError('errors.ticket.selfAssignNotAvailable', 409);
   }
 
-  let shouldSave = false
+  let shouldSave = false;
 
   if (!ticket.assigneeId) {
-    ticket.assigneeId = toObjectIdIfValid(currentUserAssignee._id)
-    shouldSave = true
+    ticket.assigneeId = toObjectIdIfValid(currentUserAssignee._id);
+    shouldSave = true;
   }
 
   if (maybeMoveAssignedNewTicketToOpen(ticket)) {
-    shouldSave = true
+    shouldSave = true;
   }
 
   if (shouldSave) {
-    await ticket.save()
+    await ticket.save();
   }
 
   return {
-    ticket: buildTicketAssignmentActionView(ticket)
-  }
-}
+    ticket: buildTicketAssignmentActionView(ticket),
+  };
+};
 
 const updateTicketStatusInternal = async ({
   workspaceId,
   ticketId,
   nextStatus,
   errorMessageKey,
-  buildResponse = buildTicketStatusActionView
+  buildResponse = buildTicketStatusActionView,
 }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
-  const currentStatus = ticket.status
+    projection: TICKET_BASE_PROJECTION,
+  });
+  const currentStatus = ticket.status;
+  const eventAt = new Date();
 
   assertExplicitStatusTransitionAllowed({
     currentStatus,
     nextStatus,
-    errorMessageKey
-  })
+    errorMessageKey,
+  });
 
   if (currentStatus !== nextStatus) {
-    applyResolvedMarkerForStatusChange({
+    applyTicketStatusTransitionSla({
       ticket,
       currentStatus,
-      nextStatus
-    })
-    ticket.status = nextStatus
-    await ticket.save()
+      nextStatus,
+      eventAt,
+    });
+    ticket.status = nextStatus;
+    await ticket.save();
   }
 
   return {
-    ticket: buildResponse(ticket)
-  }
-}
+    ticket: buildResponse(ticket),
+  };
+};
 
-export const updateTicketStatus = async ({
-  workspaceId,
-  ticketId,
-  status
-}) =>
+export const updateTicketStatus = async ({ workspaceId, ticketId, status }) =>
   updateTicketStatusInternal({
     workspaceId,
     ticketId,
     nextStatus: status,
-    errorMessageKey: 'errors.ticket.invalidStatusTransition'
-  })
+    errorMessageKey: 'errors.ticket.invalidStatusTransition',
+  });
 
 export const solveTicket = async ({ workspaceId, ticketId }) =>
   updateTicketStatusInternal({
@@ -1030,42 +1077,45 @@ export const solveTicket = async ({ workspaceId, ticketId }) =>
     ticketId,
     nextStatus: TICKET_STATUS.SOLVED,
     errorMessageKey: 'errors.ticket.solveNotAllowed',
-    buildResponse: buildTicketSolveActionView
-  })
+    buildResponse: buildTicketSolveActionView,
+  });
 
 export const closeTicket = async ({ workspaceId, ticketId }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
     lean: false,
-    projection: TICKET_BASE_PROJECTION
-  })
+    projection: TICKET_BASE_PROJECTION,
+  });
 
-  if (ticket.status !== TICKET_STATUS.SOLVED && ticket.status !== TICKET_STATUS.CLOSED) {
+  if (
+    ticket.status !== TICKET_STATUS.SOLVED &&
+    ticket.status !== TICKET_STATUS.CLOSED
+  ) {
     throw createError('errors.ticket.closeNotAllowed', 409, null, {
       from: buildTicketStatusI18nArg(ticket.status),
-      requiredFrom: buildTicketStatusI18nArg(TICKET_STATUS.SOLVED)
-    })
+      requiredFrom: buildTicketStatusI18nArg(TICKET_STATUS.SOLVED),
+    });
   }
 
   if (ticket.status !== TICKET_STATUS.CLOSED) {
-    ticket.status = TICKET_STATUS.CLOSED
-    await ticket.save()
+    ticket.status = TICKET_STATUS.CLOSED;
+    await ticket.save();
   }
 
   return {
-    ticket: buildTicketCloseActionView(ticket)
-  }
-}
+    ticket: buildTicketCloseActionView(ticket),
+  };
+};
 
 export const reopenTicket = async ({ workspaceId, ticketId }) => {
-  const workspaceObjectId = toObjectIdIfValid(workspaceId)
+  const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: toObjectIdIfValid(ticketId),
-    lean: false
-  })
+    lean: false,
+  });
 
   if (
     ticket.status !== TICKET_STATUS.SOLVED &&
@@ -1074,21 +1124,22 @@ export const reopenTicket = async ({ workspaceId, ticketId }) => {
     throw createError('errors.ticket.reopenNotAllowed', 409, null, {
       from: buildTicketStatusI18nArg(ticket.status),
       allowedFromOne: buildTicketStatusI18nArg(TICKET_STATUS.SOLVED),
-      allowedFromTwo: buildTicketStatusI18nArg(TICKET_STATUS.CLOSED)
-    })
+      allowedFromTwo: buildTicketStatusI18nArg(TICKET_STATUS.CLOSED),
+    });
   }
 
   if (ticket.status !== TICKET_STATUS.OPEN) {
-    applyResolvedMarkerForStatusChange({
+    applyTicketStatusTransitionSla({
       ticket,
       currentStatus: ticket.status,
-      nextStatus: TICKET_STATUS.OPEN
-    })
-    ticket.status = TICKET_STATUS.OPEN
-    await ticket.save()
+      nextStatus: TICKET_STATUS.OPEN,
+      eventAt: new Date(),
+    });
+    ticket.status = TICKET_STATUS.OPEN;
+    await ticket.save();
   }
 
   return {
-    ticket: buildTicketReopenActionView(ticket)
-  }
-}
+    ticket: buildTicketReopenActionView(ticket),
+  };
+};

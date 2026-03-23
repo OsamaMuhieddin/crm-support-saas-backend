@@ -6,19 +6,18 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Architecture-Multi--Tenant-blue" />
-  <img src="https://img.shields.io/badge/Realtime-Socket.IO-green" />
-  <img src="https://img.shields.io/badge/Billing-Stripe-purple" />
   <img src="https://img.shields.io/badge/Backend-Node.js-black" />
-  <img src="https://img.shields.io/badge/Frontend-React-61DAFB" />
+  <img src="https://img.shields.io/badge/Database-MongoDB-green" />
+  <img src="https://img.shields.io/badge/Storage-MinIO%20%7C%20Local-orange" />
 </p>
 
 ---
 
 ## 📌 Overview
 
-CRM Support SaaS is a scalable, enterprise-ready multi-tenant support platform designed for B2B environments.
+CRM Support SaaS Backend is a modular multi-tenant helpdesk backend focused on workspace-scoped support operations.
 
-It enables organizations to manage customer support workflows within isolated workspaces while maintaining centralized platform governance.
+The current backend implements authentication, workspace membership/switching, files, customers, mailboxes, tickets, and SLA v1 foundations/runtime behavior.
 
 ### Key Capabilities
 
@@ -26,12 +25,10 @@ It enables organizations to manage customer support workflows within isolated wo
 - Role-based access control (RBAC)
 - Structured ticket lifecycle management
 - Shared inbox operations
-- SLA monitoring and tracking
-- Customer context and timeline
-- Real-time collaboration
-- API-first integrations with secure Webhooks
-- Subscription-aware plan enforcement
-- Super Admin governance layer
+- Workspace-scoped customer records
+- SLA business hours, policies, and ticket runtime tracking
+- Private file upload/download flows
+- Localized API response envelopes
 
 ---
 
@@ -59,7 +56,7 @@ The system is structured into three logical layers:
 
 - Ticket creation, assignment, and lifecycle transitions
 - Priority levels
-- Categories and subcategories
+- Categories
 - Tags
 - Internal notes and external replies
 - Attachment support (S3 / MinIO compatible storage)
@@ -68,27 +65,15 @@ Tickets follow structured workflows for operational clarity.
 
 ---
 
-### 👤 Customer Context & Timeline
+### 👤 Customers v1
 
-Each ticket provides:
+The backend currently exposes workspace-scoped customer records for:
 
-- Customer profile
-- Historical tickets
-- Timeline of events
-- Operational activity logs
-- Billing portal access
+- Organizations
+- Contacts
+- Lightweight contact identities
 
----
-
-## ⚡ Real-Time Collaboration
-
-Powered by **Socket.IO**, enabling:
-
-- Presence awareness
-- Soft claim system
-- Draft conflict detection
-- Live ticket updates
-- Agent handoff notes
+These records are used for requester linkage, mailbox/ticket context, and operational lookup flows. Richer customer timelines and portal features are still out of scope.
 
 ---
 
@@ -98,78 +83,36 @@ Powered by **Socket.IO**, enabling:
 
 - First response time tracking
 - Resolution time tracking
-- Category-based SLA policies
+- Business-hours-aware due date calculation
+- Workspace default SLA policy support
+- Mailbox SLA override support
+- Ticket-level SLA snapshotting on create
+- Derived SLA status exposure in ticket responses
 
-### SLA Radar Dashboard
-
-- Tickets at risk
-- SLA breaches
-- Near-breach alerts
-
----
-
-## 🔌 Integrations
-
-### API Keys
-
-- Scoped access control
-- Secure authentication
-
-### Webhooks
-
-- HMAC signature verification
-- Retry logic
-- Delivery logging
-- Failure monitoring
-
-### Infrastructure Support
-
-- Rate limiting
-- Background job processing
-- Signed URL attachment storage
+Current SLA v1 does not include BullMQ jobs, reminders, escalations, next-response SLA, holidays, cycle history, or reporting dashboards.
 
 ---
 
-## 💳 Subscription & Plan Enforcement
+## Current Backend Scope
 
-Each workspace operates under configurable plan limits:
+Implemented modules and active surfaces:
 
-- Seat limits
-- Ticket limits
-- Storage limits
-- Webhook limits
-- API rate limits
+- Auth + invitations
+- Workspace memberships and active workspace switching
+- Files v1 with private download streaming
+- Customers v1: organizations, contacts, and contact identities
+- Mailboxes v1
+- Tickets v1 with messages, assignment, lifecycle, participants, categories, and tags
+- SLA v1: business hours, policies, workspace default/mailbox override assignment, ticket runtime behavior, and workspace summary
 
-### Stripe Integration
+Planned or not yet active in this backend:
 
-- Subscription status tracking
-- Invoice visibility
-- Payment monitoring
-- Webhook synchronization
-
----
-
-## 🛠 Super Admin Layer
-
-Platform-level governance includes:
-
-- Workspace management
-- Plan configuration
-- Subscription visibility
-- Usage monitoring
-- Suspension and reactivation controls
-- System health overview
-
----
-
-## 📊 Reporting
-
-Operational metrics include:
-
-- Ticket volume
-- SLA compliance
-- Average response time
-- Agent performance
+- Realtime collaboration
+- Integrations/webhooks
+- Subscription/billing
+- Super-admin governance
+- Reporting dashboards
+- Background jobs / BullMQ-driven SLA automation
 
 ---
 
@@ -177,10 +120,8 @@ Operational metrics include:
 
 - Strict tenant isolation
 - Role-based access control
-- Scoped API keys
-- Secure Webhook validation
 - Rate limiting
-- Signed URL access for attachments
+- Private backend-streamed file download access
 
 ---
 
@@ -189,19 +130,9 @@ Operational metrics include:
 ### Backend
 
 - Node.js (Modular architecture)
-- MongoDB or PostgreSQL
-- Redis
-- Socket.IO
-- BullMQ
+- MongoDB
 - S3 / MinIO
-- Stripe API
-
-### Frontend
-
-- React (Next.js or Vite)
-- Real-time hooks
-- Modular UI architecture
-- Charting libraries
+- Local storage fallback for tests/dev
 
 ---
 
@@ -285,10 +216,9 @@ npm run dev
 ## 🚀 Deployment Notes
 
 - Use environment-based configuration
-- Enable HTTPS for Webhook security
 - Configure CORS properly
-- Use managed database and Redis
-- Monitor background jobs and Webhook failures
+- Use managed database and object storage for production
+- MinIO/local storage is suitable for local development and test flows
 
 ---
 
@@ -341,7 +271,7 @@ Invite links in emails are built from `FRONTEND_BASE_URL`.
 
 ### API reference
 
-- See [docs/api.md](docs/api.md) for the backend API reference, including auth, workspace, files, customers, mailboxes, and tickets.
+- See [docs/api.md](docs/api.md) for the backend API reference, including auth, workspace, files, customers, mailboxes, tickets, and SLA.
 - Localization header is supported across endpoints: `x-lang: en|ar`.
 
 ## Backend Files v1 (MinIO)
@@ -419,3 +349,56 @@ Backfill existing data safely:
 ```bash
 npm run mailboxes:backfill-default
 ```
+
+## Backend Customers v1
+
+Customers v1 is implemented as workspace-scoped customer dictionaries:
+
+- `GET /api/customers/organizations`
+- `GET /api/customers/organizations/options`
+- `GET /api/customers/organizations/:id`
+- `POST /api/customers/organizations`
+- `PATCH /api/customers/organizations/:id`
+- `GET /api/customers/contacts`
+- `GET /api/customers/contacts/options`
+- `GET /api/customers/contacts/:id`
+- `GET /api/customers/contacts/:id/identities`
+- `POST /api/customers/contacts`
+- `PATCH /api/customers/contacts/:id`
+- `POST /api/customers/contacts/:id/identities`
+
+Rules:
+
+- Organizations and contacts are workspace-scoped customer records.
+- Contacts can optionally link to an organization in the same workspace.
+- Contact identities are lightweight records for additional email/phone style identifiers.
+- The current customer module does not provide customer portal auth, verification workflows, or expanded activity timelines.
+
+## Backend SLA v1
+
+SLA v1 is active for both management and ticket runtime behavior:
+
+- `POST /api/sla/business-hours`
+- `GET /api/sla/business-hours`
+- `GET /api/sla/business-hours/options`
+- `GET /api/sla/business-hours/:id`
+- `PATCH /api/sla/business-hours/:id`
+- `POST /api/sla/policies`
+- `GET /api/sla/policies`
+- `GET /api/sla/policies/options`
+- `GET /api/sla/policies/:id`
+- `PATCH /api/sla/policies/:id`
+- `POST /api/sla/policies/:id/activate`
+- `POST /api/sla/policies/:id/deactivate`
+- `POST /api/sla/policies/:id/set-default`
+- `GET /api/sla/summary`
+
+Rules:
+
+- Policies reference separate business-hours records.
+- Ticket SLA selection order is `mailbox.slaPolicyId -> workspace.defaultSlaPolicyId -> no SLA`.
+- Ticket creation snapshots the effective SLA onto the ticket.
+- First response is satisfied only by the first `public_reply`.
+- Resolution is satisfied by `solved`, paused by `waiting_on_customer`, and resumed on reopen from remaining business time.
+- Action endpoints return compact action payloads; full resource views belong to list/detail endpoints.
+- BullMQ/jobs, reminders, escalations, next-response SLA, holidays, cycle history, and reporting dashboards are not part of SLA v1.

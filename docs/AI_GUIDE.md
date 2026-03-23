@@ -6,9 +6,12 @@ This repository is a backend foundation for a multi-tenant helpdesk/CRM SaaS:
 
 - Workspaces (tenants)
 - Agents (workspace users)
-- Customers (contacts/end-users)
+- Customers v1 (organizations, contacts, contact identities)
 - Tickets (core entity)
-- Conversations/Inbox, SLA, Integrations (later)
+- Mailboxes v1
+- Files v1
+- SLA v1 (business-hours + policy management + ticket runtime behavior)
+- Conversations/Inbox, Integrations (later)
 
 ## Architecture (Modular, Nest-like in Express)
 
@@ -75,6 +78,53 @@ This repository is a backend foundation for a multi-tenant helpdesk/CRM SaaS:
   - provisioning happens in `ensureWorkspaceForVerifiedUser` new-workspace branch
 - Backfill command for existing data:
   - `npm run mailboxes:backfill-default`
+
+## Customers v1 Notes
+
+- Customers module is implemented under `src/modules/customers`.
+- Mounted base route: `/api/customers`.
+- Implemented endpoints:
+  - `GET /api/customers/organizations`
+  - `GET /api/customers/organizations/options`
+  - `GET /api/customers/organizations/:id`
+  - `POST /api/customers/organizations`
+  - `PATCH /api/customers/organizations/:id`
+  - `GET /api/customers/contacts`
+  - `GET /api/customers/contacts/options`
+  - `GET /api/customers/contacts/:id`
+  - `GET /api/customers/contacts/:id/identities`
+  - `POST /api/customers/contacts`
+  - `PATCH /api/customers/contacts/:id`
+  - `POST /api/customers/contacts/:id/identities`
+- Scope:
+  - organizations and contacts are workspace-scoped customer dictionaries
+  - contacts may link to same-workspace organizations
+  - identities are lightweight rows linked to a contact
+- Keep responses focused on the customer resource being read or changed.
+- Do not invent customer portal auth, verification, delete/archive, or timeline features unless the prompt explicitly adds them.
+
+## SLA v1 Notes
+
+- SLA module is implemented under `src/modules/sla`.
+- Business hours and SLA policies are separate workspace-scoped records.
+- Workspace default policy is canonical through `workspace.defaultSlaPolicyId`.
+- Mailboxes may optionally override SLA selection through `slaPolicyId`.
+- Ticket SLA selection order is:
+  - mailbox override
+  - workspace default
+  - otherwise no SLA
+- Active SLA dimensions:
+  - first response
+  - resolution
+- Ticket runtime rules:
+  - first response is satisfied only by the first `public_reply`
+  - resolution is active for `new/open/pending`
+  - resolution pauses on `waiting_on_customer`
+  - resolution is satisfied by `solved`
+  - `closed` is downstream/admin lifecycle only
+  - reopen resumes from remaining business time
+- Keep list/detail reads free of hidden SLA writes; derive current SLA status in memory from stored fields.
+- Do not add BullMQ/jobs, reminders, escalations, next-response SLA, holidays, or cycle-history logic unless the prompt explicitly asks for them.
 
 ## Tickets v1 Notes
 

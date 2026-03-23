@@ -34,6 +34,19 @@
       "activated": "Mailbox activated successfully.",
       "deactivated": "Mailbox deactivated successfully."
     },
+    "sla": {
+      "businessHours": {
+        "created": "Business hours created successfully.",
+        "updated": "Business hours updated successfully."
+      },
+      "policy": {
+        "created": "SLA policy created successfully.",
+        "updated": "SLA policy updated successfully.",
+        "activated": "SLA policy activated successfully.",
+        "deactivated": "SLA policy deactivated successfully.",
+        "defaultSet": "Default SLA policy updated successfully."
+      }
+    },
     "organization": {
       "created": "Organization created successfully.",
       "updated": "Organization updated successfully."
@@ -90,10 +103,13 @@
       "invalidBoolean": "Invalid boolean value.",
       "invalidDomain": "Invalid domain name.",
       "invalidDate": "Invalid date.",
+      "invalidTimezone": "Invalid timezone.",
+      "invalidTime": "Invalid time value.",
       "invalidDateRange": "Start date must not be later than end date.",
       "duplicateValues": "Duplicate values are not allowed.",
       "unknownField": "This field is not allowed.",
       "bodyRequiresAtLeastOneField": "At least one updatable field is required.",
+      "atLeastOneRuleRequired": "At least one SLA rule is required.",
       "entityTypeRequiredWithEntityId": "entityType is required when entityId is provided."
     },
     "auth": {
@@ -149,6 +165,12 @@
       "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
       "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
       "defaultConflict": "Unable to update default mailbox. Please retry."
+    },
+    "sla": {
+      "businessHoursNotFound": "Business hours not found.",
+      "policyNotFound": "SLA policy not found.",
+      "policyInactive": "SLA policy must be active.",
+      "defaultConflict": "Unable to update the default SLA policy. Please retry."
     },
     "organization": {
       "notFound": "Organization not found."

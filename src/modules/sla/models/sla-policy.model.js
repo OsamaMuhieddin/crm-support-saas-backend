@@ -63,6 +63,10 @@ const slaPolicySchema = new mongoose.Schema(
       trim: true,
       maxlength: 140
     },
+    isActive: {
+      type: Boolean,
+      default: true
+    },
     isDefault: {
       type: Boolean,
       default: false
@@ -74,7 +78,7 @@ const slaPolicySchema = new mongoose.Schema(
     businessHoursId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'BusinessHours',
-      default: null
+      required: true
     },
     deletedAt: {
       type: Date,
@@ -93,6 +97,12 @@ const slaPolicySchema = new mongoose.Schema(
 );
 
 slaPolicySchema.index({ workspaceId: 1, isDefault: 1 });
+slaPolicySchema.index({ workspaceId: 1, isActive: 1 });
+slaPolicySchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  name: 1
+});
 
 export const SlaPolicy =
   mongoose.models.SlaPolicy || mongoose.model('SlaPolicy', slaPolicySchema);

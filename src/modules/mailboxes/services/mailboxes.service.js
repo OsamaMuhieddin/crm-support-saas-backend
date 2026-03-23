@@ -6,6 +6,7 @@ import { buildPagination } from '../../../shared/utils/pagination.js';
 import { escapeRegex } from '../../../shared/utils/regex.js';
 import { Mailbox } from '../models/mailbox.model.js';
 import { Workspace } from '../../workspaces/models/workspace.model.js';
+import { findSlaPolicyInWorkspaceOrThrow } from '../../sla/services/sla-reference.service.js';
 
 const DEFAULT_MAILBOX_NAME = 'Support';
 
@@ -34,6 +35,7 @@ const MAILBOX_BASE_PROJECTION = {
   replyTo: 1,
   signatureText: 1,
   signatureHtml: 1,
+  slaPolicyId: 1,
   isDefault: 1,
   isActive: 1,
   createdAt: 1,
@@ -94,6 +96,9 @@ const buildMailboxView = (mailbox) => ({
   replyTo: mailbox.replyTo,
   signatureText: mailbox.signatureText,
   signatureHtml: mailbox.signatureHtml,
+  slaPolicyId: mailbox.slaPolicyId
+    ? normalizeObjectId(mailbox.slaPolicyId)
+    : null,
   isDefault: Boolean(mailbox.isDefault),
   isActive: Boolean(mailbox.isActive),
   createdAt: mailbox.createdAt,
@@ -104,6 +109,12 @@ const buildMailboxOptionView = (mailbox) => ({
   _id: normalizeObjectId(mailbox._id),
   name: mailbox.name,
   isDefault: Boolean(mailbox.isDefault),
+});
+
+const buildMailboxActionView = (mailbox) => ({
+  _id: normalizeObjectId(mailbox._id),
+  isDefault: Boolean(mailbox.isDefault),
+  isActive: Boolean(mailbox.isActive),
 });
 
 const normalizeNullableString = (value) => {
@@ -419,6 +430,7 @@ const normalizeCreatePayload = (payload = {}) => ({
   replyTo: normalizeNullableString(payload.replyTo) || null,
   signatureText: normalizeNullableString(payload.signatureText) || null,
   signatureHtml: normalizeNullableString(payload.signatureHtml) || null,
+  slaPolicyId: normalizeNullableString(payload.slaPolicyId) || null,
 });
 
 const normalizeUpdatePayload = (payload = {}) => {
@@ -450,6 +462,10 @@ const normalizeUpdatePayload = (payload = {}) => {
 
   if (Object.prototype.hasOwnProperty.call(payload, 'signatureHtml')) {
     update.signatureHtml = normalizeNullableString(payload.signatureHtml);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'slaPolicyId')) {
+    update.slaPolicyId = normalizeNullableString(payload.slaPolicyId);
   }
 
   return update;
@@ -652,9 +668,22 @@ export const createMailbox = async ({ workspaceId, payload }) => {
   });
 
   try {
+    let resolvedSlaPolicyId = null;
+
+    if (normalized.slaPolicyId) {
+      const policy = await findSlaPolicyInWorkspaceOrThrow({
+        workspaceId: workspaceObjectId,
+        policyId: normalized.slaPolicyId,
+        projection: '_id isActive',
+        requireActive: true,
+      });
+      resolvedSlaPolicyId = policy._id;
+    }
+
     const mailbox = await Mailbox.create({
       workspaceId: workspaceObjectId,
       ...normalized,
+      slaPolicyId: resolvedSlaPolicyId,
       isDefault: false,
       isActive: true,
     });
@@ -824,6 +853,22 @@ export const updateMailbox = async ({ workspaceId, mailboxId, payload }) => {
   const normalized = normalizeUpdatePayload(payload);
 
   for (const [key, value] of Object.entries(normalized)) {
+    if (key === 'slaPolicyId') {
+      if (value === null) {
+        mailbox.slaPolicyId = null;
+        continue;
+      }
+
+      const policy = await findSlaPolicyInWorkspaceOrThrow({
+        workspaceId: workspaceObjectId,
+        policyId: value,
+        projection: '_id isActive',
+        requireActive: true,
+      });
+      mailbox.slaPolicyId = policy._id;
+      continue;
+    }
+
     mailbox[key] = value;
   }
 
@@ -860,7 +905,7 @@ export const setDefaultMailbox = async ({ workspaceId, mailboxId }) => {
   });
 
   return {
-    mailbox: buildMailboxView(aligned.mailbox),
+    mailbox: buildMailboxActionView(aligned.mailbox),
   };
 };
 
@@ -887,7 +932,7 @@ export const activateMailbox = async ({ workspaceId, mailboxId }) => {
   });
 
   return {
-    mailbox: buildMailboxView(mailbox),
+    mailbox: buildMailboxActionView(mailbox),
   };
 };
 
@@ -910,7 +955,7 @@ export const deactivateMailbox = async ({ workspaceId, mailboxId }) => {
 
   if (!mailbox.isActive) {
     return {
-      mailbox: buildMailboxView(mailbox),
+      mailbox: buildMailboxActionView(mailbox),
     };
   }
 
@@ -932,6 +977,6 @@ export const deactivateMailbox = async ({ workspaceId, mailboxId }) => {
   });
 
   return {
-    mailbox: buildMailboxView(mailbox),
+    mailbox: buildMailboxActionView(mailbox),
   };
 };

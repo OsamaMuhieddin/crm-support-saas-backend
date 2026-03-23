@@ -163,4 +163,41 @@ describe('Tickets Batch 1 foundation', () => {
 
     expect(tag.isActive).toBe(true);
   });
+
+  test('ticket model keeps assignment and lifecycle timestamps aligned through validation hooks', async () => {
+    const workspaceId = new mongoose.Types.ObjectId();
+    const mailboxId = new mongoose.Types.ObjectId();
+    const contactId = new mongoose.Types.ObjectId();
+    const assigneeId = new mongoose.Types.ObjectId();
+
+    const ticket = new Ticket({
+      workspaceId,
+      mailboxId,
+      number: 2,
+      subject: 'Timestamp contract',
+      contactId,
+    });
+    await ticket.validate();
+
+    expect(ticket.assignedAt).toBeNull();
+    expect(ticket.closedAt).toBeNull();
+    expect(ticket.statusChangedAt).toBeInstanceOf(Date);
+
+    ticket.assigneeId = assigneeId;
+    await ticket.validate();
+
+    expect(ticket.assignedAt).toBeInstanceOf(Date);
+
+    ticket.status = 'closed';
+    await ticket.validate();
+
+    expect(ticket.closedAt).toBeInstanceOf(Date);
+    expect(ticket.statusChangedAt).toBeInstanceOf(Date);
+
+    ticket.status = 'open';
+    await ticket.validate();
+
+    expect(ticket.closedAt).toBeNull();
+    expect(ticket.statusChangedAt).toBeInstanceOf(Date);
+  });
 });

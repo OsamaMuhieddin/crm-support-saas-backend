@@ -19,6 +19,7 @@ const updateAllowedFields = [
   'replyTo',
   'signatureText',
   'signatureHtml',
+  'slaPolicyId',
 ];
 
 const MAILBOX_V1_TYPE_VALUES = Object.freeze([MAILBOX_TYPE.EMAIL]);
@@ -76,6 +77,12 @@ export const createMailboxValidator = [
   optionalNullableEmailField('replyTo'),
   optionalNullableTrimmedField('signatureText', 10000),
   optionalNullableTrimmedField('signatureHtml', 50000),
+  body('slaPolicyId')
+    .optional({ nullable: true })
+    .customSanitizer(toNullableString)
+    .if((value) => value !== null && value !== undefined)
+    .isMongoId()
+    .withMessage('errors.validation.invalidId'),
 ];
 
 export const listMailboxesValidator = [
@@ -175,6 +182,12 @@ export const updateMailboxValidator = [
   optionalNullableEmailField('replyTo'),
   optionalNullableTrimmedField('signatureText', 10000),
   optionalNullableTrimmedField('signatureHtml', 50000),
+  body('slaPolicyId')
+    .optional({ nullable: true })
+    .customSanitizer(toNullableString)
+    .if((value) => value !== null && value !== undefined)
+    .isMongoId()
+    .withMessage('errors.validation.invalidId'),
 ];
 
 export const updateMailboxBodyValidation = (req) => {

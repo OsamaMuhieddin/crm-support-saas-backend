@@ -112,6 +112,15 @@ Use module-local `utils/` only for small pure helpers reused within one module. 
 5. Every endpoint entry must include: purpose, request schema, success shape, common errors, and anti-enumeration notes when applicable.
 6. Keep all examples consistent with the response envelope and include `messageKey` in success responses.
 
+## Action Response Convention
+
+- For action routes such as `activate`, `deactivate`, `set-default`, `assign`, `unassign`, `self-assign`, `status`, `solve`, `close`, and `reopen`, prefer compact action responses over full resource detail payloads.
+- Action responses should include only:
+  - the resource id
+  - fields directly changed by the action
+  - action-specific metadata when needed
+- If the client needs the full resource view, it should use the corresponding detail or list endpoint instead of relying on action responses to return the full object.
+
 ## Local File Mention Format (Direct Click)
 
 - Use clickable markdown links for every repo file.

@@ -8,11 +8,11 @@ import { Contact } from '../../customers/models/contact.model.js';
 import { Organization } from '../../customers/models/organization.model.js';
 import {
   buildContactSummaryView,
-  CONTACT_SUMMARY_PROJECTION
+  CONTACT_SUMMARY_PROJECTION,
 } from '../../../shared/utils/customer-reference.js';
 import {
   buildOrganizationSummaryView,
-  ORGANIZATION_SUMMARY_PROJECTION
+  ORGANIZATION_SUMMARY_PROJECTION,
 } from '../../../shared/utils/customer-reference.js';
 import { User } from '../../users/models/user.model.js';
 import { Conversation } from '../models/conversation.model.js';
@@ -37,6 +37,7 @@ const MAILBOX_SUMMARY_PROJECTION = {
   emailAddress: 1,
   isDefault: 1,
   isActive: 1,
+  slaPolicyId: 1,
 };
 
 const USER_SUMMARY_PROJECTION = {
@@ -132,7 +133,7 @@ export const buildConversationSummaryView = (conversation) => ({
 
 export const findWorkspaceForTicketWritesOrThrow = async ({
   workspaceId,
-  projection = '_id defaultMailboxId',
+  projection = '_id defaultMailboxId defaultSlaPolicyId',
 }) => {
   const workspace = await Workspace.findOne({
     _id: workspaceId,

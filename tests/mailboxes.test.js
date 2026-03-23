@@ -484,6 +484,9 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       expect(setDefaultResponse.status).toBe(200);
       expect(setDefaultResponse.body.messageKey).toBe('success.mailbox.defaultSet');
       expect(setDefaultResponse.body.mailbox.isDefault).toBe(true);
+      expect(setDefaultResponse.body.mailbox.isActive).toBe(true);
+      expect(setDefaultResponse.body.mailbox.name).toBeUndefined();
+      expect(setDefaultResponse.body.mailbox.workspaceId).toBeUndefined();
 
       const workspace = await Workspace.findById(owner.workspaceId).lean();
       expect(String(workspace.defaultMailboxId)).toBe(
@@ -531,6 +534,7 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
         expect(response.body.messageKey).toBe('success.mailbox.defaultSet');
         expect(response.body.mailbox.isDefault).toBe(true);
         expect(response.body.mailbox.isActive).toBe(true);
+        expect(response.body.mailbox.name).toBeUndefined();
       } finally {
         updateCallCount = updateSpy.mock.calls.length;
         updateSpy.mockRestore();

@@ -20,6 +20,7 @@ const validatorFiles = [
   '../src/modules/customers/validators/contact-identities.validators.js',
   '../src/modules/customers/validators/organizations.validators.js',
   '../src/modules/mailboxes/validators/mailboxes.validators.js',
+  '../src/modules/sla/validators/sla.validators.js',
   '../src/modules/files/validators/files.validators.js',
   '../src/modules/tickets/validators/ticket-categories.validators.js',
   '../src/modules/tickets/validators/ticket-tags.validators.js',

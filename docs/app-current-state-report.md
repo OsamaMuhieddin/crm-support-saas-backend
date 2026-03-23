@@ -1,6 +1,6 @@
 # CRM Support SaaS Backend - Current State Report
 
-Generated on: 2026-03-13  
+Generated on: 2026-03-22  
 Repository: `crm-support-saas-backend`
 
 ## 1) Report Purpose
@@ -26,6 +26,7 @@ Implemented business pillars:
 - Workspace invite lifecycle (create, resend, revoke, accept, finalize).
 - Secure file upload/list/download/delete inside workspace boundaries.
 - Mailbox queue management with strict default-mailbox invariants.
+- SLA v1 active surface: business-hours management, SLA policy management, workspace default policy assignment, mailbox optional SLA overrides, ticket SLA snapshot/runtime behavior, and lightweight SLA summary.
 - Core ticket record creation/list/detail/update with workspace-scoped numbering and auto-created conversations.
 - Ticket conversation and message timeline reads/writes with file attachments linked to messages and tickets.
 - Ticket assignment, lifecycle actions, and internal participant management.
@@ -34,11 +35,11 @@ Implemented business pillars:
 Partially implemented business pillars:
 
 - Customers v1 currently covers workspace-scoped organizations, contacts, and a minimal ContactIdentity surface, while richer customer workflows are still pending.
+- SLA v1 now covers first-response and resolution runtime behavior on tickets, while next-response, jobs, holidays, reminders/escalations, cycle-history, and historical reporting remain postponed.
 - Users API surface is still a list stub.
 
 Planned business pillars with data models but no live API flows yet:
 
-- SLA operations.
 - Integrations management.
 - Billing/plan enforcement runtime logic.
 - Automations execution.
@@ -68,6 +69,9 @@ Current effective permissions by feature:
 | Delete files                                             | Yes             | Yes             | No                    | No                    |
 | Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                    | No                    |
 | Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden) | Yes (inactive hidden) |
+| Create/update business hours                             | Yes             | Yes             | No                    | No                    |
+| Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes             | No                    | No                    |
+| Read SLA summary/business hours/policies                 | Yes             | Yes             | Yes (inactive policy hidden) | Yes (inactive policy hidden) |
 | Create/update ticket records                             | Yes             | Yes             | Yes                   | No                    |
 | Read ticket lists/details                                | Yes             | Yes             | Yes                   | Yes                   |
 | Read ticket conversations/messages                       | Yes             | Yes             | Yes                   | Yes                   |
@@ -153,6 +157,17 @@ Current effective permissions by feature:
 9. Participant endpoints manage internal watcher/collaborator metadata and keep `participantCount` synchronized.
 10. Ticket patch updates editable record fields only, and mailbox changes stop once the ticket has messages while preserving the one-conversation mailbox invariant.
 
+#### Flow I: SLA v1 Active Surface
+
+1. Owner/Admin creates business-hours records inside the active workspace.
+2. Owner/Admin creates SLA policies that reference same-workspace business hours and define rules by ticket priority.
+3. Owner/Admin can set one active policy as the workspace default.
+4. Owner/Admin can optionally assign an active SLA policy to a mailbox as an override.
+5. Ticket creation snapshots the effective policy using mailbox override first, then workspace default, then no SLA.
+6. First response SLA is satisfied only by the first `public_reply`; resolution SLA runs on `new/open/pending`, pauses on `waiting_on_customer`, and is satisfied by `solved`.
+7. Reopen resumes from remaining business time instead of resetting a fresh resolution target, while `closed` remains downstream of resolution success.
+8. Ticket list/detail/action responses derive SLA statuses in memory, and `GET /api/sla/summary` exposes lightweight runtime-aware workspace totals without hidden writes.
+
 ### 2.4 Business State Summary
 
 Production-ready business slices:
@@ -162,6 +177,7 @@ Production-ready business slices:
 - Workspace switching.
 - File operations v1.
 - Mailboxes v1.
+- SLA v1 active runtime surface for first response and resolution.
 - Customers organizations, contacts, and minimal contact identities v1.
 - Tickets core record flow.
 - Ticket assignment, lifecycle, and participants flows.
@@ -171,7 +187,8 @@ Production-ready business slices:
 Foundation-only slices:
 
 - Users API stub.
-- Admin/SLA/Inbox/Integrations routes mounted but empty.
+- Inbox/Admin routes mounted but empty.
+- SLA v1 next-response/jobs/reporting/holiday/cycle-history additions beyond the active runtime surface.
 - Billing/automations/notifications/platform models are present but no runtime product flows.
 
 ## 3) Technical Side
@@ -460,14 +477,53 @@ Customers notes:
 Mailbox notes:
 
 - v1 mailbox `type` accepted by validators is only `email`.
+- Mailboxes now support optional `slaPolicyId` assignment to an active same-workspace SLA policy.
+- Omitting `slaPolicyId` keeps previous mailbox create/update flows fully backward compatible.
+- Mailbox action endpoints (`set-default/activate/deactivate`) return compact action payloads instead of full mailbox detail objects.
 - No mailbox delete endpoint in v1.
+
+#### SLA v1 Active Endpoints
+
+| Method  | Path                            | Purpose                                             | Role requirements                                                     |
+| ------- | ------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/sla/summary`                  | Lightweight SLA current-state summary               | Any active member                                                     |
+| `GET`   | `/sla/business-hours`           | List business-hours records                         | Any active member                                                     |
+| `GET`   | `/sla/business-hours/options`   | Lightweight business-hours options                  | Any active member                                                     |
+| `GET`   | `/sla/business-hours/:id`       | Get business-hours details                          | Any active member                                                     |
+| `POST`  | `/sla/business-hours`           | Create business-hours record                        | `owner/admin`                                                         |
+| `PATCH` | `/sla/business-hours/:id`       | Update business-hours record                        | `owner/admin`                                                         |
+| `GET`   | `/sla/policies`                 | List SLA policies                                   | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/sla/policies/options`         | Lightweight SLA policy options                      | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/sla/policies/:id`             | Get SLA policy details                              | Any active member; inactive hidden for non-admin roles                |
+| `POST`  | `/sla/policies`                 | Create SLA policy                                   | `owner/admin`                                                         |
+| `PATCH` | `/sla/policies/:id`             | Update SLA policy                                   | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/activate`    | Activate SLA policy                                 | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/deactivate`  | Deactivate SLA policy and clear active assignments  | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/set-default` | Set workspace default SLA policy                    | `owner/admin`                                                         |
+
+SLA notes:
+
+- Business hours are managed as separate records with `name`, `timezone`, and weekday windows.
+- Policies reference business hours through `businessHoursId`.
+- Active v1 rules expose only `firstResponseMinutes` and `resolutionMinutes` by ticket priority.
+- Policy selection order is active on ticket create: mailbox override, then workspace default, then no SLA.
+- Deactivating a policy always clears any `mailbox.slaPolicyId` values that point to that policy.
+- Deactivation can optionally accept a replacement policy id; when provided and the deactivated policy was the current workspace default, the workspace default is swapped to that active same-workspace replacement inside the same action.
+- The same deactivation action also repairs stale cases where `workspace.defaultSlaPolicyId` still points to an already-inactive policy.
+- Without a replacement, deactivating the current default clears `workspace.defaultSlaPolicyId` and surfaces response metadata so owners/admins can prompt for a new default.
+- `workspace.defaultSlaPolicyId` is the canonical default source; `SlaPolicy.isDefault` is a denormalized read flag that is reconciled back to the workspace pointer during default-changing actions.
+- SLA policy action endpoints (`activate/deactivate/set-default`) return compact action payloads instead of full policy detail objects.
+- Ticket create snapshots the selected policy/business-hours data onto `ticket.sla`; future policy/business-hours edits affect only new tickets.
+- First response SLA is satisfied only by the first `public_reply`.
+- Resolution SLA is active for `new/open/pending`, paused by `waiting_on_customer`, satisfied by `solved`, preserved through `closed`, and resumed on reopen from remaining business time.
+- Ticket list/detail/action responses derive SLA statuses from stored raw fields without hidden write-backs.
+- `GET /api/sla/summary` now reports `ticketLifecycleIntegrated: true` plus runtime-derived applicable/breached and first-response/resolution status counts.
 
 #### Mounted Route Groups with No Endpoints
 
 Mounted but currently empty routers:
 
 - `/inbox`
-- `/sla`
 - `/integrations`
 - `/admin`
 
@@ -485,8 +541,8 @@ Any request under those paths currently falls through to 404.
 | `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                              |
 | `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                            | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows |
 | `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows |
+| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                              | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests |
 | `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
-| `sla`           | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
 | `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
 | `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
 | `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                              |
@@ -520,7 +576,7 @@ Any request under those paths currently falls through to 404.
 
 | Model          | Purpose                             | Key Fields                                                                       | Important Indexes/Constraints                                                                                                                                                           |
 | -------------- | ----------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Mailbox`      | Workspace support queue mailbox     | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
+| `Mailbox`      | Workspace support queue mailbox     | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
 | `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                   | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
 
 #### 3.6.4 Files Domain Collections
@@ -554,8 +610,8 @@ Any request under those paths currently falls through to 404.
 
 | Model           | Purpose                            | Key Fields                                                               | Important Indexes/Constraints     |
 | --------------- | ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------- |
-| `BusinessHours` | Workspace business schedule        | `workspaceId`, `timezone`, `weeklySchedule[]`, `holidays[]`              | Index (`workspaceId`)             |
-| `SlaPolicy`     | SLA policy definitions by priority | `workspaceId`, `name`, `isDefault`, `rulesByPriority`, `businessHoursId` | Index (`workspaceId`,`isDefault`) |
+| `BusinessHours` | Workspace business schedule        | `workspaceId`, `name`, `timezone`, `weeklySchedule[]`, `holidays[]`                | Index (`workspaceId`); index (`workspaceId`,`deletedAt`,`name`) |
+| `SlaPolicy`     | SLA policy definitions by priority | `workspaceId`, `name`, `isActive`, `isDefault`, `rulesByPriority`, `businessHoursId` | Index (`workspaceId`,`isDefault`); index (`workspaceId`,`isActive`); index (`workspaceId`,`deletedAt`,`name`) |
 
 #### 3.6.8 Integrations Domain Collections
 
@@ -593,7 +649,7 @@ Any request under those paths currently falls through to 404.
 | `subscription-addon-item.schema` | `Subscription.addonItems[]`      | Addon item references + quantity       |
 | `business-hours-day.schema`      | `BusinessHours.weeklySchedule[]` | Weekly open/close windows              |
 | `business-hours-holiday.schema`  | `BusinessHours.holidays[]`       | Holiday dates/labels                   |
-| `ticket-sla.schema`              | `Ticket.sla`                     | SLA due/breach timestamps and flags    |
+| `ticket-sla.schema`              | `Ticket.sla`                     | Active ticket-level SLA snapshot/runtime fields for policy source, business-hours snapshot, targets, due timestamps, pause markers, remaining business minutes, and breach markers |
 | `message-party.schema`           | `Message.from/to`                | Simple message party descriptors       |
 | `notification-entity.schema`     | `Notification.entity`            | Entity reference container             |
 
@@ -687,6 +743,7 @@ Covered areas:
 - Workspace switching semantics and old-token invalidation.
 - Files upload/list/filter/download/delete + storage failure mapping.
 - Mailbox bootstrap/default invariants/backfill/mutation rules.
+- SLA business-hours helpers/validation, business-time math helpers, policy helpers/selection rules, management endpoints, ticket runtime behavior, summary endpoint, RBAC, and mailbox optional override compatibility.
 - Ticket category/tag CRUD-like dictionary behavior, RBAC, and anti-enumeration.
 - Ticket assignment/lifecycle/participant actions and their guardrails.
 - Validation key existence in i18n for key modules.
@@ -694,7 +751,8 @@ Covered areas:
 
 Not fully covered by runtime tests:
 
-- Empty route modules (`inbox/sla/integrations/admin`) because no behavior yet.
+- Empty route modules (`inbox/integrations/admin`) because no behavior yet.
+- SLA jobs/reminders/reporting/holiday behavior because the active runtime surface still stops at first-response/resolution without background processing.
 - Model-only modules (`billing/automations/notifications/platform`) because no API flows yet.
 
 ### 3.12 Known Current Gaps and Implementation Notes
@@ -702,7 +760,9 @@ Not fully covered by runtime tests:
 - `users` API is still a public list stub returning an empty array.
 - `customers` currently exposes Organizations v1, Contacts v1, and minimal ContactIdentity list/create endpoints; ticket integration continues using lean same-workspace customer summaries, and identity update/delete/verification/widget flows are not implemented yet.
 - `tickets` currently expose core ticket records, assignment/lifecycle actions, participant metadata, conversation/message flows, and category/tag dictionary APIs.
-- Mounted route groups `inbox`, `sla`, `integrations`, and `admin` are empty.
+- `sla` now exposes active business-hours/policy management plus ticket first-response/resolution runtime behavior.
+- `sla` still postpones next-response SLA, holidays, reminders/escalations/notifications, BullMQ/jobs, cycle-history, and historical/date-range reporting.
+- Mounted route groups `inbox`, `integrations`, and `admin` are empty.
 - Several domains currently ship schema/model groundwork without exposed APIs.
 - Jobs subsystem under `src/infra/jobs` is placeholder only.
 - Seeding is documented as planned but not implemented.
@@ -830,10 +890,26 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/tickets/tags/:id/activate`
 - `POST /api/tickets/tags/:id/deactivate`
 
+### SLA
+
+- `GET /api/sla/summary`
+- `GET /api/sla/business-hours`
+- `GET /api/sla/business-hours/options`
+- `GET /api/sla/business-hours/:id`
+- `POST /api/sla/business-hours`
+- `PATCH /api/sla/business-hours/:id`
+- `GET /api/sla/policies`
+- `GET /api/sla/policies/options`
+- `GET /api/sla/policies/:id`
+- `POST /api/sla/policies`
+- `PATCH /api/sla/policies/:id`
+- `POST /api/sla/policies/:id/activate`
+- `POST /api/sla/policies/:id/deactivate`
+- `POST /api/sla/policies/:id/set-default`
+
 ### Mounted Empty Router Prefixes
 
 - `/api/inbox`
-- `/api/sla`
 - `/api/integrations`
 - `/api/admin`
 
@@ -846,6 +922,7 @@ Today's backend is strongest in:
 - Workspace context switching semantics.
 - Files v1 with storage abstraction and secure download contract.
 - Mailboxes v1 with robust default-state consistency logic.
+- SLA v1 active surface with business-hours/policy management, workspace default and mailbox override assignment, ticket snapshot/runtime behavior, and lightweight summary support.
 - Tickets core records with workspace numbering, reference validation, and dictionary-backed categorization.
 
-The codebase also contains substantial forward-looking data modeling for tickets, customers, SLA, billing, automations, integrations, notifications, and platform admin domains, with runtime APIs to be incrementally added on top.
+The codebase also contains substantial forward-looking data modeling for deeper SLA runtime behavior, billing, automations, integrations, notifications, and platform admin domains, with runtime APIs to be incrementally added on top.

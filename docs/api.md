@@ -192,6 +192,24 @@ Session-context endpoints:
 10. Use `POST /api/tickets/:id/status`, `POST /api/tickets/:id/solve`, `POST /api/tickets/:id/close`, and `POST /api/tickets/:id/reopen` for explicit lifecycle actions.
 11. Use `GET /api/tickets/:id/participants`, `POST /api/tickets/:id/participants`, and `DELETE /api/tickets/:id/participants/:userId` for internal watcher/collaborator metadata.
 
+### Flow I: SLA v1 Active Surface (Foundations + Runtime)
+
+1. Authenticate normally and keep an access token scoped to the active workspace session.
+2. Create one or more business-hours records with `POST /api/sla/business-hours`; each record uses its own IANA timezone and weekday windows.
+3. Create one or more SLA policies with `POST /api/sla/policies`; every policy must reference a same-workspace `businessHoursId`.
+4. Set the workspace default SLA policy explicitly with `POST /api/sla/policies/:id/set-default` when most tickets should inherit the same policy.
+5. Optionally assign a mailbox override through mailbox create/update using `slaPolicyId`; ticket selection order is `mailbox.slaPolicyId -> workspace.defaultSlaPolicyId -> no SLA`.
+6. When a ticket is created, the backend snapshots the effective SLA using `mailbox.slaPolicyId -> workspace.defaultSlaPolicyId -> no SLA`; no new ticket-create request fields are required.
+7. `public_reply` satisfies first response SLA, moves the ticket to `waiting_on_customer`, and pauses resolution SLA; `customer_message` resumes paused resolution and reopens solved tickets to `open`; `internal_note` does not satisfy first response SLA.
+8. `POST /api/tickets/:id/solve` marks the resolution SLA against `solved`, `POST /api/tickets/:id/close` preserves that resolved marker, and `POST /api/tickets/:id/reopen` resumes from remaining business time instead of resetting a fresh budget.
+9. `GET /api/sla/summary` exposes lightweight workspace-scoped current totals, including runtime-derived breached/running/paused counts, without hidden read-time writes.
+10. Still postponed in active v1:
+   - next-response SLA
+   - reminders, escalations, notifications, or jobs
+   - holiday runtime logic
+   - cycle-history modeling
+   - historical/date-range reporting
+
 ## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
@@ -1715,6 +1733,7 @@ Requirements:
       "replyTo": null,
       "signatureText": null,
       "signatureHtml": null,
+      "slaPolicyId": null,
       "isDefault": true,
       "isActive": true
     }
@@ -1783,6 +1802,7 @@ Requirements:
     "workspaceId": "65aa...",
     "name": "Support",
     "type": "email",
+    "slaPolicyId": null,
     "isDefault": true,
     "isActive": true
   }
@@ -1814,9 +1834,12 @@ Requirements:
   "fromName": "Billing Team",
   "replyTo": "billing@example.com",
   "signatureText": "Thanks",
-  "signatureHtml": "<p>Thanks</p>"
+  "signatureHtml": "<p>Thanks</p>",
+  "slaPolicyId": "65f4..."
 }
 ```
+
+- `slaPolicyId`: optional, nullable same-workspace active SLA policy id
 
 - Success `200`:
 
@@ -1829,6 +1852,7 @@ Requirements:
     "workspaceId": "65aa...",
     "name": "Billing Queue",
     "type": "email",
+    "slaPolicyId": "65f4...",
     "isDefault": false,
     "isActive": true
   }
@@ -1839,9 +1863,13 @@ Requirements:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
   - `409` `errors.mailbox.emailAlreadyUsed`
+  - `404` `errors.sla.policyNotFound`
+  - `409` `errors.sla.policyInactive`
 - Notes:
   - Creation does not auto-delete or replace existing mailboxes.
   - Exactly-one-default invariant remains enforced.
+  - Omitting `slaPolicyId` keeps old mailbox flows backward compatible.
+  - If `slaPolicyId` is provided, it must reference an active policy in the same workspace.
 
 ### PATCH `/api/mailboxes/:id`
 
@@ -1852,14 +1880,16 @@ Requirements:
   - role must be `owner|admin`
 - Request body:
   - At least one of:
-    - `name`
-    - `type`
-    - `emailAddress`
-    - `fromName`
-    - `replyTo`
-    - `signatureText`
+  - `name`
+  - `type`
+  - `emailAddress`
+  - `fromName`
+  - `replyTo`
+  - `signatureText`
   - `signatureHtml`
+  - `slaPolicyId`
   - If `type` is sent, it must be `email`.
+  - `slaPolicyId` may be sent as a same-workspace active policy id, or `null` to clear the mailbox override.
   - Unknown body fields are rejected with `422 errors.validation.failed` and field key `errors.validation.unknownField`.
   - Sending none of the allowed fields returns field key `errors.validation.bodyRequiresAtLeastOneField`.
 - Success `200`:
@@ -1873,6 +1903,7 @@ Requirements:
     "workspaceId": "65aa...",
     "name": "Billing Queue",
     "type": "email",
+    "slaPolicyId": null,
     "isDefault": false,
     "isActive": true
   }
@@ -1883,7 +1914,9 @@ Requirements:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
   - `404` `errors.mailbox.notFound`
+  - `404` `errors.sla.policyNotFound`
   - `409` `errors.mailbox.emailAlreadyUsed`
+  - `409` `errors.sla.policyInactive`
 - Notes:
   - Activation/deactivation has dedicated endpoints.
   - Default switching has dedicated endpoint.
@@ -1903,8 +1936,6 @@ Requirements:
   "message": "Default mailbox updated successfully.",
   "mailbox": {
     "_id": "65f2...",
-    "workspaceId": "65aa...",
-    "name": "Billing Queue",
     "isDefault": true,
     "isActive": true
   }
@@ -1919,6 +1950,7 @@ Requirements:
 - Notes:
   - Previous default mailbox is unset automatically.
   - Workspace default pointer is updated in the same operation.
+  - Mailbox action endpoints return compact action payloads, not the full mailbox detail view.
 
 ### POST `/api/mailboxes/:id/activate`
 
@@ -1945,6 +1977,8 @@ Requirements:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenTenant`
   - `404` `errors.mailbox.notFound`
+- Notes:
+  - Mailbox action endpoints return compact action payloads, not the full mailbox detail view.
 
 ### POST `/api/mailboxes/:id/deactivate`
 
@@ -1976,6 +2010,7 @@ Requirements:
   - Default mailbox cannot be deactivated.
   - Last active mailbox cannot be deactivated.
   - Ticket/conversation/message mailbox references are preserved.
+  - Mailbox action endpoints return compact action payloads, not the full mailbox detail view.
 
 ## 11) Mailbox Backfill Command
 
@@ -1996,7 +2031,648 @@ npm run mailboxes:backfill-default
   - safe to run multiple times (idempotent)
   - does not create duplicate default mailboxes when rerun
 
-## 12) Tickets Endpoints Reference
+## 12) SLA Endpoints Reference (SLA v1 Active Surface)
+
+### Auth model & authorization model
+
+- All SLA endpoints are protected and require Authorization header.
+- All SLA endpoints are session-context endpoints scoped to the token workspace (`wid` / `session.workspaceId`).
+- Role rules:
+  - `owner|admin`: create/update business hours, create/update/activate/deactivate/set-default policies, read all SLA endpoints.
+  - `agent|viewer`: read-only (`GET /api/sla/summary`, business-hours reads, policy reads/options/lists subject to inactive-visibility rules).
+- Inactive policy visibility:
+  - `owner|admin` can request inactive policies through `includeInactive=true` or `isActive=false`.
+  - `agent|viewer` can read active policies only.
+  - inactive policy detail resolves as `404 errors.sla.policyNotFound` for `agent|viewer`.
+
+### SLA batch scope and current limits
+
+- Active SLA models in v1:
+  - Business hours
+  - SLA policies
+  - Workspace default SLA pointer
+  - Mailbox optional SLA override
+  - Ticket-level SLA snapshot on create
+  - Message/lifecycle runtime behavior for first response and resolution
+  - Derived SLA response shaping on ticket list/detail and action responses
+  - Summary endpoint with runtime-derived workspace totals
+- Ticket selection precedence is:
+  - mailbox `slaPolicyId`
+  - workspace `defaultSlaPolicyId`
+  - otherwise no SLA
+- Active runtime rules:
+  - first response SLA is satisfied only by the first `public_reply`
+  - resolution SLA is satisfied by `solved`, not `closed`
+  - `waiting_on_customer` pauses resolution; `pending` remains active
+  - reopening resumes remaining business time instead of resetting a fresh target
+  - list/detail/summary derive overdue and breached state in memory without hidden writes
+- Still intentionally postponed:
+  - next-response SLA behavior
+  - reminders, escalations, notifications, or jobs
+  - holiday runtime logic
+  - historical reporting/date-range analytics
+
+### GET `/api/sla/summary`
+
+- Purpose: return lightweight current-state SLA totals for the active workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "summary": {
+    "businessHours": {
+      "total": 2
+    },
+    "policies": {
+      "total": 3,
+      "active": 2,
+      "inactive": 1,
+      "defaultPolicyId": "65f4...",
+      "defaultPolicyName": "Standard Support",
+      "defaultPolicyIsActive": true
+    },
+    "mailboxes": {
+      "total": 2,
+      "withOverrideCount": 1,
+      "withoutOverrideCount": 1
+    },
+    "runtime": {
+      "ticketLifecycleIntegrated": true,
+      "firstResponseEnabled": true,
+      "resolutionEnabled": true,
+      "applicableTicketCount": 4,
+      "breachedTicketCount": 1,
+      "firstResponse": {
+        "not_applicable": 1,
+        "pending": 1,
+        "met": 1,
+        "breached": 1
+      },
+      "resolution": {
+        "not_applicable": 1,
+        "running": 1,
+        "paused": 1,
+        "met": 0,
+        "breached": 1
+      }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+
+### Business Hours rules
+
+- Business hours are stored separately from SLA policies.
+- `timezone` must be a valid IANA timezone.
+- `weeklySchedule` uses weekdays `0..6` and explicit open windows in `HH:mm` 24-hour format.
+- Closed days are stored/read as `isOpen: false` with empty `windows`.
+- Holidays remain model-level placeholders and are not part of the active v1 API surface.
+
+### GET `/api/sla/business-hours`
+
+- Purpose: list business-hours records in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` optional (partial search)
+  - `search` optional alias for `q`
+  - `sort` optional allowlist: `name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "businessHours": [
+    {
+      "_id": "65f3...",
+      "workspaceId": "65aa...",
+      "name": "Riyadh Weekdays",
+      "timezone": "Asia/Riyadh",
+      "weeklySchedule": [
+        { "dayOfWeek": 0, "isOpen": false, "windows": [] },
+        { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+      ],
+      "createdAt": "2026-03-22T10:00:00.000Z",
+      "updatedAt": "2026-03-22T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+
+### GET `/api/sla/business-hours/options`
+
+- Purpose: return lightweight business-hours options for selectors.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` optional
+  - `search` optional alias for `q`
+  - `limit` optional (`1..50`, default `20`)
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f3...",
+      "name": "Riyadh Weekdays",
+      "timezone": "Asia/Riyadh"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+
+### GET `/api/sla/business-hours/:id`
+
+- Purpose: fetch one business-hours record in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "businessHours": {
+    "_id": "65f3...",
+    "workspaceId": "65aa...",
+    "name": "Riyadh Weekdays",
+    "timezone": "Asia/Riyadh",
+    "weeklySchedule": [
+      { "dayOfWeek": 0, "isOpen": false, "windows": [] },
+      { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+    ],
+    "createdAt": "2026-03-22T10:00:00.000Z",
+    "updatedAt": "2026-03-22T10:00:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.sla.businessHoursNotFound`
+- Anti-enumeration note:
+  - Cross-workspace business-hours ids resolve as `404 errors.sla.businessHoursNotFound`.
+
+### POST `/api/sla/business-hours`
+
+- Purpose: create a business-hours record in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "name": "Riyadh Weekdays",
+  "timezone": "Asia/Riyadh",
+  "weeklySchedule": [
+    {
+      "dayOfWeek": 1,
+      "isOpen": true,
+      "windows": [
+        { "start": "09:00", "end": "17:00" }
+      ]
+    },
+    {
+      "dayOfWeek": 2,
+      "isOpen": true,
+      "windows": [
+        { "start": "09:00", "end": "17:00" }
+      ]
+    }
+  ]
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.businessHours.created",
+  "message": "Business hours created successfully.",
+  "businessHours": {
+    "_id": "65f3...",
+    "workspaceId": "65aa...",
+    "name": "Riyadh Weekdays",
+    "timezone": "Asia/Riyadh",
+    "weeklySchedule": [
+      { "dayOfWeek": 0, "isOpen": false, "windows": [] },
+      { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+    ]
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Notes:
+  - `weeklySchedule` is normalized to a full seven-day shape in responses.
+  - Validation rejects duplicate days, invalid times, overlapping windows, and open days with empty windows.
+
+### PATCH `/api/sla/business-hours/:id`
+
+- Purpose: update business-hours metadata or schedule.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+  - At least one of:
+    - `name`
+    - `timezone`
+    - `weeklySchedule`
+  - Unknown body fields are rejected with `422 errors.validation.failed` and field key `errors.validation.unknownField`.
+  - Sending none of the allowed fields returns field key `errors.validation.bodyRequiresAtLeastOneField`.
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.businessHours.updated",
+  "message": "Business hours updated successfully.",
+  "businessHours": {
+    "_id": "65f3...",
+    "workspaceId": "65aa...",
+    "name": "Riyadh Weekdays",
+    "timezone": "Asia/Riyadh"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.businessHoursNotFound`
+
+### Policy rules
+
+- Policies are stored separately from business hours and reference them via `businessHoursId`.
+- Active v1 rule fields are:
+  - `firstResponseMinutes`
+  - `resolutionMinutes`
+- Priority keys match ticket priorities:
+  - `low`
+  - `normal`
+  - `high`
+  - `urgent`
+- `nextResponseMinutes` remains reserved internally and is not accepted by the active v1 API validators.
+
+### GET `/api/sla/policies`
+
+- Purpose: list SLA policies in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` optional (partial search)
+  - `search` optional alias for `q`
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+  - `sort` optional allowlist: `name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "policies": [
+    {
+      "_id": "65f4...",
+      "workspaceId": "65aa...",
+      "name": "Standard Support",
+      "isActive": true,
+      "isDefault": true,
+      "businessHoursId": "65f3...",
+      "businessHours": {
+        "_id": "65f3...",
+        "name": "Riyadh Weekdays",
+        "timezone": "Asia/Riyadh"
+      },
+      "rulesByPriority": {
+        "low": { "firstResponseMinutes": 240, "resolutionMinutes": 1440 },
+        "normal": { "firstResponseMinutes": 120, "resolutionMinutes": 720 },
+        "high": { "firstResponseMinutes": 60, "resolutionMinutes": 240 },
+        "urgent": { "firstResponseMinutes": 15, "resolutionMinutes": 60 }
+      },
+      "createdAt": "2026-03-22T10:00:00.000Z",
+      "updatedAt": "2026-03-22T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+- Notes:
+  - Active policies are returned by default.
+  - `owner|admin` can include inactive policies explicitly.
+  - `agent|viewer` cannot request inactive policy data.
+
+### GET `/api/sla/policies/options`
+
+- Purpose: return lightweight policy options for selectors.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` optional
+  - `search` optional alias for `q`
+  - `limit` optional (`1..50`, default `20`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "65f4...",
+      "name": "Standard Support",
+      "isActive": true,
+      "isDefault": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+
+### GET `/api/sla/policies/:id`
+
+- Purpose: fetch one SLA policy in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "workspaceId": "65aa...",
+    "name": "Standard Support",
+    "isActive": true,
+    "isDefault": true,
+    "businessHoursId": "65f3...",
+    "businessHours": {
+      "_id": "65f3...",
+      "name": "Riyadh Weekdays",
+      "timezone": "Asia/Riyadh"
+    },
+    "rulesByPriority": {
+      "normal": { "firstResponseMinutes": 120, "resolutionMinutes": 720 }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.sla.policyNotFound`
+- Anti-enumeration note:
+  - Cross-workspace policy ids resolve as `404 errors.sla.policyNotFound`.
+  - Inactive policy detail is hidden from `agent|viewer` and resolves as `404`.
+
+### POST `/api/sla/policies`
+
+- Purpose: create an SLA policy in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "name": "Standard Support",
+  "businessHoursId": "65f3...",
+  "rulesByPriority": {
+    "normal": {
+      "firstResponseMinutes": 120,
+      "resolutionMinutes": 720
+    },
+    "urgent": {
+      "firstResponseMinutes": 15,
+      "resolutionMinutes": 60
+    }
+  }
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.policy.created",
+  "message": "SLA policy created successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "workspaceId": "65aa...",
+    "name": "Standard Support",
+    "isActive": true,
+    "isDefault": false,
+    "businessHoursId": "65f3..."
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.businessHoursNotFound`
+- Notes:
+  - At least one priority must contain at least one active rule field.
+  - Unknown rule fields, including `nextResponseMinutes`, are rejected in the active API surface.
+
+### PATCH `/api/sla/policies/:id`
+
+- Purpose: update SLA policy metadata, referenced business hours, or rules.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+  - At least one of:
+    - `name`
+    - `businessHoursId`
+    - `rulesByPriority`
+  - `businessHoursId` may be changed to another same-workspace business-hours id.
+  - `rulesByPriority` is merged by priority with the current stored rules; unspecified priorities remain unchanged.
+  - Unknown body fields are rejected with `422 errors.validation.failed` and field key `errors.validation.unknownField`.
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.policy.updated",
+  "message": "SLA policy updated successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "workspaceId": "65aa...",
+    "name": "Standard Support",
+    "isActive": true,
+    "isDefault": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.policyNotFound | errors.sla.businessHoursNotFound`
+
+### POST `/api/sla/policies/:id/activate`
+
+- Purpose: activate an SLA policy.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.policy.activated",
+  "message": "SLA policy activated successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.policyNotFound`
+- Notes:
+  - SLA policy action endpoints return compact action payloads, not the full policy detail view.
+
+### POST `/api/sla/policies/:id/deactivate`
+
+- Purpose: deactivate an SLA policy, clear mailbox overrides that point to it, and optionally replace the workspace default when the target policy was currently default.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "replacementPolicyId": "65f5..."
+}
+```
+
+- Request schema:
+  - `replacementPolicyId`: optional, nullable same-workspace active SLA policy id
+  - if provided, it cannot equal the `:id` policy being deactivated
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.policy.deactivated",
+  "message": "SLA policy deactivated successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "isActive": false,
+    "isDefault": false
+  },
+  "deactivationImpact": {
+    "clearedWorkspaceDefault": false,
+    "clearedMailboxOverridesCount": 3,
+    "replacementPolicyId": "65f5...",
+    "requiresDefaultReplacement": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.policyNotFound`
+  - `409` `errors.sla.policyInactive`
+- Notes:
+  - Deactivation clears all `mailbox.slaPolicyId` values that point to the deactivated policy.
+  - If `replacementPolicyId` is provided and the deactivated policy was the current workspace default, the backend swaps `workspace.defaultSlaPolicyId` to the replacement inside the same action.
+  - The same replacement path also repairs a stale workspace default pointer if it still points at an already-inactive target policy.
+  - If no replacement is provided and the deactivated policy was default, the workspace default is cleared and `deactivationImpact.requiresDefaultReplacement` returns `true`.
+  - If the deactivated policy was not the current workspace default, `replacementPolicyId` is ignored for workspace-default assignment.
+  - `workspace.defaultSlaPolicyId` is the canonical default source; policy `isDefault` flags are synchronized to that pointer during default-changing actions.
+  - SLA policy action endpoints return compact action payloads, not the full policy detail view.
+
+### POST `/api/sla/policies/:id/set-default`
+
+- Purpose: set the workspace default SLA policy.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.sla.policy.defaultSet",
+  "message": "Default SLA policy updated successfully.",
+  "policy": {
+    "_id": "65f4...",
+    "isActive": true,
+    "isDefault": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+  - `404` `errors.sla.policyNotFound`
+  - `409` `errors.sla.policyInactive`
+- Notes:
+  - SLA policy action endpoints return compact action payloads, not the full policy detail view.
+  - Default assignment always points to an active policy.
+  - `workspace.defaultSlaPolicyId` is canonical, and the denormalized policy `isDefault` flags are repaired to match it in the same operation.
+
+## 13) Tickets Endpoints Reference
 
 ### Auth model + authorization rules
 
@@ -2038,6 +2714,14 @@ npm run mailboxes:backfill-default
 - `customer_message` moves the ticket to `open`; `public_reply` moves it to `waiting_on_customer`; `internal_note` leaves status unchanged.
 - Closed tickets accept `internal_note` only until they are reopened explicitly.
 - Explicit lifecycle actions control `solved`, `closed`, and `reopen` transitions and keep `statusChangedAt`, `closedAt`, and live resolution markers consistent.
+- Ticket creation snapshots the effective SLA from `mailbox.slaPolicyId -> workspace.defaultSlaPolicyId -> no SLA`; the request body does not carry SLA fields.
+- Ticket detail/list/action responses expose derived SLA statuses from stored raw fields:
+  - first response: `not_applicable | pending | met | breached`
+  - resolution: `not_applicable | running | paused | met | breached`
+- `public_reply` satisfies first response SLA only once and pauses resolution through `waiting_on_customer`.
+- `customer_message` resumes paused resolution and reopens solved tickets without resetting first-response history.
+- `solved` is the resolution SLA success point; `closed` is downstream/admin state only.
+- Reopen resumes remaining resolution business time; no cycle-history model or read-time hidden writes are used in v1.
 
 ### Ticket dictionary rules
 
@@ -2085,6 +2769,7 @@ npm run mailboxes:backfill-default
   - `initialMessage.attachmentFileIds` optional unique mongo id array (`max 20`)
   - attachment ids must reference current-workspace files with `storageStatus = ready`
   - create-time `customer_message` opens the ticket; create-time `internal_note` leaves ticket status unchanged
+  - no SLA request fields are accepted on ticket create; SLA is resolved automatically from mailbox/workspace configuration when present
 - Success `200`:
 
 ```json
@@ -2156,6 +2841,11 @@ npm run mailboxes:backfill-default
   }
 }
 ```
+
+- Response notes:
+  - `ticket.sla` is always present as the ticket-level SLA container.
+  - If no effective mailbox/workspace policy exists, `ticket.sla.firstResponseStatus` and `ticket.sla.resolutionStatus` return `not_applicable`.
+  - If an effective policy exists, the response includes the snapped target minutes, due timestamps, policy source, and derived statuses.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -2643,6 +3333,10 @@ npm run mailboxes:backfill-default
   - `customer_message` sets the ticket to `open` and reopens solved tickets.
   - `internal_note` does not change ticket status.
   - manual `customer_message` and `public_reply` records populate `from/to` from the linked contact and mailbox.
+  - `public_reply` is the only message type that satisfies first response SLA.
+  - `public_reply` pauses resolution SLA through the `waiting_on_customer` status.
+  - `customer_message` resumes paused resolution SLA and recalculates an active due time from the remaining business minutes.
+  - `internal_note` never satisfies first response SLA and does not affect resolution state by itself.
 
 ### POST `/api/tickets/:id/assign`
 
@@ -2794,7 +3488,11 @@ npm run mailboxes:backfill-default
   "ticket": {
     "_id": "65f0...",
     "status": "pending",
-    "statusChangedAt": "2026-03-13T12:20:00.000Z"
+    "statusChangedAt": "2026-03-13T12:20:00.000Z",
+    "sla": {
+      "resolutionStatus": "running",
+      "isResolutionPaused": false
+    }
   }
 }
 ```
@@ -2806,6 +3504,10 @@ npm run mailboxes:backfill-default
   - `409` `errors.ticket.invalidStatusTransition`
 - Anti-enumeration note:
   - cross-workspace ticket ids resolve as `404 errors.ticket.notFound`.
+- Notes:
+  - setting `waiting_on_customer` pauses resolution SLA.
+  - `pending` remains an active resolution state in v1.
+  - setting `solved` through this endpoint uses the same resolution-SLA success rules as `POST /api/tickets/:id/solve`.
 
 ### POST `/api/tickets/:id/solve`
 
@@ -2840,6 +3542,9 @@ npm run mailboxes:backfill-default
   - `409` `errors.ticket.solveNotAllowed`
 - Anti-enumeration note:
   - ticket lookup is restricted to the current workspace.
+- Notes:
+  - `solved` is the resolution SLA success point.
+  - late solves can return `ticket.sla.resolutionStatus = breached` while still stamping `resolvedAt`.
 
 ### POST `/api/tickets/:id/close`
 
@@ -2877,6 +3582,7 @@ npm run mailboxes:backfill-default
   - ticket lookup is resolved only in the active workspace.
 - Notes:
   - closing preserves the existing ticket resolution marker.
+  - closing does not become the SLA success point; resolution is still judged at `solved`.
 
 ### POST `/api/tickets/:id/reopen`
 
@@ -2914,6 +3620,8 @@ npm run mailboxes:backfill-default
   - cross-workspace ticket ids collapse to `404 errors.ticket.notFound`.
 - Notes:
   - reopening a closed ticket restores message writes for `customer_message` and `public_reply`.
+  - when resolution SLA is applicable, reopening resumes from remaining business time instead of resetting a fresh target.
+  - first-response history is preserved across reopen.
 
 ### GET `/api/tickets/:id/participants`
 

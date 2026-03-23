@@ -8,7 +8,8 @@
 - Files: private file storage plus polymorphic file links
 - Mailboxes: workspace-scoped inbox/mailbox dictionaries
 - Tickets: core support workflow with conversations, messages, dictionaries, assignment, lifecycle, and participants
-- Inbox/Conversations, SLA, Integrations, Plans, Admin: broader platform areas that may expand further over time
+- SLA: business-hours and policy management plus ticket first-response/resolution runtime behavior
+- Inbox/Conversations, Integrations, Plans, Admin: broader platform areas that may expand further over time
 
 ## Layers
 

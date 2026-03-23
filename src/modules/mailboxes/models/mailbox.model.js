@@ -1,6 +1,9 @@
 import mongoose from 'mongoose';
 import { normalizeEmail } from '../../../shared/utils/normalize.js';
-import { MAILBOX_TYPE_VALUES, MAILBOX_TYPE } from '../../../constants/mailbox-type.js';
+import {
+  MAILBOX_TYPE_VALUES,
+  MAILBOX_TYPE,
+} from '../../../constants/mailbox-type.js';
 
 const mailboxSchema = new mongoose.Schema(
   {
@@ -8,70 +11,75 @@ const mailboxSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Workspace',
       required: true,
-      index: true
+      index: true,
     },
     name: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 120
+      maxlength: 120,
     },
     type: {
       type: String,
       required: true,
       enum: MAILBOX_TYPE_VALUES,
-      default: MAILBOX_TYPE.EMAIL
+      default: MAILBOX_TYPE.EMAIL,
     },
     emailAddress: {
       type: String,
       trim: true,
-      default: null
+      default: null,
     },
     emailAddressNormalized: {
       type: String,
       trim: true,
       default: null,
-      set: normalizeEmail
+      set: normalizeEmail,
     },
     fromName: {
       type: String,
       trim: true,
-      default: null
+      default: null,
     },
     replyTo: {
       type: String,
       trim: true,
-      default: null
+      default: null,
     },
     signatureText: {
       type: String,
-      default: null
+      default: null,
     },
     signatureHtml: {
       type: String,
-      default: null
+      default: null,
+    },
+    slaPolicyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'SlaPolicy',
+      default: null,
     },
     isDefault: {
       type: Boolean,
-      default: false
+      default: false,
     },
     isActive: {
       type: Boolean,
-      default: true
+      default: true,
     },
     deletedAt: {
       type: Date,
-      default: null
+      default: null,
     },
     deletedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      default: null
-    }
+      default: null,
+    },
   },
   {
     strict: true,
-    timestamps: true
+    timestamps: true,
   }
 );
 
@@ -89,8 +97,8 @@ mailboxSchema.index(
     unique: true,
     partialFilterExpression: {
       isDefault: true,
-      deletedAt: null
-    }
+      deletedAt: null,
+    },
   }
 );
 mailboxSchema.index({ workspaceId: 1, isActive: 1 });
@@ -106,14 +114,19 @@ mailboxSchema.index({
   deletedAt: 1,
   name: 1,
 });
+mailboxSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  slaPolicyId: 1,
+});
 mailboxSchema.index(
   { workspaceId: 1, emailAddressNormalized: 1 },
   {
     unique: true,
     partialFilterExpression: {
       emailAddressNormalized: { $type: 'string' },
-      deletedAt: null
-    }
+      deletedAt: null,
+    },
   }
 );
 

@@ -11,6 +11,11 @@ import { FileLink } from '../../files/models/file-link.model.js';
 import { Mailbox } from '../../mailboxes/models/mailbox.model.js';
 import { Contact } from '../../customers/models/contact.model.js';
 import { User } from '../../users/models/user.model.js';
+import {
+  applyFirstResponseSlaOnPublicReply,
+  applyTicketStatusTransitionSla,
+  deriveTicketSlaState,
+} from '../../sla/services/sla-ticket-runtime.service.js';
 import { Conversation } from '../models/conversation.model.js';
 import { Message } from '../models/message.model.js';
 import { Ticket } from '../models/ticket.model.js';
@@ -380,34 +385,47 @@ const assertMessageWriteAllowedForTicket = ({ ticket, type }) => {
   }
 };
 
-const applyStatusSideEffects = ({ ticket, type }) => {
+const resolveNextTicketStatusForMessage = ({ ticket, type }) => {
+  if (type === TICKET_MESSAGE_TYPE.INTERNAL_NOTE) {
+    return ticket.status;
+  }
+
+  if (type === TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE) {
+    return TICKET_STATUS.OPEN;
+  }
+
+  if (type === TICKET_MESSAGE_TYPE.PUBLIC_REPLY) {
+    return TICKET_STATUS.WAITING_ON_CUSTOMER;
+  }
+
+  return ticket.status;
+};
+
+const applyStatusSideEffects = ({ ticket, type, eventAt }) => {
   if (type === TICKET_MESSAGE_TYPE.INTERNAL_NOTE) {
     return;
   }
 
-  if (!ticket.sla || typeof ticket.sla !== 'object') {
-    ticket.sla = {};
-  }
-
-  const clearResolvedAtIfNeeded = () => {
-    if (
-      ticket.status === TICKET_STATUS.SOLVED ||
-      ticket.status === TICKET_STATUS.CLOSED
-    ) {
-      ticket.sla.resolvedAt = null;
-    }
-  };
-
-  if (type === TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE) {
-    clearResolvedAtIfNeeded();
-    ticket.status = TICKET_STATUS.OPEN;
-    return;
-  }
-
   if (type === TICKET_MESSAGE_TYPE.PUBLIC_REPLY) {
-    clearResolvedAtIfNeeded();
-    ticket.status = TICKET_STATUS.WAITING_ON_CUSTOMER;
+    applyFirstResponseSlaOnPublicReply({
+      ticket,
+      eventAt,
+    });
   }
+
+  const currentStatus = ticket.status;
+  const nextStatus = resolveNextTicketStatusForMessage({
+    ticket,
+    type,
+  });
+
+  applyTicketStatusTransitionSla({
+    ticket,
+    currentStatus,
+    nextStatus,
+    eventAt,
+  });
+  ticket.status = nextStatus;
 };
 
 const applyMessageSummarySideEffects = ({
@@ -444,14 +462,6 @@ const applyMessageSummarySideEffects = ({
     conversation.publicMessageCount =
       Number(conversation.publicMessageCount || 0) + 1;
     ticket.lastPublicReplyAt = eventAt;
-
-    if (!ticket.sla || typeof ticket.sla !== 'object') {
-      ticket.sla = {};
-    }
-
-    if (!ticket.sla.firstResponseAt) {
-      ticket.sla.firstResponseAt = eventAt;
-    }
   }
 
   if (message.type === TICKET_MESSAGE_TYPE.INTERNAL_NOTE) {
@@ -464,6 +474,7 @@ const applyMessageSummarySideEffects = ({
   applyStatusSideEffects({
     ticket,
     type: message.type,
+    eventAt,
   });
 };
 
@@ -861,10 +872,26 @@ export const createTicketMessage = async ({
       lastInternalNoteAt: ticket.lastInternalNoteAt || null,
       lastMessageType: ticket.lastMessageType || null,
       lastMessagePreview: ticket.lastMessagePreview || null,
-      sla: {
-        firstResponseAt: ticket?.sla?.firstResponseAt || null,
-        resolvedAt: ticket?.sla?.resolvedAt || null,
-      },
+      sla: (() => {
+        const derived = deriveTicketSlaState({
+          sla: ticket.sla,
+          now: new Date(),
+        });
+
+        return {
+          firstResponseAt: ticket?.sla?.firstResponseAt || null,
+          resolvedAt: ticket?.sla?.resolvedAt || null,
+          resolutionDueAt: ticket?.sla?.resolutionDueAt || null,
+          resolutionRemainingBusinessMinutes:
+            ticket?.sla?.resolutionRemainingBusinessMinutes ?? null,
+          isFirstResponseBreached: derived.isFirstResponseBreached,
+          isResolutionBreached: derived.isResolutionBreached,
+          firstResponseStatus: derived.firstResponseStatus,
+          resolutionStatus: derived.resolutionStatus,
+          isApplicable: derived.isApplicable,
+          isBreached: derived.isBreached,
+        };
+      })(),
     },
   };
 };
