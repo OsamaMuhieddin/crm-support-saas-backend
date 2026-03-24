@@ -440,6 +440,8 @@ describe('Ticket conversation and message endpoints', () => {
         TICKET_STATUS.WAITING_ON_CUSTOMER
       );
       expect(publicReply.body.ticketSummary.publicMessageCount).toBe(1);
+      expect(publicReply.body.ticketSummary.sla.policyName).toBeNull();
+      expect(publicReply.body.ticketSummary.sla.businessHoursName).toBeNull();
       expect(publicReply.body.ticketSummary.sla.firstResponseAt).toBeTruthy();
       expect(publicReply.body.messageRecord.from).toEqual({
         name: createResponse.body.ticket.mailbox.name,

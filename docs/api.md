@@ -2462,7 +2462,10 @@ npm run mailboxes:backfill-default
       "timezone": "Asia/Riyadh"
     },
     "rulesByPriority": {
-      "normal": { "firstResponseMinutes": 120, "resolutionMinutes": 720 }
+      "low": { "firstResponseMinutes": 240, "resolutionMinutes": 1440 },
+      "normal": { "firstResponseMinutes": 120, "resolutionMinutes": 720 },
+      "high": { "firstResponseMinutes": 60, "resolutionMinutes": 240 },
+      "urgent": { "firstResponseMinutes": 15, "resolutionMinutes": 60 }
     }
   }
 }
@@ -2489,9 +2492,17 @@ npm run mailboxes:backfill-default
   "name": "Standard Support",
   "businessHoursId": "65f3...",
   "rulesByPriority": {
+    "low": {
+      "firstResponseMinutes": 240,
+      "resolutionMinutes": 1440
+    },
     "normal": {
       "firstResponseMinutes": 120,
       "resolutionMinutes": 720
+    },
+    "high": {
+      "firstResponseMinutes": 60,
+      "resolutionMinutes": 240
     },
     "urgent": {
       "firstResponseMinutes": 15,
@@ -2523,7 +2534,7 @@ npm run mailboxes:backfill-default
   - `403` `errors.auth.forbiddenTenant`
   - `404` `errors.sla.businessHoursNotFound`
 - Notes:
-  - At least one priority must contain at least one active rule field.
+  - Every priority (`low|normal|high|urgent`) must contain at least one active rule field in the final stored policy.
   - Unknown rule fields, including `nextResponseMinutes`, are rejected in the active API surface.
 
 ### PATCH `/api/sla/policies/:id`
@@ -2539,7 +2550,8 @@ npm run mailboxes:backfill-default
     - `businessHoursId`
     - `rulesByPriority`
   - `businessHoursId` may be changed to another same-workspace business-hours id.
-  - `rulesByPriority` is merged by priority with the current stored rules; unspecified priorities remain unchanged.
+  - `rulesByPriority` is merged by priority with the current stored rules; unspecified priorities remain unchanged in the request payload.
+  - The merged final policy must still define at least one active rule field for every priority (`low|normal|high|urgent`).
   - Unknown body fields are rejected with `422 errors.validation.failed` and field key `errors.validation.unknownField`.
 - Success `200`:
 
@@ -2577,6 +2589,7 @@ npm run mailboxes:backfill-default
   "message": "SLA policy activated successfully.",
   "policy": {
     "_id": "65f4...",
+    "name": "Default Support SLA",
     "isActive": true
   }
 }
@@ -2615,6 +2628,7 @@ npm run mailboxes:backfill-default
   "message": "SLA policy deactivated successfully.",
   "policy": {
     "_id": "65f4...",
+    "name": "Default Support SLA",
     "isActive": false,
     "isDefault": false
   },
@@ -2622,6 +2636,7 @@ npm run mailboxes:backfill-default
     "clearedWorkspaceDefault": false,
     "clearedMailboxOverridesCount": 3,
     "replacementPolicyId": "65f5...",
+    "replacementPolicyName": "Fallback Support SLA",
     "requiresDefaultReplacement": false
   }
 }
@@ -2638,6 +2653,7 @@ npm run mailboxes:backfill-default
   - The same replacement path also repairs a stale workspace default pointer if it still points at an already-inactive target policy.
   - If no replacement is provided and the deactivated policy was default, the workspace default is cleared and `deactivationImpact.requiresDefaultReplacement` returns `true`.
   - If the deactivated policy was not the current workspace default, `replacementPolicyId` is ignored for workspace-default assignment.
+  - When a replacement is applied, `deactivationImpact.replacementPolicyName` returns the replacement policy display name beside its id.
   - `workspace.defaultSlaPolicyId` is the canonical default source; policy `isDefault` flags are synchronized to that pointer during default-changing actions.
   - SLA policy action endpoints return compact action payloads, not the full policy detail view.
 
@@ -2656,6 +2672,7 @@ npm run mailboxes:backfill-default
   "message": "Default SLA policy updated successfully.",
   "policy": {
     "_id": "65f4...",
+    "name": "Default Support SLA",
     "isActive": true,
     "isDefault": true
   }
@@ -2837,6 +2854,12 @@ npm run mailboxes:backfill-default
       "internalNoteCount": 1,
       "lastMessageType": "internal_note",
       "lastMessagePreview": "Customer already called support."
+    },
+    "sla": {
+      "policyId": "65f8...",
+      "policyName": "Default Support SLA",
+      "firstResponseStatus": "pending",
+      "resolutionStatus": "running"
     }
   }
 }
@@ -2845,7 +2868,7 @@ npm run mailboxes:backfill-default
 - Response notes:
   - `ticket.sla` is always present as the ticket-level SLA container.
   - If no effective mailbox/workspace policy exists, `ticket.sla.firstResponseStatus` and `ticket.sla.resolutionStatus` return `not_applicable`.
-  - If an effective policy exists, the response includes the snapped target minutes, due timestamps, policy source, and derived statuses.
+  - If an effective policy exists, the response includes snapped SLA names/ids from the selected policy snapshot plus the derived statuses.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -2926,6 +2949,12 @@ npm run mailboxes:backfill-default
         "internalNoteCount": 1,
         "lastMessageType": "internal_note",
         "lastMessagePreview": "Customer already called support."
+      },
+      "sla": {
+        "policyId": "65f8...",
+        "policyName": "Default Support SLA",
+        "firstResponseStatus": "pending",
+        "resolutionStatus": "running"
       }
     }
   ]
@@ -3002,6 +3031,18 @@ npm run mailboxes:backfill-default
       "internalNoteCount": 1,
       "lastMessageType": "internal_note",
       "lastMessagePreview": "Customer already called support."
+    },
+    "sla": {
+      "policyId": "65f8...",
+      "policyName": "Default Support SLA",
+      "policySource": "workspace_default",
+      "businessHoursId": "65f9...",
+      "businessHoursName": "Support Weekdays",
+      "businessHoursTimezone": "UTC",
+      "firstResponseTargetMinutes": 30,
+      "resolutionTargetMinutes": 180,
+      "firstResponseStatus": "pending",
+      "resolutionStatus": "running"
     }
   }
 }
@@ -3013,6 +3054,8 @@ npm run mailboxes:backfill-default
 - Anti-enumeration note:
   - cross-workspace ids resolve as `404 errors.ticket.notFound`.
   - already-linked inactive category/tag refs remain readable inside the ticket detail payload.
+- Notes:
+  - `ticket.sla.policyName` and `ticket.sla.businessHoursName` are returned from the stored ticket SLA snapshot, not from a live populate of the current SLA records.
 
 ### PATCH `/api/tickets/:id`
 
@@ -3103,6 +3146,8 @@ npm run mailboxes:backfill-default
 
 - Notes:
   - the request body is partial, but the response returns the full updated ticket detail shape, including hydrated reference summaries, matching `GET /api/tickets/:id`.
+  - changing `priority` recalculates the stored ticket SLA snapshot for the same effective policy selection.
+  - changing `mailboxId` while `messageCount = 0` recalculates the stored ticket SLA snapshot using the new mailbox override or workspace default selection.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -3309,6 +3354,8 @@ npm run mailboxes:backfill-default
     "lastMessageType": "public_reply",
     "lastMessagePreview": "We have applied the fix and are waiting for your confirmation.",
     "sla": {
+      "policyName": "Default Support SLA",
+      "businessHoursName": "Support Weekdays",
       "firstResponseAt": "2026-03-13T12:10:00.000Z",
       "resolvedAt": null
     }
@@ -3337,6 +3384,7 @@ npm run mailboxes:backfill-default
   - `public_reply` pauses resolution SLA through the `waiting_on_customer` status.
   - `customer_message` resumes paused resolution SLA and recalculates an active due time from the remaining business minutes.
   - `internal_note` never satisfies first response SLA and does not affect resolution state by itself.
+  - `ticketSummary.sla.policyName` and `ticketSummary.sla.businessHoursName` mirror the stored ticket SLA snapshot when an SLA is applicable.
 
 ### POST `/api/tickets/:id/assign`
 
@@ -3490,6 +3538,8 @@ npm run mailboxes:backfill-default
     "status": "pending",
     "statusChangedAt": "2026-03-13T12:20:00.000Z",
     "sla": {
+      "policyName": "Default Support SLA",
+      "businessHoursName": "Support Weekdays",
       "resolutionStatus": "running",
       "isResolutionPaused": false
     }
@@ -3529,6 +3579,8 @@ npm run mailboxes:backfill-default
     "status": "solved",
     "statusChangedAt": "2026-03-13T12:25:00.000Z",
     "sla": {
+      "policyName": "Default Support SLA",
+      "businessHoursName": "Support Weekdays",
       "resolvedAt": "2026-03-13T12:25:00.000Z"
     }
   }
@@ -3567,6 +3619,8 @@ npm run mailboxes:backfill-default
     "closedAt": "2026-03-13T12:30:00.000Z",
     "statusChangedAt": "2026-03-13T12:30:00.000Z",
     "sla": {
+      "policyName": "Default Support SLA",
+      "businessHoursName": "Support Weekdays",
       "resolvedAt": "2026-03-13T12:25:00.000Z"
     }
   }
@@ -3605,6 +3659,8 @@ npm run mailboxes:backfill-default
     "closedAt": null,
     "statusChangedAt": "2026-03-13T12:35:00.000Z",
     "sla": {
+      "policyName": "Default Support SLA",
+      "businessHoursName": "Support Weekdays",
       "resolvedAt": null
     }
   }

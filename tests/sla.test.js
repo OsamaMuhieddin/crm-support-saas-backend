@@ -365,6 +365,18 @@ describe('SLA v1 foundations + management surface', () => {
             field: 'rulesByPriority.high.nextResponseMinutes',
             messageKey: 'errors.validation.unknownField',
           }),
+          expect.objectContaining({
+            field: 'rulesByPriority.low',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
+          expect.objectContaining({
+            field: 'rulesByPriority.normal',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
+          expect.objectContaining({
+            field: 'rulesByPriority.urgent',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
         ])
       );
 
@@ -440,7 +452,7 @@ describe('SLA v1 foundations + management surface', () => {
       );
       expect(setDefaultResponse.body.policy.isDefault).toBe(true);
       expect(setDefaultResponse.body.policy.isActive).toBe(true);
-      expect(setDefaultResponse.body.policy.name).toBeUndefined();
+      expect(setDefaultResponse.body.policy.name).toBe('Updated Support SLA');
       expect(setDefaultResponse.body.policy.rulesByPriority).toBeUndefined();
 
       const workspace = await Workspace.findById(owner.workspaceId).lean();
@@ -511,6 +523,101 @@ describe('SLA v1 foundations + management surface', () => {
   );
 
   maybeDbTest(
+    'policy update validates the merged final ruleset so one-priority patches stay allowed but legacy partial policies must be completed first',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: 'sla-policy-merged-validation-owner@example.com',
+      });
+
+      const businessHours = await createBusinessHours({
+        accessToken: owner.accessToken,
+        name: 'Merged Validation Hours',
+      });
+      expect(businessHours.status).toBe(200);
+
+      const legacyPolicy = await SlaPolicy.create({
+        workspaceId: owner.workspaceId,
+        name: 'Legacy Partial Policy',
+        businessHoursId: businessHours.body.businessHours._id,
+        rulesByPriority: {
+          high: {
+            firstResponseMinutes: 30,
+            resolutionMinutes: 120,
+          },
+        },
+        isActive: true,
+        isDefault: false,
+      });
+
+      const renameLegacyPolicy = await request(app)
+        .patch(`/api/sla/policies/${legacyPolicy._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          name: 'Legacy Partial Policy Renamed',
+        });
+
+      expect(renameLegacyPolicy.status).toBe(422);
+      expect(renameLegacyPolicy.body.messageKey).toBe(
+        'errors.validation.failed'
+      );
+      expect(renameLegacyPolicy.body.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'rulesByPriority.low',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
+          expect.objectContaining({
+            field: 'rulesByPriority.normal',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
+          expect.objectContaining({
+            field: 'rulesByPriority.urgent',
+            messageKey: 'errors.validation.atLeastOneRuleRequired',
+          }),
+        ])
+      );
+
+      const completeLegacyPolicy = await request(app)
+        .patch(`/api/sla/policies/${legacyPolicy._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          rulesByPriority: {
+            low: {
+              firstResponseMinutes: 120,
+              resolutionMinutes: 480,
+            },
+            normal: {
+              firstResponseMinutes: 60,
+              resolutionMinutes: 240,
+            },
+            urgent: {
+              firstResponseMinutes: 15,
+              resolutionMinutes: 60,
+            },
+          },
+        });
+
+      expect(completeLegacyPolicy.status).toBe(200);
+      expect(completeLegacyPolicy.body.policy.rulesByPriority.high).toEqual({
+        firstResponseMinutes: 30,
+        resolutionMinutes: 120,
+      });
+      expect(completeLegacyPolicy.body.policy.rulesByPriority.low).toEqual({
+        firstResponseMinutes: 120,
+        resolutionMinutes: 480,
+      });
+      expect(completeLegacyPolicy.body.policy.rulesByPriority.normal).toEqual({
+        firstResponseMinutes: 60,
+        resolutionMinutes: 240,
+      });
+      expect(completeLegacyPolicy.body.policy.rulesByPriority.urgent).toEqual({
+        firstResponseMinutes: 15,
+        resolutionMinutes: 60,
+      });
+    }
+  );
+
+  maybeDbTest(
     'policy activate/deactivate manages workspace and mailbox assignments while visibility stays role-aware',
     async () => {
       const owner = await createVerifiedUser({
@@ -567,12 +674,13 @@ describe('SLA v1 foundations + management surface', () => {
         'success.sla.policy.deactivated'
       );
       expect(deactivateResponse.body.policy.isActive).toBe(false);
-      expect(deactivateResponse.body.policy.name).toBeUndefined();
+      expect(deactivateResponse.body.policy.name).toBe(policy.body.policy.name);
       expect(deactivateResponse.body.policy.businessHours).toBeUndefined();
       expect(deactivateResponse.body.deactivationImpact).toEqual({
         clearedWorkspaceDefault: true,
         clearedMailboxOverridesCount: 1,
         replacementPolicyId: null,
+        replacementPolicyName: null,
         requiresDefaultReplacement: true,
       });
 
@@ -635,7 +743,7 @@ describe('SLA v1 foundations + management surface', () => {
         'success.sla.policy.activated'
       );
       expect(activateResponse.body.policy.isActive).toBe(true);
-      expect(activateResponse.body.policy.name).toBeUndefined();
+      expect(activateResponse.body.policy.name).toBe(policy.body.policy.name);
       expect(activateResponse.body.policy.rulesByPriority).toBeUndefined();
 
       const agentGetActive = await request(app)
@@ -699,11 +807,14 @@ describe('SLA v1 foundations + management surface', () => {
 
       expect(deactivateWithReplacement.status).toBe(200);
       expect(deactivateWithReplacement.body.policy.isActive).toBe(false);
-      expect(deactivateWithReplacement.body.policy.name).toBeUndefined();
+      expect(deactivateWithReplacement.body.policy.name).toBe(
+        primaryPolicy.body.policy.name
+      );
       expect(deactivateWithReplacement.body.deactivationImpact).toEqual({
         clearedWorkspaceDefault: false,
         clearedMailboxOverridesCount: 1,
         replacementPolicyId: replacementPolicy.body.policy._id,
+        replacementPolicyName: replacementPolicy.body.policy.name,
         requiresDefaultReplacement: false,
       });
 
@@ -792,6 +903,7 @@ describe('SLA v1 foundations + management surface', () => {
         clearedWorkspaceDefault: false,
         clearedMailboxOverridesCount: 0,
         replacementPolicyId: replacementPolicy.body.policy._id,
+        replacementPolicyName: replacementPolicy.body.policy.name,
         requiresDefaultReplacement: false,
       });
 
@@ -848,6 +960,7 @@ describe('SLA v1 foundations + management surface', () => {
         clearedWorkspaceDefault: true,
         clearedMailboxOverridesCount: 0,
         replacementPolicyId: null,
+        replacementPolicyName: null,
         requiresDefaultReplacement: true,
       });
 
@@ -947,7 +1060,7 @@ describe('SLA v1 foundations + management surface', () => {
         expect.arrayContaining([
           expect.objectContaining({
             field: 'replacementPolicyId',
-            messageKey: 'errors.validation.invalid',
+            messageKey: 'errors.sla.replacementPolicyMustDiffer',
           }),
         ])
       );

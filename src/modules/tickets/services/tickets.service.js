@@ -161,6 +161,7 @@ const buildTicketSlaView = ({
   });
   const baseView = {
     policyId: sla?.policyId ? normalizeObjectId(sla.policyId) : null,
+    policyName: sla?.policyName || null,
     firstResponseDueAt: sla?.firstResponseDueAt || null,
     nextResponseDueAt: sla?.nextResponseDueAt || null,
     resolutionDueAt: sla?.resolutionDueAt || null,
@@ -184,6 +185,7 @@ const buildTicketSlaView = ({
     businessHoursId: sla?.businessHoursId
       ? normalizeObjectId(sla.businessHoursId)
       : null,
+    businessHoursName: sla?.businessHoursName || null,
     businessHoursTimezone: sla?.businessHoursTimezone || null,
     firstResponseTargetMinutes: sla?.firstResponseTargetMinutes ?? null,
     firstResponseBreachedAt: sla?.firstResponseBreachedAt || null,
@@ -566,6 +568,31 @@ const syncConversationMailboxForTicketOrThrow = async ({
   return conversation;
 };
 
+const rebuildTicketSlaSnapshotForWrite = async ({
+  workspaceId,
+  ticket,
+  mailbox = null,
+}) => {
+  const workspace = await findWorkspaceForTicketWritesOrThrow({
+    workspaceId,
+  });
+  const resolvedMailbox =
+    mailbox ||
+    (await resolveTicketMailboxForWrite({
+      workspaceId,
+      workspace,
+      mailboxId: ticket.mailboxId,
+    }));
+
+  ticket.sla = await resolveTicketSlaSnapshot({
+    workspaceId,
+    workspace,
+    mailbox: resolvedMailbox,
+    priority: ticket.priority,
+    createdAt: ticket.createdAt,
+  });
+};
+
 export const createTicket = async ({
   workspaceId,
   createdByUserId = null,
@@ -789,13 +816,22 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
     projection: TICKET_BASE_PROJECTION,
   });
   const normalized = normalizeUpdatePayload(payload);
+  const hadPriorityUpdate = Object.prototype.hasOwnProperty.call(
+    normalized,
+    'priority'
+  );
+  let mailboxForSla = null;
+  let mailboxConversation = null;
+  let previousMailboxId = null;
+  let shouldRebuildSla = false;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'subject')) {
     ticket.subject = normalized.subject;
   }
 
-  if (Object.prototype.hasOwnProperty.call(normalized, 'priority')) {
+  if (hadPriorityUpdate) {
     ticket.priority = normalized.priority;
+    shouldRebuildSla = true;
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'categoryId')) {
@@ -828,53 +864,57 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
     }
 
     if (String(nextMailboxId) !== currentMailboxId) {
-      const mailbox = await resolveTicketMailboxForWrite({
+      mailboxForSla = await resolveTicketMailboxForWrite({
         workspaceId: workspaceObjectId,
         mailboxId: normalized.mailboxId,
       });
-      const previousMailboxId = ticket.mailboxId;
-      const conversation = await syncConversationMailboxForTicketOrThrow({
+      previousMailboxId = ticket.mailboxId;
+      mailboxConversation = await syncConversationMailboxForTicketOrThrow({
         workspaceId: workspaceObjectId,
         ticket,
-        mailboxId: mailbox._id,
+        mailboxId: mailboxForSla._id,
       });
 
-      ticket.mailboxId = mailbox._id;
+      ticket.mailboxId = mailboxForSla._id;
 
       if (!ticket.conversationId) {
-        ticket.conversationId = conversation._id;
+        ticket.conversationId = mailboxConversation._id;
       }
-
-      try {
-        await ticket.save();
-      } catch (error) {
-        await Promise.allSettled([
-          Conversation.updateOne(
-            {
-              _id: conversation._id,
-              workspaceId: workspaceObjectId,
-              ticketId: toObjectIdIfValid(ticket._id),
-              deletedAt: null,
-            },
-            {
-              $set: {
-                mailboxId: previousMailboxId,
-              },
-            }
-          ),
-        ]);
-
-        throw error;
-      }
-
-      return getTicketById({
-        workspaceId: workspaceObjectId,
-        ticketId: ticket._id,
-      });
+      shouldRebuildSla = true;
     }
   }
 
-  await ticket.save();
+  if (shouldRebuildSla) {
+    await rebuildTicketSlaSnapshotForWrite({
+      workspaceId: workspaceObjectId,
+      ticket,
+      mailbox: mailboxForSla,
+    });
+  }
+
+  try {
+    await ticket.save();
+  } catch (error) {
+    if (mailboxConversation && previousMailboxId) {
+      await Promise.allSettled([
+        Conversation.updateOne(
+          {
+            _id: mailboxConversation._id,
+            workspaceId: workspaceObjectId,
+            ticketId: toObjectIdIfValid(ticket._id),
+            deletedAt: null,
+          },
+          {
+            $set: {
+              mailboxId: previousMailboxId,
+            },
+          }
+        ),
+      ]);
+    }
+
+    throw error;
+  }
 
   return getTicketById({
     workspaceId: workspaceObjectId,

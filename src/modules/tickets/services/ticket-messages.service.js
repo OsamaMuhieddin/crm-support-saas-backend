@@ -879,6 +879,8 @@ export const createTicketMessage = async ({
         });
 
         return {
+          policyName: ticket?.sla?.policyName || null,
+          businessHoursName: ticket?.sla?.businessHoursName || null,
           firstResponseAt: ticket?.sla?.firstResponseAt || null,
           resolvedAt: ticket?.sla?.resolvedAt || null,
           resolutionDueAt: ticket?.sla?.resolutionDueAt || null,

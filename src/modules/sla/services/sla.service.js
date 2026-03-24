@@ -368,6 +368,7 @@ const normalizeDefaultPolicyId = (value) =>
 
 const buildSlaPolicyActionView = ({ policy, defaultPolicyId = null }) => ({
   _id: normalizeObjectId(policy._id),
+  name: policy.name,
   isActive: Boolean(policy.isActive),
   isDefault:
     defaultPolicyId !== null &&
@@ -682,6 +683,7 @@ export const validateSlaPolicyPayload = (payload, { requireAllFields }) => {
     issues.push(
       ...collectSlaPolicyRulesIssues(payload?.rulesByPriority, {
         requireAtLeastOneRule: true,
+        requireAllPriorities: requireAllFields,
       }).map((issue) => buildValidationError(issue.field, issue.messageKey))
     );
   }
@@ -1062,6 +1064,26 @@ export const updateSlaPolicy = async ({ workspaceId, policyId, payload }) => {
     };
   }
 
+  const mergedRulesForValidation =
+    policy.rulesByPriority?.toObject?.() || policy.rulesByPriority || {};
+  const mergedRulesIssues = collectSlaPolicyRulesIssues(
+    mergedRulesForValidation,
+    {
+      requireAtLeastOneRule: true,
+      requireAllPriorities: true,
+    }
+  );
+
+  if (mergedRulesIssues.length > 0) {
+    throw createError(
+      'errors.validation.failed',
+      422,
+      mergedRulesIssues.map((issue) =>
+        buildValidationError(issue.field, issue.messageKey)
+      )
+    );
+  }
+
   await policy.save();
 
   return getSlaPolicyById({
@@ -1120,7 +1142,10 @@ export const deactivateSlaPolicy = async ({
   if (normalizedReplacementPolicyId) {
     if (normalizedReplacementPolicyId === policyObjectIdString) {
       throw createError('errors.validation.failed', 422, [
-        buildValidationError('replacementPolicyId', 'errors.validation.invalid'),
+        buildValidationError(
+          'replacementPolicyId',
+          'errors.sla.replacementPolicyMustDiffer'
+        ),
       ]);
     }
 
@@ -1135,6 +1160,7 @@ export const deactivateSlaPolicy = async ({
     clearedWorkspaceDefault: false,
     clearedMailboxOverridesCount: 0,
     replacementPolicyId: null,
+    replacementPolicyName: null,
     requiresDefaultReplacement: false,
   };
 
@@ -1164,6 +1190,7 @@ export const deactivateSlaPolicy = async ({
       deactivationImpact.replacementPolicyId = normalizeObjectId(
         replacementPolicy._id
       );
+      deactivationImpact.replacementPolicyName = replacementPolicy.name;
     } else if (deactivationImpact.clearedWorkspaceDefault) {
       await applyCanonicalDefaultSlaPolicy({
         workspaceId: workspaceObjectId,
@@ -1192,6 +1219,7 @@ export const deactivateSlaPolicy = async ({
         deactivationImpact.replacementPolicyId = normalizeObjectId(
           replacementPolicy._id
         );
+        deactivationImpact.replacementPolicyName = replacementPolicy.name;
       } else {
         await applyCanonicalDefaultSlaPolicy({
           workspaceId: workspaceObjectId,

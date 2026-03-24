@@ -506,6 +506,7 @@ SLA notes:
 - Business hours are managed as separate records with `name`, `timezone`, and weekday windows.
 - Policies reference business hours through `businessHoursId`.
 - Active v1 rules expose only `firstResponseMinutes` and `resolutionMinutes` by ticket priority.
+- Every stored SLA policy must define at least one active rule field for every priority; policy patch stays partial-input but validates the merged final ruleset.
 - Policy selection order is active on ticket create: mailbox override, then workspace default, then no SLA.
 - Deactivating a policy always clears any `mailbox.slaPolicyId` values that point to that policy.
 - Deactivation can optionally accept a replacement policy id; when provided and the deactivated policy was the current workspace default, the workspace default is swapped to that active same-workspace replacement inside the same action.
@@ -513,7 +514,8 @@ SLA notes:
 - Without a replacement, deactivating the current default clears `workspace.defaultSlaPolicyId` and surfaces response metadata so owners/admins can prompt for a new default.
 - `workspace.defaultSlaPolicyId` is the canonical default source; `SlaPolicy.isDefault` is a denormalized read flag that is reconciled back to the workspace pointer during default-changing actions.
 - SLA policy action endpoints (`activate/deactivate/set-default`) return compact action payloads instead of full policy detail objects.
-- Ticket create snapshots the selected policy/business-hours data onto `ticket.sla`; future policy/business-hours edits affect only new tickets.
+- Ticket create snapshots the selected policy/business-hours ids and names onto `ticket.sla`; future policy/business-hours edits affect only new tickets.
+- Ticket patch recalculates the stored SLA snapshot when `priority` changes and when `mailboxId` changes before any messages exist.
 - First response SLA is satisfied only by the first `public_reply`.
 - Resolution SLA is active for `new/open/pending`, paused by `waiting_on_customer`, satisfied by `solved`, preserved through `closed`, and resumed on reopen from remaining business time.
 - Ticket list/detail/action responses derive SLA statuses from stored raw fields without hidden write-backs.

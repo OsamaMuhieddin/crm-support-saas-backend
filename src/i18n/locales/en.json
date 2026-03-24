@@ -170,6 +170,7 @@
       "businessHoursNotFound": "Business hours not found.",
       "policyNotFound": "SLA policy not found.",
       "policyInactive": "SLA policy must be active.",
+      "replacementPolicyMustDiffer": "Replacement SLA policy must be different from the policy being deactivated.",
       "defaultConflict": "Unable to update the default SLA policy. Please retry."
     },
     "organization": {

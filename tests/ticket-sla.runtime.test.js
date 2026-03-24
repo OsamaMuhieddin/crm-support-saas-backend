@@ -293,6 +293,12 @@ describe('Ticket SLA runtime behavior', () => {
       expect(workspaceDefaultTicket.body.ticket.sla.policySource).toBe(
         'workspace_default'
       );
+      expect(workspaceDefaultTicket.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(workspaceDefaultTicket.body.ticket.sla.businessHoursName).toBe(
+        defaultSla.businessHours.body.businessHours.name
+      );
       expect(
         workspaceDefaultTicket.body.ticket.sla.firstResponseTargetMinutes
       ).toBe(30);
@@ -343,6 +349,12 @@ describe('Ticket SLA runtime behavior', () => {
       expect(mailboxOverrideTicket.status).toBe(200);
       expect(mailboxOverrideTicket.body.ticket.sla.policySource).toBe(
         'mailbox'
+      );
+      expect(mailboxOverrideTicket.body.ticket.sla.policyName).toBe(
+        overrideSla.policy.body.policy.name
+      );
+      expect(mailboxOverrideTicket.body.ticket.sla.businessHoursName).toBe(
+        overrideSla.businessHours.body.businessHours.name
       );
       expect(
         mailboxOverrideTicket.body.ticket.sla.firstResponseTargetMinutes
@@ -431,6 +443,12 @@ describe('Ticket SLA runtime behavior', () => {
       expect(publicReply.body.ticketSummary.status).toBe(
         TICKET_STATUS.WAITING_ON_CUSTOMER
       );
+      expect(publicReply.body.ticketSummary.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(publicReply.body.ticketSummary.sla.businessHoursName).toBe(
+        defaultSla.businessHours.body.businessHours.name
+      );
       expect(publicReply.body.ticketSummary.sla.firstResponseAt).toBeTruthy();
       expect(publicReply.body.ticketSummary.sla.firstResponseStatus).toBe(
         'met'
@@ -443,6 +461,12 @@ describe('Ticket SLA runtime behavior', () => {
         .get(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`);
       expect(detailAfterPublicReply.status).toBe(200);
+      expect(detailAfterPublicReply.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(detailAfterPublicReply.body.ticket.sla.businessHoursName).toBe(
+        defaultSla.businessHours.body.businessHours.name
+      );
       expect(detailAfterPublicReply.body.ticket.sla.isResolutionPaused).toBe(
         true
       );
@@ -510,6 +534,110 @@ describe('Ticket SLA runtime behavior', () => {
   );
 
   maybeDbTest(
+    'ticket patch recalculates the SLA snapshot when priority or mailbox changes before any messages exist',
+    async () => {
+      const owner = await createVerifiedUser();
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+
+      const defaultSla = await setupWorkspaceSla({
+        accessToken: owner.accessToken,
+      });
+      await setDefaultSlaPolicy({
+        accessToken: owner.accessToken,
+        policyId: defaultSla.policy.body.policy._id,
+      });
+
+      const overrideSla = await setupWorkspaceSla({
+        accessToken: owner.accessToken,
+        rulesByPriority: overrideRulesByPriority,
+      });
+      const overrideMailbox = await createMailbox({
+        accessToken: owner.accessToken,
+        name: nextValue('Patch Override Queue'),
+        emailAddress: `${nextValue('patch-override')}@example.com`,
+        slaPolicyId: overrideSla.policy.body.policy._id,
+      });
+      expect(overrideMailbox.status).toBe(200);
+
+      const created = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'Patch SLA snapshot ticket',
+          contactId: String(contact._id),
+          priority: TICKET_PRIORITY.LOW,
+        },
+      });
+      expect(created.status).toBe(200);
+      expect(created.body.ticket.messageCount).toBe(0);
+      expect(created.body.ticket.sla.policySource).toBe('workspace_default');
+      expect(created.body.ticket.sla.firstResponseTargetMinutes).toBe(120);
+      expect(created.body.ticket.sla.resolutionTargetMinutes).toBe(480);
+
+      const updatePriority = await request(app)
+        .patch(`/api/tickets/${created.body.ticket._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          priority: TICKET_PRIORITY.URGENT,
+        });
+
+      expect(updatePriority.status).toBe(200);
+      expect(updatePriority.body.ticket.priority).toBe(TICKET_PRIORITY.URGENT);
+      expect(updatePriority.body.ticket.sla.policySource).toBe(
+        'workspace_default'
+      );
+      expect(updatePriority.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(updatePriority.body.ticket.sla.firstResponseTargetMinutes).toBe(
+        15
+      );
+      expect(updatePriority.body.ticket.sla.resolutionTargetMinutes).toBe(60);
+
+      const updateMailbox = await request(app)
+        .patch(`/api/tickets/${created.body.ticket._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          mailboxId: overrideMailbox.body.mailbox._id,
+        });
+
+      expect(updateMailbox.status).toBe(200);
+      expect(updateMailbox.body.ticket.mailboxId).toBe(
+        overrideMailbox.body.mailbox._id
+      );
+      expect(updateMailbox.body.ticket.conversation.mailboxId).toBe(
+        overrideMailbox.body.mailbox._id
+      );
+      expect(updateMailbox.body.ticket.sla.policySource).toBe('mailbox');
+      expect(updateMailbox.body.ticket.sla.policyId).toBe(
+        overrideSla.policy.body.policy._id
+      );
+      expect(updateMailbox.body.ticket.sla.policyName).toBe(
+        overrideSla.policy.body.policy.name
+      );
+      expect(updateMailbox.body.ticket.sla.businessHoursName).toBe(
+        overrideSla.businessHours.body.businessHours.name
+      );
+      expect(updateMailbox.body.ticket.sla.firstResponseTargetMinutes).toBe(5);
+      expect(updateMailbox.body.ticket.sla.resolutionTargetMinutes).toBe(45);
+
+      const storedTicket = await Ticket.findById(created.body.ticket._id).lean();
+      expect(String(storedTicket.mailboxId)).toBe(
+        overrideMailbox.body.mailbox._id
+      );
+      expect(String(storedTicket.sla.policyId)).toBe(
+        overrideSla.policy.body.policy._id
+      );
+      expect(storedTicket.sla.policyName).toBe(
+        overrideSla.policy.body.policy.name
+      );
+      expect(storedTicket.sla.firstResponseTargetMinutes).toBe(5);
+      expect(storedTicket.sla.resolutionTargetMinutes).toBe(45);
+    }
+  );
+
+  maybeDbTest(
     'lifecycle actions keep solve as the SLA success point, pause waiting_on_customer, keep pending active, and reopen from remaining time',
     async () => {
       const owner = await createVerifiedUser();
@@ -539,6 +667,12 @@ describe('Ticket SLA runtime behavior', () => {
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({ status: TICKET_STATUS.WAITING_ON_CUSTOMER });
       expect(waiting.status).toBe(200);
+      expect(waiting.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(waiting.body.ticket.sla.businessHoursName).toBe(
+        defaultSla.businessHours.body.businessHours.name
+      );
       expect(waiting.body.ticket.sla.resolutionStatus).toBe('paused');
       expect(waiting.body.ticket.sla.isResolutionPaused).toBe(true);
 
@@ -751,6 +885,11 @@ describe('Ticket SLA runtime behavior', () => {
         .get('/api/tickets')
         .set('Authorization', `Bearer ${owner.accessToken}`);
       expect(list.status).toBe(200);
+      expect(
+        list.body.tickets.find(
+          (ticket) => ticket._id === overdueTicket.body.ticket._id
+        ).sla.policyName
+      ).toBe(ownerSla.policy.body.policy.name);
       expect(
         list.body.tickets.find(
           (ticket) => ticket._id === overdueTicket.body.ticket._id

@@ -90,7 +90,7 @@ export const resolveSlaSelection = ({ mailbox, workspace }) => {
 
 export const collectSlaPolicyRulesIssues = (
   rulesByPriority,
-  { requireAtLeastOneRule = true } = {}
+  { requireAtLeastOneRule = true, requireAllPriorities = false } = {}
 ) => {
   const issues = [];
 
@@ -108,6 +108,12 @@ export const collectSlaPolicyRulesIssues = (
   }
 
   const providedPriorities = Object.keys(rulesByPriority);
+  const validProvidedPriorities = providedPriorities.filter((priority) =>
+    SLA_POLICY_PRIORITY_VALUES.includes(priority)
+  );
+  const prioritiesToInspect = requireAllPriorities
+    ? SLA_POLICY_PRIORITY_VALUES
+    : validProvidedPriorities;
   let hasAnyConfiguredRule = false;
 
   for (const priority of providedPriorities) {
@@ -119,10 +125,13 @@ export const collectSlaPolicyRulesIssues = (
       continue;
     }
 
-    const rule = rulesByPriority[priority];
+  }
+
+  for (const priority of prioritiesToInspect) {
+    const rawRule = rulesByPriority[priority];
     const ruleField = `rulesByPriority.${priority}`;
 
-    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
+    if (rawRule !== undefined && (!rawRule || typeof rawRule !== 'object' || Array.isArray(rawRule))) {
       issues.push({
         field: ruleField,
         messageKey: 'errors.validation.invalid',
@@ -130,20 +139,28 @@ export const collectSlaPolicyRulesIssues = (
       continue;
     }
 
-    for (const field of Object.keys(rule)) {
-      if (!ALLOWED_RULE_FIELDS.includes(field)) {
-        issues.push({
-          field: `${ruleField}.${field}`,
-          messageKey: 'errors.validation.unknownField',
-        });
-        continue;
-      }
+    const rule = rawRule || {};
 
-      if (!ACTIVE_RULE_FIELDS.includes(field)) {
-        issues.push({
-          field: `${ruleField}.${field}`,
-          messageKey: 'errors.validation.unknownField',
-        });
+    if (rawRule !== undefined) {
+      for (const field of Object.keys(rule)) {
+        if (!ALLOWED_RULE_FIELDS.includes(field)) {
+          issues.push({
+            field: `${ruleField}.${field}`,
+            messageKey: 'errors.validation.unknownField',
+          });
+          continue;
+        }
+
+        if (!ACTIVE_RULE_FIELDS.includes(field)) {
+          const value = rule[field];
+
+          if (value !== undefined && value !== null && value !== '') {
+            issues.push({
+              field: `${ruleField}.${field}`,
+              messageKey: 'errors.validation.unknownField',
+            });
+          }
+        }
       }
     }
 
