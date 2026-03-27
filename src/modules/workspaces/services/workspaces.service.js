@@ -24,6 +24,7 @@ import {
 import { createOtp } from '../../auth/services/otp.service.js';
 import { mintAccessTokenForSession } from '../../auth/services/session.service.js';
 import { ensureWorkspaceDefaultMailbox } from '../../mailboxes/services/mailboxes.service.js';
+import { disconnectRealtimeSessionSockets } from '../../../infra/realtime/index.js';
 
 const oneDayMs = 24 * 60 * 60 * 1000;
 
@@ -499,6 +500,9 @@ export const switchWorkspaceForSession = async ({
     sessionId,
     workspaceId,
     roleKey: member.roleKey,
+  });
+  await disconnectRealtimeSessionSockets({
+    sessionId,
   });
 
   return {

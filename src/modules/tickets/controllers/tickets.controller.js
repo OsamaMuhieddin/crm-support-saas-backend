@@ -79,6 +79,7 @@ export const updateTicketController = async (req, res, next) => {
     const data = await updateTicket({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
       payload: req.body,
     });
 
@@ -150,6 +151,7 @@ export const updateTicketStatusController = async (req, res, next) => {
     const data = await updateTicketStatus({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
       status: req.body.status,
     });
 
@@ -167,6 +169,7 @@ export const solveTicketController = async (req, res, next) => {
     const data = await solveTicket({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
     });
 
     return res.json({
@@ -183,6 +186,7 @@ export const closeTicketController = async (req, res, next) => {
     const data = await closeTicket({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
     });
 
     return res.json({
@@ -199,6 +203,7 @@ export const reopenTicketController = async (req, res, next) => {
     const data = await reopenTicket({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
     });
 
     return res.json({

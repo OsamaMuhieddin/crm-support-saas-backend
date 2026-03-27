@@ -204,11 +204,606 @@ Session-context endpoints:
 8. `POST /api/tickets/:id/solve` marks the resolution SLA against `solved`, `POST /api/tickets/:id/close` preserves that resolved marker, and `POST /api/tickets/:id/reopen` resumes from remaining business time instead of resetting a fresh budget.
 9. `GET /api/sla/summary` exposes lightweight workspace-scoped current totals, including runtime-derived breached/running/paused counts, without hidden read-time writes.
 10. Still postponed in active v1:
-   - next-response SLA
-   - reminders, escalations, notifications, or jobs
-   - holiday runtime logic
-   - cycle-history modeling
-   - historical/date-range reporting
+
+- next-response SLA
+- reminders, escalations, notifications, or jobs
+- holiday runtime logic
+- cycle-history modeling
+- historical/date-range reporting
+
+### Flow J: Realtime Bootstrap -> Connect -> Subscribe
+
+1. Authenticate normally and keep a valid workspace-scoped access token.
+2. Optionally call `GET /api/realtime/bootstrap` to hydrate the current realtime path, feature flags, and canonical user/workspace context summary.
+3. Open a Socket.IO connection using the same access token semantics as HTTP auth.
+4. The socket is always authenticated against the current session workspace; old access tokens become invalid after `POST /api/workspaces/switch`, and existing sockets from that session are disconnected so the frontend can reconnect with the fresh token.
+5. Subscribe explicitly to the current workspace room with `workspace.subscribe`.
+6. Subscribe explicitly to a readable ticket room with `ticket.subscribe` when the UI opens that ticket.
+7. Treat MongoDB-backed REST reads as the source of truth; realtime is a live-collaboration transport, not a replacement for canonical reads.
+
+## Realtime / Live Collaboration
+
+### Purpose and scope
+
+- Realtime in this phase is only for the internal authenticated workspace app.
+- MongoDB + REST remain the source of truth for data and business invariants.
+- This phase includes:
+  - transport/auth/room foundations
+  - live ticket/message/participant business events published from the existing service layer
+  - lightweight realtime-only user notices for directly affected internal users
+  - ephemeral ticket presence states for internal collaborators
+  - ephemeral typing indicators for ticket replies and internal notes
+  - advisory soft-claim signals for ticket handling coordination
+- Intentionally deferred:
+  - hard locks or exclusive edit enforcement
+  - collaborative shared drafts
+  - customer/public widget realtime
+  - public SDK contracts
+  - webhook delivery
+  - BullMQ/jobs/workers for realtime
+  - offline replay or backlog recovery
+
+### Auth model for sockets
+
+- Socket auth uses the same access token model as protected HTTP routes.
+- Required access-token rules:
+  - valid signature
+  - valid issuer and audience
+  - `typ = access`
+  - `ver = 1`
+  - required claims: `sub`, `sid`, `wid`, `r`
+- Backing session rules:
+  - session must exist
+  - session must not be revoked
+  - session must not be expired
+  - session `workspaceId` must still equal token `wid`
+- User and membership rules:
+  - user must be active
+  - membership in token workspace must be active
+- Frontend implication:
+  - after `POST /api/workspaces/switch`, the old access token is behaviorally invalid for both HTTP and socket connections
+  - the backend also disconnects existing sockets from that session so the client can reconnect with the new access token cleanly
+
+### Connection model
+
+- Socket transport: Socket.IO
+- Default path: `/socket.io`
+- Token transport:
+  - preferred: `auth.token` in the Socket.IO client options
+  - supported: `Authorization: Bearer <accessToken>` handshake header
+- Realtime bootstrap endpoint:
+  - `GET /api/realtime/bootstrap`
+  - purpose: return a small authenticated summary so FE can initialize connection settings, feature flags, and collaboration TTL guidance without hardcoding assumptions
+
+### Rooms
+
+- User-private room:
+  - `user:{userId}`
+  - joined automatically after successful socket auth
+- Workspace room:
+  - `workspace:{workspaceId}`
+  - joined only through explicit `workspace.subscribe`
+- Ticket room:
+  - `ticket:{ticketId}`
+  - joined only through explicit `ticket.subscribe`
+
+### Ack contract
+
+- Socket acknowledgements use a compact envelope:
+
+```json
+{
+  "ok": true,
+  "code": "realtime.workspace.subscribed",
+  "messageKey": "success.ok",
+  "data": {
+    "scope": "workspace",
+    "room": "workspace:65f1...",
+    "workspaceId": "65f1...",
+    "ticketId": null
+  }
+}
+```
+
+- Error ack example:
+
+```json
+{
+  "ok": false,
+  "code": "errors.ticket.notFound",
+  "messageKey": "errors.ticket.notFound",
+  "data": null
+}
+```
+
+### Event envelope contract
+
+```json
+{
+  "event": "ticket.updated",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": "65f1...",
+  "actorUserId": "65ef...",
+  "data": {
+    "ticket": {
+      "_id": "65f0...",
+      "status": "open"
+    }
+  }
+}
+```
+
+### Business event layer
+
+- All business events are emitted only after the underlying write flow succeeds and its counters/SLA side effects are finalized.
+- Event names in the current ticket collaboration surface:
+  - `ticket.created`
+  - `ticket.updated`
+  - `ticket.status_changed`
+  - `ticket.assigned`
+  - `ticket.unassigned`
+  - `ticket.solved`
+  - `ticket.closed`
+  - `ticket.reopened`
+  - `message.created`
+  - `conversation.updated`
+  - `ticket.participant_changed`
+  - `user.notice`
+- Typical room targeting:
+  - `workspace:{workspaceId}` for ticket list/dashboard relevant updates
+  - `ticket:{ticketId}` for ticket detail, conversation, and participant updates
+  - `user:{userId}` for lightweight personal notices such as `ticket_assigned`, `ticket_unassigned`, `ticket_participant_added`, and `ticket_participant_removed`
+- Current trigger mapping:
+  - `POST /api/tickets` -> `ticket.created`
+  - `PATCH /api/tickets/:id` -> `ticket.updated`
+  - `POST /api/tickets/:id/assign` and `POST /api/tickets/:id/self-assign` -> `ticket.assigned`
+  - `POST /api/tickets/:id/unassign` -> `ticket.unassigned`
+  - `POST /api/tickets/:id/status` -> `ticket.status_changed`
+  - `POST /api/tickets/:id/solve` -> `ticket.solved`
+  - `POST /api/tickets/:id/close` -> `ticket.closed`
+  - `POST /api/tickets/:id/reopen` -> `ticket.reopened`
+  - `POST /api/tickets/:id/messages` -> `message.created` and `conversation.updated`
+  - `POST /api/tickets/:id/participants` and `DELETE /api/tickets/:id/participants/:userId` -> `ticket.participant_changed`
+- Example `message.created` payload:
+
+```json
+{
+  "event": "message.created",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": "65f1...",
+  "actorUserId": "65ef...",
+  "data": {
+    "ticket": {
+      "_id": "65f0...",
+      "status": "waiting_on_customer",
+      "messageCount": 4,
+      "lastMessageType": "public_reply"
+    },
+    "conversation": {
+      "_id": "65f2...",
+      "messageCount": 4,
+      "lastMessageType": "public_reply"
+    },
+    "message": {
+      "_id": "65f3...",
+      "type": "public_reply",
+      "bodyText": "Reply body"
+    }
+  }
+}
+```
+
+- Example `user.notice` payload:
+
+```json
+{
+  "event": "user.notice",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": "65f1...",
+  "actorUserId": "65ef...",
+  "data": {
+    "noticeType": "ticket_assigned",
+    "ticket": {
+      "_id": "65f0...",
+      "number": 42,
+      "subject": "VIP follow-up",
+      "status": "open",
+      "assigneeId": "65ee..."
+    }
+  }
+}
+```
+
+- Frontend guidance:
+  - use the event payload for optimistic live surface updates only
+  - use existing REST detail/list endpoints whenever canonical re-hydration is needed
+  - do not treat realtime as an offline replay or guaranteed delivery channel in this phase
+
+### Collaboration behavior layer
+
+- Presence, typing, and soft-claim are ephemeral live signals only.
+- They do not update MongoDB ticket truth and they do not replace REST reads.
+- The current collaboration state source is the realtime collaboration store backed by the shared Redis foundation when enabled, with single-instance in-memory fallback in dev/test.
+- Frontend should reconnect by:
+  - reconnecting the socket with the current access token
+  - re-running `workspace.subscribe` and `ticket.subscribe`
+  - consuming the fresh `ticket.presence.snapshot`
+  - resending current presence or soft-claim intent if the UI still needs it
+- TTL/refresh guidance:
+  - `ticket.presence.set` refreshes presence for the calling socket
+  - `ticket.typing.start` refreshes typing for the calling socket
+  - `ticket.soft_claim.set` refreshes the current soft claim
+  - FE should refresh long-lived presence and soft-claim signals before the advertised TTL expires
+- Multi-node note:
+  - expiry broadcasts are best-effort live signals
+  - reconnect plus `ticket.presence.snapshot` remains the recovery path if a node misses an expiry fan-out edge
+
+- Current collaboration event names:
+  - `ticket.presence.snapshot`
+  - `ticket.presence.changed`
+  - `ticket.typing.changed`
+  - `ticket.soft_claim.changed`
+
+- Current client action names:
+  - `ticket.presence.set`
+  - `ticket.typing.start`
+  - `ticket.typing.stop`
+  - `ticket.soft_claim.set`
+  - `ticket.soft_claim.clear`
+
+- Collaboration payload shape principles:
+  - snapshots include `presence`, `typing`, and `softClaim` together for the subscribed ticket
+  - changed events include only the state family that changed
+  - entries carry lightweight internal user summaries plus the current live state
+  - payloads stay compact and are safe to use for direct FE state replacement
+
+- Example `ticket.presence.snapshot` payload:
+
+```json
+{
+  "event": "ticket.presence.snapshot",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": "65f1...",
+  "actorUserId": null,
+  "data": {
+    "ticketId": "65f0...",
+    "presence": [
+      {
+        "userId": "65ef...",
+        "state": "replying",
+        "updatedAt": "2026-03-25T10:15:20.000Z",
+        "user": {
+          "_id": "65ef...",
+          "email": "agent@example.com",
+          "name": "Agent One",
+          "avatar": null,
+          "status": "active",
+          "roleKey": "agent"
+        }
+      }
+    ],
+    "typing": [
+      {
+        "userId": "65ef...",
+        "mode": "public_reply",
+        "updatedAt": "2026-03-25T10:15:25.000Z",
+        "user": {
+          "_id": "65ef...",
+          "email": "agent@example.com",
+          "name": "Agent One",
+          "avatar": null,
+          "status": "active",
+          "roleKey": "agent"
+        }
+      }
+    ],
+    "softClaim": {
+      "userId": "65ef...",
+      "claimedAt": "2026-03-25T10:15:10.000Z",
+      "updatedAt": "2026-03-25T10:15:10.000Z",
+      "user": {
+        "_id": "65ef...",
+        "email": "agent@example.com",
+        "name": "Agent One",
+        "avatar": null,
+        "status": "active",
+        "roleKey": "agent"
+      }
+    }
+  }
+}
+```
+
+- Example `ticket.presence.changed` payload:
+
+```json
+{
+  "event": "ticket.presence.changed",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": "65f1...",
+  "actorUserId": "65ef...",
+  "data": {
+    "ticketId": "65f0...",
+    "presence": [
+      {
+        "userId": "65ef...",
+        "state": "viewing",
+        "updatedAt": "2026-03-25T10:15:30.000Z",
+        "user": {
+          "_id": "65ef...",
+          "email": "agent@example.com",
+          "name": "Agent One",
+          "avatar": null,
+          "status": "active",
+          "roleKey": "agent"
+        }
+      }
+    ]
+  }
+}
+```
+
+- `ticket.presence.set`
+  - purpose: declare or refresh the caller's current ticket-presence state
+  - payload:
+
+```json
+{
+  "ticketId": "65f0...",
+  "state": "viewing"
+}
+```
+
+- allowed `state` values:
+  - `viewing`
+  - `replying`
+  - `internal_note`
+- rules:
+  - ticket must belong to the authenticated workspace
+  - socket must already be subscribed to `ticket:{ticketId}`
+  - same-state refreshes update TTL without broadcasting noisy duplicate change events
+  - conflicting bursts inside the configured collaboration throttle window are rejected with `errors.realtime.rateLimited`
+- success ack:
+  - `code = realtime.ticket.presence.updated`
+
+- `ticket.typing.start`
+  - purpose: start or refresh an ephemeral typing signal
+  - payload:
+
+```json
+{
+  "ticketId": "65f0...",
+  "mode": "public_reply"
+}
+```
+
+- allowed `mode` values:
+  - `public_reply`
+  - `internal_note`
+- success ack:
+  - `code = realtime.ticket.typing.started`
+  - same-mode refreshes stay quiet and only extend the live signal when needed
+
+- `ticket.typing.stop`
+  - purpose: clear the caller's active typing signal on the ticket
+  - payload:
+
+```json
+{
+  "ticketId": "65f0..."
+}
+```
+
+- success ack:
+  - `code = realtime.ticket.typing.stopped`
+
+- `ticket.soft_claim.set`
+  - purpose: set or refresh an advisory soft claim for the caller
+  - payload:
+
+```json
+{
+  "ticketId": "65f0..."
+}
+```
+
+- rules:
+  - soft claim is advisory only and does not block writes
+  - another authenticated collaborator can replace the current soft claim
+  - soft claim expires automatically if not refreshed
+- success ack:
+  - `code = realtime.ticket.softClaim.set`
+  - same-holder refreshes stay quiet and only extend the advisory claim window
+
+- `ticket.soft_claim.clear`
+  - purpose: clear the current soft claim for the ticket
+  - payload:
+
+```json
+{
+  "ticketId": "65f0..."
+}
+```
+
+- success ack:
+  - `code = realtime.ticket.softClaim.cleared`
+
+- Common collaboration action errors:
+  - `errors.auth.invalidToken`
+  - `errors.auth.sessionRevoked`
+  - `errors.auth.userSuspended`
+  - `errors.auth.forbiddenTenant`
+  - `errors.validation.invalidId`
+  - `errors.validation.invalidEnum`
+  - `errors.ticket.notFound`
+  - `errors.realtime.ticketSubscriptionRequired`
+  - `errors.realtime.rateLimited`
+
+### Subscribe / unsubscribe actions
+
+#### `workspace.subscribe`
+
+- Purpose: join the authenticated workspace room for future internal collaboration events.
+- Client payload:
+
+```json
+{
+  "workspaceId": "65f1..."
+}
+```
+
+- Request rules:
+  - `workspaceId` is optional, but when sent it must equal the authenticated token workspace
+  - the server never trusts an arbitrary client workspace id
+- Success ack:
+  - `ok = true`
+  - `code = realtime.workspace.subscribed`
+  - `data.scope = workspace`
+  - `data.room = workspace:{workspaceId}`
+- Common errors:
+  - `errors.auth.invalidToken`
+  - `errors.auth.sessionRevoked`
+  - `errors.auth.userSuspended`
+  - `errors.auth.forbiddenTenant`
+  - `errors.validation.invalidId`
+- Anti-enumeration note:
+  - the server only allows the current authenticated workspace; there is no cross-workspace join path
+
+#### `workspace.unsubscribe`
+
+- Purpose: leave the authenticated workspace room.
+- Client payload:
+
+```json
+{
+  "workspaceId": "65f1..."
+}
+```
+
+- Success ack:
+  - `ok = true`
+  - `code = realtime.workspace.unsubscribed`
+
+#### `ticket.subscribe`
+
+- Purpose: join one readable ticket room inside the authenticated workspace.
+- Client payload:
+
+```json
+{
+  "ticketId": "65f0..."
+}
+```
+
+- Request rules:
+  - `ticketId` is required
+  - ticket must exist in the authenticated workspace
+  - ticket read access uses the same tenant scope as REST ticket reads
+  - on success, the server immediately emits `ticket.presence.snapshot` to the subscribing socket with the current live collaboration state for that ticket
+- Success ack:
+  - `ok = true`
+  - `code = realtime.ticket.subscribed`
+  - `data.scope = ticket`
+  - `data.room = ticket:{ticketId}`
+- Common errors:
+  - `errors.auth.invalidToken`
+  - `errors.auth.sessionRevoked`
+  - `errors.auth.userSuspended`
+  - `errors.auth.forbiddenTenant`
+  - `errors.validation.invalidId`
+  - `errors.ticket.notFound`
+- Anti-enumeration note:
+  - cross-workspace ticket ids collapse to `errors.ticket.notFound`
+
+#### `ticket.unsubscribe`
+
+- Purpose: leave one readable ticket room inside the authenticated workspace.
+- Client payload:
+
+```json
+{
+  "ticketId": "65f0..."
+}
+```
+
+- Success ack:
+  - `ok = true`
+  - `code = realtime.ticket.unsubscribed`
+- Notes:
+  - unsubscribing also clears that socket's ephemeral presence, typing, and soft-claim state for the ticket before future subscribers receive the next snapshot
+
+### GET `/api/realtime/bootstrap`
+
+- Purpose: return a frontend-friendly summary for realtime initialization in the authenticated workspace app.
+- Requirements:
+  - Authorization required
+  - active user
+  - active workspace membership
+- Request body:
+  - none
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "realtime": {
+    "enabled": true,
+    "socketPath": "/socket.io",
+    "transports": ["websocket", "polling"],
+    "auth": {
+      "sessionId": "65fa...",
+      "userId": "65f0...",
+      "workspaceId": "65f1...",
+      "roleKey": "owner"
+    },
+    "user": {
+      "_id": "65f0...",
+      "email": "user@example.com"
+    },
+    "workspace": {
+      "_id": "65f1...",
+      "name": "Acme Workspace",
+      "slug": "acme-workspace",
+      "status": "active"
+    },
+    "features": {
+      "roomSubscriptions": true,
+      "businessEvents": true,
+      "presence": true,
+      "typing": true,
+      "softClaim": true
+    },
+    "collaboration": {
+      "requiresTicketSubscription": true,
+      "presenceTtlMs": 45000,
+      "typingTtlMs": 8000,
+      "softClaimTtlMs": 45000,
+      "actionThrottleMs": 75
+    },
+    "redis": {
+      "enabled": false,
+      "adapterEnabled": false,
+      "connected": false,
+      "adapterConnected": false
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Notes:
+  - this endpoint is informational only
+  - it does not mint tokens or change workspace/session state
+  - REST and DB remain the source of truth for business data
+  - `collaboration.actionThrottleMs` is the modest server-side guard window for conflicting collaboration-action bursts from the same socket
 
 ## 4) Auth Endpoints Reference
 
@@ -2167,7 +2762,11 @@ npm run mailboxes:backfill-default
       "timezone": "Asia/Riyadh",
       "weeklySchedule": [
         { "dayOfWeek": 0, "isOpen": false, "windows": [] },
-        { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+        {
+          "dayOfWeek": 1,
+          "isOpen": true,
+          "windows": [{ "start": "09:00", "end": "17:00" }]
+        }
       ],
       "createdAt": "2026-03-22T10:00:00.000Z",
       "updatedAt": "2026-03-22T10:00:00.000Z"
@@ -2227,7 +2826,11 @@ npm run mailboxes:backfill-default
     "timezone": "Asia/Riyadh",
     "weeklySchedule": [
       { "dayOfWeek": 0, "isOpen": false, "windows": [] },
-      { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+      {
+        "dayOfWeek": 1,
+        "isOpen": true,
+        "windows": [{ "start": "09:00", "end": "17:00" }]
+      }
     ],
     "createdAt": "2026-03-22T10:00:00.000Z",
     "updatedAt": "2026-03-22T10:00:00.000Z"
@@ -2258,16 +2861,12 @@ npm run mailboxes:backfill-default
     {
       "dayOfWeek": 1,
       "isOpen": true,
-      "windows": [
-        { "start": "09:00", "end": "17:00" }
-      ]
+      "windows": [{ "start": "09:00", "end": "17:00" }]
     },
     {
       "dayOfWeek": 2,
       "isOpen": true,
-      "windows": [
-        { "start": "09:00", "end": "17:00" }
-      ]
+      "windows": [{ "start": "09:00", "end": "17:00" }]
     }
   ]
 }
@@ -2286,7 +2885,11 @@ npm run mailboxes:backfill-default
     "timezone": "Asia/Riyadh",
     "weeklySchedule": [
       { "dayOfWeek": 0, "isOpen": false, "windows": [] },
-      { "dayOfWeek": 1, "isOpen": true, "windows": [{ "start": "09:00", "end": "17:00" }] }
+      {
+        "dayOfWeek": 1,
+        "isOpen": true,
+        "windows": [{ "start": "09:00", "end": "17:00" }]
+      }
     ]
   }
 }

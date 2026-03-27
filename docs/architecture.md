@@ -9,6 +9,7 @@
 - Mailboxes: workspace-scoped inbox/mailbox dictionaries
 - Tickets: core support workflow with conversations, messages, dictionaries, assignment, lifecycle, and participants
 - SLA: business-hours and policy management plus ticket first-response/resolution runtime behavior
+- Realtime: internal authenticated collaboration transport, room subscriptions, business-event publishing, and Redis-backed ephemeral collaboration signals
 - Inbox/Conversations, Integrations, Plans, Admin: broader platform areas that may expand further over time
 
 ## Layers
@@ -16,7 +17,7 @@
 - **Routes (`src/routes`)**: mounts module routers under `/api`
 - **Modules (`src/modules`)**: feature modules using the modular Express pattern with routes, controllers, services, models, schemas, validators, and optional module-local utilities
 - **Shared (`src/shared`)**: errors, middlewares, utils, validators
-- **Infra (`src/infra`)**: db + jobs + storage adapters (MinIO/local)
+- **Infra (`src/infra`)**: db + jobs + storage adapters (MinIO/local) + realtime/Redis coordination foundations
 - **Config (`src/config`)**: env configuration
 
 ## Nest-like module pattern in Express
@@ -51,6 +52,39 @@ utils/ (optional, module-local pure helpers only)
 - Validators use `express-validator` and are wrapped by the shared validation middleware.
 - Module-local utilities should stay inside the module when they are not cross-cutting enough for `src/shared`.
 - Success and error responses follow the localized global response envelope defined in `src/app.js`.
+
+## Realtime foundation notes
+
+- `src/infra/realtime/*` owns Socket.IO bootstrap, room helpers, handshake auth, adapter wiring, and the centralized transport publisher abstraction.
+- `src/infra/redis/*` owns the reusable Redis config/client seam so future platform capabilities can share the same foundation.
+- Realtime is internal-only for the authenticated workspace app in the current phase.
+- MongoDB and REST remain the source of truth; sockets do not bypass module business logic.
+- Business live events are published from the existing service layer only after successful writes and after downstream counters/SLA side effects are finalized.
+- Existing sockets in a session are disconnected when `POST /api/workspaces/switch` changes the active workspace so the client reconnects under the fresh token/workspace context.
+- Socket auth mirrors the existing HTTP access-token/session/workspace model:
+  - valid JWT signature, issuer, and audience
+  - `typ=access`, `ver=1`
+  - required `sub`, `sid`, `wid`, `r`
+  - backing session must exist, be active, and still match the token workspace
+  - user must be active
+  - workspace membership must be active
+- Reserved room patterns in this phase:
+  - `workspace:{workspaceId}`
+  - `ticket:{ticketId}`
+  - `user:{userId}`
+- Current published live event families:
+  - ticket lifecycle and update events
+  - message and conversation summary events
+  - ticket participant change events
+  - lightweight user-targeted notices
+- Current ephemeral collaboration signals:
+  - ticket presence snapshots and change events
+  - typing indicators with TTL refresh/expiry semantics
+  - advisory soft-claim state with TTL refresh/expiry semantics
+- Collaboration actions use a modest per-socket throttle window to suppress conflicting bursts while still allowing quiet same-state refreshes.
+- Collaboration state lives outside MongoDB ticket truth and is coordinated through the shared Redis foundation when enabled, with a single-instance in-memory fallback for local/test runtime parity.
+- Expiry-driven collaboration broadcasts are best-effort per node; snapshot-on-subscribe/reconnect remains the correctness path for stale cleanup recovery.
+- Redis is available as optional shared infrastructure, while the Socket.IO Redis adapter remains behind explicit realtime env flags so horizontal fan-out can be enabled later without reworking the rest of the codebase.
 
 ## Files v1 module notes
 

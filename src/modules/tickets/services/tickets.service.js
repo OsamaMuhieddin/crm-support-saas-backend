@@ -32,6 +32,15 @@ import {
   toObjectIdIfValid,
 } from '../utils/ticket.helpers.js';
 import { createTicketMessage } from './ticket-messages.service.js';
+import {
+  publishTicketAssignmentChanged,
+  publishTicketClosed,
+  publishTicketCreated,
+  publishTicketReopened,
+  publishTicketSolved,
+  publishTicketStatusChanged,
+  publishTicketUpdated,
+} from './ticket-live-events.service.js';
 
 const SORT_ALLOWLIST = Object.freeze({
   number: { number: 1, _id: 1 },
@@ -121,6 +130,23 @@ const TICKET_BASE_PROJECTION = {
 
 const isElevatedWorkspaceRole = (roleKey) =>
   ELEVATED_WORKSPACE_ROLES.has(String(roleKey || '').toLowerCase());
+
+const normalizeComparableId = (value) => (value ? String(value) : null);
+
+const hasOrderedIdArrayChanged = (current = [], next = []) => {
+  const currentIds = (Array.isArray(current) ? current : []).map((value) =>
+    normalizeComparableId(value)
+  );
+  const nextIds = (Array.isArray(next) ? next : []).map((value) =>
+    normalizeComparableId(value)
+  );
+
+  if (currentIds.length !== nextIds.length) {
+    return true;
+  }
+
+  return currentIds.some((value, index) => value !== nextIds[index]);
+};
 
 const maybeMoveAssignedNewTicketToOpen = (ticket) => {
   if (ticket.status !== TICKET_STATUS.NEW) {
@@ -682,6 +708,7 @@ export const createTicket = async ({
         workspaceId: workspaceObjectId,
         ticketId: ticket._id,
         createdByUserId,
+        publishRealtime: false,
         payload: initialMessage,
       });
     }
@@ -698,10 +725,18 @@ export const createTicket = async ({
     throw error;
   }
 
-  return getTicketById({
+  const result = await getTicketById({
     workspaceId: workspaceObjectId,
     ticketId: ticket._id,
   });
+
+  await publishTicketCreated({
+    workspaceId: workspaceObjectId,
+    ticketId: ticket._id,
+    actorUserId: createdByUserId,
+  });
+
+  return result;
 };
 
 export const listTickets = async ({
@@ -807,7 +842,12 @@ export const getTicketById = async ({ workspaceId, ticketId }) => {
   };
 };
 
-export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
+export const updateTicket = async ({
+  workspaceId,
+  ticketId,
+  actorUserId = null,
+  payload,
+}) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
@@ -824,14 +864,21 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
   let mailboxConversation = null;
   let previousMailboxId = null;
   let shouldRebuildSla = false;
+  let shouldSave = false;
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'subject')) {
-    ticket.subject = normalized.subject;
+    if (ticket.subject !== normalized.subject) {
+      ticket.subject = normalized.subject;
+      shouldSave = true;
+    }
   }
 
   if (hadPriorityUpdate) {
-    ticket.priority = normalized.priority;
-    shouldRebuildSla = true;
+    if (ticket.priority !== normalized.priority) {
+      ticket.priority = normalized.priority;
+      shouldRebuildSla = true;
+      shouldSave = true;
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'categoryId')) {
@@ -839,7 +886,15 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
       workspaceId: workspaceObjectId,
       categoryId: normalized.categoryId,
     });
-    ticket.categoryId = category?._id || null;
+    const nextCategoryId = category?._id || null;
+
+    if (
+      normalizeComparableId(ticket.categoryId) !==
+      normalizeComparableId(nextCategoryId)
+    ) {
+      ticket.categoryId = nextCategoryId;
+      shouldSave = true;
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'tagIds')) {
@@ -847,7 +902,12 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
       workspaceId: workspaceObjectId,
       tagIds: normalized.tagIds,
     });
-    ticket.tagIds = tags.map((tag) => tag._id);
+    const nextTagIds = tags.map((tag) => tag._id);
+
+    if (hasOrderedIdArrayChanged(ticket.tagIds, nextTagIds)) {
+      ticket.tagIds = nextTagIds;
+      shouldSave = true;
+    }
   }
 
   if (Object.prototype.hasOwnProperty.call(normalized, 'mailboxId')) {
@@ -881,6 +941,7 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
         ticket.conversationId = mailboxConversation._id;
       }
       shouldRebuildSla = true;
+      shouldSave = true;
     }
   }
 
@@ -889,6 +950,13 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
       workspaceId: workspaceObjectId,
       ticket,
       mailbox: mailboxForSla,
+    });
+  }
+
+  if (!shouldSave) {
+    return getTicketById({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
     });
   }
 
@@ -916,10 +984,18 @@ export const updateTicket = async ({ workspaceId, ticketId, payload }) => {
     throw error;
   }
 
-  return getTicketById({
+  const result = await getTicketById({
     workspaceId: workspaceObjectId,
     ticketId: ticket._id,
   });
+
+  await publishTicketUpdated({
+    workspaceId: workspaceObjectId,
+    ticketId: ticket._id,
+    actorUserId,
+  });
+
+  return result;
 };
 
 export const assignTicket = async ({
@@ -961,6 +1037,7 @@ export const assignTicket = async ({
   const currentAssigneeId = ticket.assigneeId
     ? String(ticket.assigneeId)
     : null;
+  const previousAssigneeId = currentAssigneeId;
   let shouldSave = false;
 
   if (currentAssigneeId !== String(nextAssigneeId)) {
@@ -974,6 +1051,17 @@ export const assignTicket = async ({
 
   if (shouldSave) {
     await ticket.save();
+
+    await publishTicketAssignmentChanged({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId: currentUserObjectId,
+      previousAssigneeId,
+      assignmentMode:
+        String(nextAssigneeId) === String(currentUserObjectId)
+          ? 'self_assign'
+          : 'assign',
+    });
   }
 
   return {
@@ -1011,8 +1099,17 @@ export const unassignTicket = async ({
     };
   }
 
+  const previousAssigneeId = ticket.assigneeId;
   ticket.assigneeId = null;
   await ticket.save();
+
+  await publishTicketAssignmentChanged({
+    workspaceId: workspaceObjectId,
+    ticketId: ticket._id,
+    actorUserId: currentUserObjectId,
+    previousAssigneeId,
+    assignmentMode: 'unassign',
+  });
 
   return {
     ticket: buildTicketAssignmentActionView(ticket),
@@ -1045,6 +1142,9 @@ export const selfAssignTicket = async ({
   }
 
   let shouldSave = false;
+  const previousAssigneeId = ticket.assigneeId
+    ? String(ticket.assigneeId)
+    : null;
 
   if (!ticket.assigneeId) {
     ticket.assigneeId = toObjectIdIfValid(currentUserAssignee._id);
@@ -1057,6 +1157,14 @@ export const selfAssignTicket = async ({
 
   if (shouldSave) {
     await ticket.save();
+
+    await publishTicketAssignmentChanged({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId: currentUserObjectId,
+      previousAssigneeId,
+      assignmentMode: 'self_assign',
+    });
   }
 
   return {
@@ -1067,9 +1175,11 @@ export const selfAssignTicket = async ({
 const updateTicketStatusInternal = async ({
   workspaceId,
   ticketId,
+  actorUserId = null,
   nextStatus,
   errorMessageKey,
   buildResponse = buildTicketStatusActionView,
+  publishStatusEvent = true,
 }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
@@ -1087,7 +1197,9 @@ const updateTicketStatusInternal = async ({
     errorMessageKey,
   });
 
-  if (currentStatus !== nextStatus) {
+  const didChange = currentStatus !== nextStatus;
+
+  if (didChange) {
     applyTicketStatusTransitionSla({
       ticket,
       currentStatus,
@@ -1098,29 +1210,70 @@ const updateTicketStatusInternal = async ({
     await ticket.save();
   }
 
+  if (didChange && publishStatusEvent) {
+    await publishTicketStatusChanged({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId,
+    });
+  }
+
   return {
     ticket: buildResponse(ticket),
+    _realtimeDidChange: didChange,
   };
 };
 
-export const updateTicketStatus = async ({ workspaceId, ticketId, status }) =>
-  updateTicketStatusInternal({
+export const updateTicketStatus = async ({
+  workspaceId,
+  ticketId,
+  actorUserId = null,
+  status,
+}) => {
+  const result = await updateTicketStatusInternal({
     workspaceId,
     ticketId,
+    actorUserId,
     nextStatus: status,
     errorMessageKey: 'errors.ticket.invalidStatusTransition',
   });
 
-export const solveTicket = async ({ workspaceId, ticketId }) =>
-  updateTicketStatusInternal({
+  delete result._realtimeDidChange;
+  return result;
+};
+
+export const solveTicket = async ({
+  workspaceId,
+  ticketId,
+  actorUserId = null,
+}) => {
+  const result = await updateTicketStatusInternal({
     workspaceId,
     ticketId,
+    actorUserId,
     nextStatus: TICKET_STATUS.SOLVED,
     errorMessageKey: 'errors.ticket.solveNotAllowed',
     buildResponse: buildTicketSolveActionView,
+    publishStatusEvent: false,
   });
 
-export const closeTicket = async ({ workspaceId, ticketId }) => {
+  if (result._realtimeDidChange) {
+    await publishTicketSolved({
+      workspaceId,
+      ticketId,
+      actorUserId,
+    });
+  }
+
+  delete result._realtimeDidChange;
+  return result;
+};
+
+export const closeTicket = async ({
+  workspaceId,
+  ticketId,
+  actorUserId = null,
+}) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
@@ -1139,9 +1292,19 @@ export const closeTicket = async ({ workspaceId, ticketId }) => {
     });
   }
 
+  const didChange = ticket.status !== TICKET_STATUS.CLOSED;
+
   if (ticket.status !== TICKET_STATUS.CLOSED) {
     ticket.status = TICKET_STATUS.CLOSED;
     await ticket.save();
+  }
+
+  if (didChange) {
+    await publishTicketClosed({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId,
+    });
   }
 
   return {
@@ -1149,7 +1312,11 @@ export const closeTicket = async ({ workspaceId, ticketId }) => {
   };
 };
 
-export const reopenTicket = async ({ workspaceId, ticketId }) => {
+export const reopenTicket = async ({
+  workspaceId,
+  ticketId,
+  actorUserId = null,
+}) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
@@ -1178,6 +1345,12 @@ export const reopenTicket = async ({ workspaceId, ticketId }) => {
     ticket.status = TICKET_STATUS.OPEN;
     await ticket.save();
   }
+
+  await publishTicketReopened({
+    workspaceId: workspaceObjectId,
+    ticketId: ticket._id,
+    actorUserId,
+  });
 
   return {
     ticket: buildTicketReopenActionView(ticket),

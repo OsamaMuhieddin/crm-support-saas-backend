@@ -31,6 +31,7 @@ import {
   toObjectIdIfValid,
 } from '../utils/ticket.helpers.js';
 import { findTicketInWorkspaceOrThrow } from './ticket-query.service.js';
+import { publishTicketMessageCreated } from './ticket-live-events.service.js';
 
 const MESSAGE_SORT_ALLOWLIST = Object.freeze({
   createdAt: { createdAt: 1, _id: 1 },
@@ -733,6 +734,7 @@ export const createTicketMessage = async ({
   workspaceId,
   ticketId,
   createdByUserId,
+  publishRealtime = true,
   payload,
 }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
@@ -855,7 +857,7 @@ export const createTicketMessage = async ({
     messages: [message.toObject()],
   });
 
-  return {
+  const result = {
     messageRecord: hydratedMessage,
     conversation: buildConversationSummaryView(conversation),
     ticketSummary: {
@@ -896,6 +898,18 @@ export const createTicketMessage = async ({
       })(),
     },
   };
+
+  if (publishRealtime) {
+    await publishTicketMessageCreated({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId: createdByUserId,
+      messageRecord: result.messageRecord,
+      conversation: result.conversation,
+    });
+  }
+
+  return result;
 };
 
 export const getTicketConversationByTicketId = async ({

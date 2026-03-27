@@ -10,6 +10,7 @@ import {
   normalizeObjectId,
   toObjectIdIfValid,
 } from '../utils/ticket.helpers.js';
+import { publishTicketParticipantChanged } from './ticket-live-events.service.js';
 
 const syncTicketParticipantCount = async ({ workspaceId, ticketId }) => {
   const participantCount = await TicketParticipant.countDocuments({
@@ -80,13 +81,14 @@ export const listTicketParticipants = async ({ workspaceId, ticketId }) => {
 export const saveTicketParticipant = async ({
   workspaceId,
   ticketId,
+  actorUserId = null,
   payload,
 }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const ticketObjectId = toObjectIdIfValid(ticketId);
   const participantUserId = toObjectIdIfValid(payload.userId);
 
-  await findTicketInWorkspaceOrThrow({
+  const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: ticketObjectId,
     lean: true,
@@ -112,6 +114,19 @@ export const saveTicketParticipant = async ({
       type: payload.type,
     });
   } else {
+    if (participant.deletedAt === null && participant.type === payload.type) {
+      return {
+        participant: buildParticipantView({
+          participant: participant.toObject(),
+          user: buildAssigneeSummaryView(participantTarget),
+        }),
+        ticketSummary: {
+          _id: normalizeObjectId(ticketObjectId),
+          participantCount: Number(ticket.participantCount || 0),
+        },
+      };
+    }
+
     participant.type = payload.type;
     participant.deletedAt = null;
     participant.deletedByUserId = null;
@@ -123,7 +138,7 @@ export const saveTicketParticipant = async ({
     ticketId: ticketObjectId,
   });
 
-  return {
+  const result = {
     participant: buildParticipantView({
       participant: participant.toObject(),
       user: buildAssigneeSummaryView(participantTarget),
@@ -133,6 +148,17 @@ export const saveTicketParticipant = async ({
       participantCount,
     },
   };
+
+  await publishTicketParticipantChanged({
+    workspaceId: workspaceObjectId,
+    ticketId: ticketObjectId,
+    actorUserId,
+    action: 'saved',
+    participant: result.participant,
+    affectedUserId: participantUserId,
+  });
+
+  return result;
 };
 
 export const removeTicketParticipant = async ({
@@ -145,7 +171,7 @@ export const removeTicketParticipant = async ({
   const ticketObjectId = toObjectIdIfValid(ticketId);
   const participantUserId = toObjectIdIfValid(userId);
 
-  await findTicketInWorkspaceOrThrow({
+  const ticket = await findTicketInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     ticketId: ticketObjectId,
     lean: true,
@@ -159,23 +185,41 @@ export const removeTicketParticipant = async ({
     deletedAt: null,
   });
 
-  if (participant) {
-    participant.deletedAt = new Date();
-    participant.deletedByUserId = deletedByUserId
-      ? toObjectIdIfValid(deletedByUserId)
-      : null;
-    await participant.save();
+  if (!participant) {
+    return {
+      ticketSummary: {
+        _id: normalizeObjectId(ticketObjectId),
+        participantCount: Number(ticket.participantCount || 0),
+      },
+    };
   }
+
+  participant.deletedAt = new Date();
+  participant.deletedByUserId = deletedByUserId
+    ? toObjectIdIfValid(deletedByUserId)
+    : null;
+  await participant.save();
 
   const participantCount = await syncTicketParticipantCount({
     workspaceId: workspaceObjectId,
     ticketId: ticketObjectId,
   });
 
-  return {
+  const result = {
     ticketSummary: {
       _id: normalizeObjectId(ticketObjectId),
       participantCount,
     },
   };
+
+  await publishTicketParticipantChanged({
+    workspaceId: workspaceObjectId,
+    ticketId: ticketObjectId,
+    actorUserId: deletedByUserId,
+    action: 'removed',
+    participant: null,
+    affectedUserId: participantUserId,
+  });
+
+  return result;
 };

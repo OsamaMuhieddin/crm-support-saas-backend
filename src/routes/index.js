@@ -12,6 +12,7 @@ import integrationsRouter from '../modules/integrations/index.js';
 import adminRouter from '../modules/admin/index.js';
 import filesRouter from '../modules/files/index.js';
 import mailboxesRouter from '../modules/mailboxes/index.js';
+import realtimeRouter from '../modules/realtime/index.js';
 
 const router = Router();
 
@@ -29,5 +30,6 @@ router.use('/integrations', integrationsRouter);
 router.use('/admin', adminRouter);
 router.use('/files', filesRouter);
 router.use('/mailboxes', mailboxesRouter);
+router.use('/realtime', realtimeRouter);
 
 export default router;

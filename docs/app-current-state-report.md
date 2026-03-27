@@ -24,6 +24,7 @@ Implemented business pillars:
 - Account lifecycle with OTP verification and password recovery.
 - Workspace-based tenancy and explicit active-workspace switching.
 - Workspace invite lifecycle (create, resend, revoke, accept, finalize).
+- Internal realtime collaboration for authenticated workspace clients, including Socket.IO bootstrap/auth/rooms, ticket/message/participant live business events, and ephemeral ticket presence/typing/soft-claim coordination.
 - Secure file upload/list/download/delete inside workspace boundaries.
 - Mailbox queue management with strict default-mailbox invariants.
 - SLA v1 active surface: business-hours management, SLA policy management, workspace default policy assignment, mailbox optional SLA overrides, ticket SLA snapshot/runtime behavior, and lightweight SLA summary.
@@ -57,32 +58,32 @@ Workspace roles:
 
 Current effective permissions by feature:
 
-| Feature                                                  | Owner           | Admin           | Agent                 | Viewer                |
-| -------------------------------------------------------- | --------------- | --------------- | --------------------- | --------------------- |
-| Auth lifecycle (`signup/login/refresh/...`)              | Yes             | Yes             | Yes                   | Yes                   |
-| List memberships (`GET /workspaces/mine`)                | Yes             | Yes             | Yes                   | Yes                   |
-| Switch workspace (`POST /workspaces/switch`)             | Yes (if member) | Yes (if member) | Yes (if member)       | Yes (if member)       |
-| Manage invites in workspace                              | Yes             | Yes             | No                    | No                    |
-| Accept invite (token-based, no auth)                     | Yes             | Yes             | Yes                   | Yes                   |
-| Upload files                                             | Yes             | Yes             | Yes                   | No                    |
-| List/get/download files                                  | Yes             | Yes             | Yes                   | Yes                   |
-| Delete files                                             | Yes             | Yes             | No                    | No                    |
-| Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                    | No                    |
-| Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden) | Yes (inactive hidden) |
-| Create/update business hours                             | Yes             | Yes             | No                    | No                    |
-| Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes             | No                    | No                    |
+| Feature                                                  | Owner           | Admin           | Agent                        | Viewer                       |
+| -------------------------------------------------------- | --------------- | --------------- | ---------------------------- | ---------------------------- |
+| Auth lifecycle (`signup/login/refresh/...`)              | Yes             | Yes             | Yes                          | Yes                          |
+| List memberships (`GET /workspaces/mine`)                | Yes             | Yes             | Yes                          | Yes                          |
+| Switch workspace (`POST /workspaces/switch`)             | Yes (if member) | Yes (if member) | Yes (if member)              | Yes (if member)              |
+| Manage invites in workspace                              | Yes             | Yes             | No                           | No                           |
+| Accept invite (token-based, no auth)                     | Yes             | Yes             | Yes                          | Yes                          |
+| Upload files                                             | Yes             | Yes             | Yes                          | No                           |
+| List/get/download files                                  | Yes             | Yes             | Yes                          | Yes                          |
+| Delete files                                             | Yes             | Yes             | No                           | No                           |
+| Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                           | No                           |
+| Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
+| Create/update business hours                             | Yes             | Yes             | No                           | No                           |
+| Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes             | No                           | No                           |
 | Read SLA summary/business hours/policies                 | Yes             | Yes             | Yes (inactive policy hidden) | Yes (inactive policy hidden) |
-| Create/update ticket records                             | Yes             | Yes             | Yes                   | No                    |
-| Read ticket lists/details                                | Yes             | Yes             | Yes                   | Yes                   |
-| Read ticket conversations/messages                       | Yes             | Yes             | Yes                   | Yes                   |
-| Create ticket messages                                   | Yes             | Yes             | Yes                   | No                    |
-| Assign tickets                                           | Yes             | Yes             | No                    | No                    |
-| Unassign/self-assign tickets                             | Yes             | Yes             | Yes                   | No                    |
-| Change ticket lifecycle/status                           | Yes             | Yes             | Yes                   | No                    |
-| Read ticket participants                                 | Yes             | Yes             | Yes                   | Yes                   |
-| Add/remove ticket participants                           | Yes             | Yes             | Yes                   | No                    |
-| Create/update/activate/deactivate ticket categories/tags | Yes             | Yes             | No                    | No                    |
-| Read ticket category/tag lists/options/details           | Yes             | Yes             | Yes (inactive hidden) | Yes (inactive hidden) |
+| Create/update ticket records                             | Yes             | Yes             | Yes                          | No                           |
+| Read ticket lists/details                                | Yes             | Yes             | Yes                          | Yes                          |
+| Read ticket conversations/messages                       | Yes             | Yes             | Yes                          | Yes                          |
+| Create ticket messages                                   | Yes             | Yes             | Yes                          | No                           |
+| Assign tickets                                           | Yes             | Yes             | No                           | No                           |
+| Unassign/self-assign tickets                             | Yes             | Yes             | Yes                          | No                           |
+| Change ticket lifecycle/status                           | Yes             | Yes             | Yes                          | No                           |
+| Read ticket participants                                 | Yes             | Yes             | Yes                          | Yes                          |
+| Add/remove ticket participants                           | Yes             | Yes             | Yes                          | No                           |
+| Create/update/activate/deactivate ticket categories/tags | Yes             | Yes             | No                           | No                           |
+| Read ticket category/tag lists/options/details           | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
 
 ### 2.3 Quick Start Flows (Implemented)
 
@@ -116,6 +117,7 @@ Current effective permissions by feature:
 2. Session workspace context is updated.
 3. New access token is minted with new `wid`/`role`.
 4. Old access token becomes invalid because session `workspaceId` changed.
+5. Existing realtime sockets for that session are disconnected so the client can reconnect under the new workspace-scoped token.
 
 #### Flow E: Files v1
 
@@ -200,6 +202,9 @@ Backend stack:
 - Node.js + Express (ESM).
 - MongoDB + Mongoose.
 - JWT for auth.
+- Socket.IO for internal realtime transport.
+- Shared optional Redis foundation for realtime fan-out today and future platform consumers later.
+- Modest collaboration-action throttling plus best-effort expiry cleanup for ephemeral presence, typing, and soft-claim signals.
 - `express-validator` for request validation.
 - Multer for file multipart upload.
 - MinIO/S3-compatible storage adapter + local storage adapter.
@@ -210,7 +215,7 @@ Architecture pattern:
 - Route mounting root: `src/routes/index.js` under `/api`.
 - Modular feature folders in `src/modules/*`.
 - Shared cross-cutting utilities in `src/shared/*`.
-- Infrastructure adapters in `src/infra/*`.
+- Infrastructure adapters in `src/infra/*`, now including realtime runtime/bootstrap helpers.
 - Runtime config in `src/config/*`.
 
 Module structure convention:
@@ -431,20 +436,20 @@ Files notes:
 
 #### Customers / Organizations v1 + Contacts v1 + ContactIdentity v1 Endpoints
 
-| Method  | Path                            | Purpose                                              | Role requirements                              |
-| ------- | ------------------------------- | ---------------------------------------------------- | ---------------------------------------------- |
-| `GET`   | `/customers/organizations`      | List organizations (pagination/search/filter/sort)   | Any active member (`owner/admin/agent/viewer`) |
-| `GET`   | `/customers/organizations/options` | Lightweight organization options                  | Any active member (`owner/admin/agent/viewer`) |
-| `GET`   | `/customers/organizations/:id`  | Get organization details                             | Any active member (`owner/admin/agent/viewer`) |
-| `POST`  | `/customers/organizations`      | Create organization                                  | `owner/admin/agent`                            |
-| `PATCH` | `/customers/organizations/:id`  | Update organization                                  | `owner/admin/agent`                            |
-| `GET`   | `/customers/contacts`           | List contacts (pagination/search/filter/sort)        | Any active member (`owner/admin/agent/viewer`) |
-| `GET`   | `/customers/contacts/options`   | Lightweight contact options                          | Any active member (`owner/admin/agent/viewer`) |
-| `GET`   | `/customers/contacts/:id`       | Get contact details                                  | Any active member (`owner/admin/agent/viewer`) |
-| `GET`   | `/customers/contacts/:id/identities` | List lightweight contact identities             | Any active member (`owner/admin/agent/viewer`) |
-| `POST`  | `/customers/contacts`           | Create contact                                       | `owner/admin/agent`                            |
-| `PATCH` | `/customers/contacts/:id`       | Update contact                                       | `owner/admin/agent`                            |
-| `POST`  | `/customers/contacts/:id/identities` | Create contact identity                         | `owner/admin/agent`                            |
+| Method  | Path                                 | Purpose                                            | Role requirements                              |
+| ------- | ------------------------------------ | -------------------------------------------------- | ---------------------------------------------- |
+| `GET`   | `/customers/organizations`           | List organizations (pagination/search/filter/sort) | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/organizations/options`   | Lightweight organization options                   | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/organizations/:id`       | Get organization details                           | Any active member (`owner/admin/agent/viewer`) |
+| `POST`  | `/customers/organizations`           | Create organization                                | `owner/admin/agent`                            |
+| `PATCH` | `/customers/organizations/:id`       | Update organization                                | `owner/admin/agent`                            |
+| `GET`   | `/customers/contacts`                | List contacts (pagination/search/filter/sort)      | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/options`        | Lightweight contact options                        | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/:id`            | Get contact details                                | Any active member (`owner/admin/agent/viewer`) |
+| `GET`   | `/customers/contacts/:id/identities` | List lightweight contact identities                | Any active member (`owner/admin/agent/viewer`) |
+| `POST`  | `/customers/contacts`                | Create contact                                     | `owner/admin/agent`                            |
+| `PATCH` | `/customers/contacts/:id`            | Update contact                                     | `owner/admin/agent`                            |
+| `POST`  | `/customers/contacts/:id/identities` | Create contact identity                            | `owner/admin/agent`                            |
 
 Customers notes:
 
@@ -484,22 +489,22 @@ Mailbox notes:
 
 #### SLA v1 Active Endpoints
 
-| Method  | Path                            | Purpose                                             | Role requirements                                                     |
-| ------- | ------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------- |
-| `GET`   | `/sla/summary`                  | Lightweight SLA current-state summary               | Any active member                                                     |
-| `GET`   | `/sla/business-hours`           | List business-hours records                         | Any active member                                                     |
-| `GET`   | `/sla/business-hours/options`   | Lightweight business-hours options                  | Any active member                                                     |
-| `GET`   | `/sla/business-hours/:id`       | Get business-hours details                          | Any active member                                                     |
-| `POST`  | `/sla/business-hours`           | Create business-hours record                        | `owner/admin`                                                         |
-| `PATCH` | `/sla/business-hours/:id`       | Update business-hours record                        | `owner/admin`                                                         |
-| `GET`   | `/sla/policies`                 | List SLA policies                                   | Any active member; inactive visibility restricted for non-admin roles |
-| `GET`   | `/sla/policies/options`         | Lightweight SLA policy options                      | Any active member; inactive visibility restricted for non-admin roles |
-| `GET`   | `/sla/policies/:id`             | Get SLA policy details                              | Any active member; inactive hidden for non-admin roles                |
-| `POST`  | `/sla/policies`                 | Create SLA policy                                   | `owner/admin`                                                         |
-| `PATCH` | `/sla/policies/:id`             | Update SLA policy                                   | `owner/admin`                                                         |
-| `POST`  | `/sla/policies/:id/activate`    | Activate SLA policy                                 | `owner/admin`                                                         |
-| `POST`  | `/sla/policies/:id/deactivate`  | Deactivate SLA policy and clear active assignments  | `owner/admin`                                                         |
-| `POST`  | `/sla/policies/:id/set-default` | Set workspace default SLA policy                    | `owner/admin`                                                         |
+| Method  | Path                            | Purpose                                            | Role requirements                                                     |
+| ------- | ------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/sla/summary`                  | Lightweight SLA current-state summary              | Any active member                                                     |
+| `GET`   | `/sla/business-hours`           | List business-hours records                        | Any active member                                                     |
+| `GET`   | `/sla/business-hours/options`   | Lightweight business-hours options                 | Any active member                                                     |
+| `GET`   | `/sla/business-hours/:id`       | Get business-hours details                         | Any active member                                                     |
+| `POST`  | `/sla/business-hours`           | Create business-hours record                       | `owner/admin`                                                         |
+| `PATCH` | `/sla/business-hours/:id`       | Update business-hours record                       | `owner/admin`                                                         |
+| `GET`   | `/sla/policies`                 | List SLA policies                                  | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/sla/policies/options`         | Lightweight SLA policy options                     | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/sla/policies/:id`             | Get SLA policy details                             | Any active member; inactive hidden for non-admin roles                |
+| `POST`  | `/sla/policies`                 | Create SLA policy                                  | `owner/admin`                                                         |
+| `PATCH` | `/sla/policies/:id`             | Update SLA policy                                  | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/activate`    | Activate SLA policy                                | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/deactivate`  | Deactivate SLA policy and clear active assignments | `owner/admin`                                                         |
+| `POST`  | `/sla/policies/:id/set-default` | Set workspace default SLA policy                   | `owner/admin`                                                         |
 
 SLA notes:
 
@@ -533,25 +538,25 @@ Any request under those paths currently falls through to 404.
 
 ### 3.5 Module Implementation Status
 
-| Module          | Router Mounted | Runtime API Behavior                                                                                   | Service/Model State                                                                                                                                                 |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `health`        | Yes            | Implemented                                                                                            | Simple health service                                                                                                                                               |
-| `auth`          | Yes            | Implemented                                                                                            | Full OTP/JWT/session lifecycle                                                                                                                                      |
-| `workspaces`    | Yes            | Implemented                                                                                            | Membership resolution, switch, invite lifecycle                                                                                                                     |
-| `files`         | Yes            | Implemented                                                                                            | Upload/list/get/download/delete + storage abstraction                                                                                                               |
-| `mailboxes`     | Yes            | Implemented                                                                                            | CRUD-like v1 + default invariants + backfill                                                                                                                        |
-| `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                              |
+| Module          | Router Mounted | Runtime API Behavior                                                                                   | Service/Model State                                                                                                                                                                                  |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health`        | Yes            | Implemented                                                                                            | Simple health service                                                                                                                                                                                |
+| `auth`          | Yes            | Implemented                                                                                            | Full OTP/JWT/session lifecycle                                                                                                                                                                       |
+| `workspaces`    | Yes            | Implemented                                                                                            | Membership resolution, switch, invite lifecycle                                                                                                                                                      |
+| `files`         | Yes            | Implemented                                                                                            | Upload/list/get/download/delete + storage abstraction                                                                                                                                                |
+| `mailboxes`     | Yes            | Implemented                                                                                            | CRUD-like v1 + default invariants + backfill                                                                                                                                                         |
+| `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                                                               |
 | `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                            | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows |
-| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows |
-| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                              | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests |
-| `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
-| `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                             |
-| `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                         |
-| `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                              |
-| `billing`       | No             | No API                                                                                                 | Models implemented only                                                                                                                                             |
-| `notifications` | No             | No API                                                                                                 | Model implemented only                                                                                                                                              |
-| `platform`      | No             | No API                                                                                                 | Models implemented only                                                                                                                                             |
-| `roles`         | No             | No API                                                                                                 | No schema content yet                                                                                                                                               |
+| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                  |
+| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                              | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests        |
+| `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                                                          |
+| `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                                                              |
+| `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                                                          |
+| `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
+| `billing`       | No             | No API                                                                                                 | Models implemented only                                                                                                                                                                              |
+| `notifications` | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
+| `platform`      | No             | No API                                                                                                 | Models implemented only                                                                                                                                                                              |
+| `roles`         | No             | No API                                                                                                 | No schema content yet                                                                                                                                                                                |
 
 ### 3.6 Database Design (Mongoose)
 
@@ -576,10 +581,10 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.3 Mailbox Domain Collections
 
-| Model          | Purpose                             | Key Fields                                                                       | Important Indexes/Constraints                                                                                                                                                           |
-| -------------- | ----------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Model          | Purpose                             | Key Fields                                                                                      | Important Indexes/Constraints                                                                                                                                                           |
+| -------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Mailbox`      | Workspace support queue mailbox     | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
-| `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                   | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
+| `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                                  | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
 
 #### 3.6.4 Files Domain Collections
 
@@ -590,11 +595,11 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.5 Customers Domain Collections
 
-| Model             | Purpose                      | Key Fields                                                                                        | Important Indexes/Constraints                                                                                               |
-| ----------------- | ---------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `Organization`    | Customer company record      | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt`                                    | Partial active-row indexes on (`workspaceId`,`nameNormalized`), (`workspaceId`,`domain`), (`workspaceId`,`createdAt`), (`workspaceId`,`updatedAt`)           |
+| Model             | Purpose                      | Key Fields                                                                                                        | Important Indexes/Constraints                                                                                                                                                               |
+| ----------------- | ---------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Organization`    | Customer company record      | `workspaceId`, `name`, `nameNormalized`, `domain`, `deletedAt`                                                    | Partial active-row indexes on (`workspaceId`,`nameNormalized`), (`workspaceId`,`domain`), (`workspaceId`,`createdAt`), (`workspaceId`,`updatedAt`)                                          |
 | `Contact`         | Customer person record       | `workspaceId`, `organizationId`, `fullName`, `nameNormalized`, `emailNormalized`, `phone`, `tags`, `customFields` | Partial index (`workspaceId`,`emailNormalized`) for active rows; partial active-row indexes (`workspaceId`,`organizationId`), (`workspaceId`,`nameNormalized`), (`workspaceId`,`updatedAt`) |
-| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `value`, `valueNormalized`, `verifiedAt`                      | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`)                 |
+| `ContactIdentity` | Normalized identity channels | `workspaceId`, `contactId`, `type`, `value`, `valueNormalized`, `verifiedAt`                                      | Unique partial (`workspaceId`,`type`,`valueNormalized`) when not deleted; index (`workspaceId`,`contactId`)                                                                                 |
 
 #### 3.6.6 Tickets Domain Collections
 
@@ -610,9 +615,9 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.7 SLA Domain Collections
 
-| Model           | Purpose                            | Key Fields                                                               | Important Indexes/Constraints     |
-| --------------- | ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------- |
-| `BusinessHours` | Workspace business schedule        | `workspaceId`, `name`, `timezone`, `weeklySchedule[]`, `holidays[]`                | Index (`workspaceId`); index (`workspaceId`,`deletedAt`,`name`) |
+| Model           | Purpose                            | Key Fields                                                                           | Important Indexes/Constraints                                                                                 |
+| --------------- | ---------------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `BusinessHours` | Workspace business schedule        | `workspaceId`, `name`, `timezone`, `weeklySchedule[]`, `holidays[]`                  | Index (`workspaceId`); index (`workspaceId`,`deletedAt`,`name`)                                               |
 | `SlaPolicy`     | SLA policy definitions by priority | `workspaceId`, `name`, `isActive`, `isDefault`, `rulesByPriority`, `businessHoursId` | Index (`workspaceId`,`isDefault`); index (`workspaceId`,`isActive`); index (`workspaceId`,`deletedAt`,`name`) |
 
 #### 3.6.8 Integrations Domain Collections
@@ -644,16 +649,16 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.11 Sub-Schemas in Use
 
-| Sub-Schema                       | Used By                          | Purpose                                |
-| -------------------------------- | -------------------------------- | -------------------------------------- |
-| `user-profile.schema`            | `User.profile`                   | User profile fields (`name`, `avatar`) |
-| `workspace-settings.schema`      | `Workspace.settings`             | Workspace settings (`timeZone`)        |
-| `subscription-addon-item.schema` | `Subscription.addonItems[]`      | Addon item references + quantity       |
-| `business-hours-day.schema`      | `BusinessHours.weeklySchedule[]` | Weekly open/close windows              |
-| `business-hours-holiday.schema`  | `BusinessHours.holidays[]`       | Holiday dates/labels                   |
+| Sub-Schema                       | Used By                          | Purpose                                                                                                                                                                            |
+| -------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `user-profile.schema`            | `User.profile`                   | User profile fields (`name`, `avatar`)                                                                                                                                             |
+| `workspace-settings.schema`      | `Workspace.settings`             | Workspace settings (`timeZone`)                                                                                                                                                    |
+| `subscription-addon-item.schema` | `Subscription.addonItems[]`      | Addon item references + quantity                                                                                                                                                   |
+| `business-hours-day.schema`      | `BusinessHours.weeklySchedule[]` | Weekly open/close windows                                                                                                                                                          |
+| `business-hours-holiday.schema`  | `BusinessHours.holidays[]`       | Holiday dates/labels                                                                                                                                                               |
 | `ticket-sla.schema`              | `Ticket.sla`                     | Active ticket-level SLA snapshot/runtime fields for policy source, business-hours snapshot, targets, due timestamps, pause markers, remaining business minutes, and breach markers |
-| `message-party.schema`           | `Message.from/to`                | Simple message party descriptors       |
-| `notification-entity.schema`     | `Notification.entity`            | Entity reference container             |
+| `message-party.schema`           | `Message.from/to`                | Simple message party descriptors                                                                                                                                                   |
+| `notification-entity.schema`     | `Notification.entity`            | Entity reference container                                                                                                                                                         |
 
 ### 3.7 Storage and Files Design
 
@@ -764,6 +769,7 @@ Not fully covered by runtime tests:
 - `tickets` currently expose core ticket records, assignment/lifecycle actions, participant metadata, conversation/message flows, and category/tag dictionary APIs.
 - `sla` now exposes active business-hours/policy management plus ticket first-response/resolution runtime behavior.
 - `sla` still postpones next-response SLA, holidays, reminders/escalations/notifications, BullMQ/jobs, cycle-history, and historical/date-range reporting.
+- `realtime` now exposes an authenticated bootstrap endpoint, socket auth/room foundations, ticket/message/participant live business event publishing, and ephemeral ticket presence/typing/soft-claim coordination for the internal workspace app.
 - Mounted route groups `inbox`, `integrations`, and `admin` are empty.
 - Several domains currently ship schema/model groundwork without exposed APIs.
 - Jobs subsystem under `src/infra/jobs` is placeholder only.
@@ -909,6 +915,10 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/sla/policies/:id/deactivate`
 - `POST /api/sla/policies/:id/set-default`
 
+### Realtime
+
+- `GET /api/realtime/bootstrap`
+
 ### Mounted Empty Router Prefixes
 
 - `/api/inbox`
@@ -922,6 +932,7 @@ Today's backend is strongest in:
 - Identity and session security model.
 - Workspace tenancy and invite workflows.
 - Workspace context switching semantics.
+- Internal realtime auth/bootstrap/room foundation plus live business event publishing aligned with the existing session workspace model.
 - Files v1 with storage abstraction and secure download contract.
 - Mailboxes v1 with robust default-state consistency logic.
 - SLA v1 active surface with business-hours/policy management, workspace default and mailbox override assignment, ticket snapshot/runtime behavior, and lightweight summary support.

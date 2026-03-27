@@ -25,6 +25,7 @@ export const saveTicketParticipantController = async (req, res, next) => {
     const data = await saveTicketParticipant({
       workspaceId: req.auth.workspaceId,
       ticketId: req.params.id,
+      actorUserId: req.auth.userId,
       payload: req.body,
     });
 
