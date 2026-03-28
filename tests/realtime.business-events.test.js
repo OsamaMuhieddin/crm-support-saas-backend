@@ -834,6 +834,18 @@ describe('Realtime business events', () => {
           ticketId: created.body.ticket._id,
         });
 
+        const noReopenFromNewEvent = expectNoSocketEvent(
+          ticketClient,
+          'ticket.reopened'
+        );
+        const reopenFromNew = await request(app)
+          .post(`/api/tickets/${created.body.ticket._id}/reopen`)
+          .set('Authorization', `Bearer ${owner.accessToken}`)
+          .send({});
+
+        expect(reopenFromNew.status).toBe(409);
+        await noReopenFromNewEvent;
+
         const statusChangedPromise = waitForSocketEvent(
           ticketClient,
           'ticket.status_changed'

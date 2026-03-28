@@ -1347,7 +1347,9 @@ export const reopenTicket = async ({
     });
   }
 
-  if (ticket.status !== TICKET_STATUS.OPEN) {
+  const didChange = ticket.status !== TICKET_STATUS.OPEN;
+
+  if (didChange) {
     applyTicketStatusTransitionSla({
       ticket,
       currentStatus: ticket.status,
@@ -1358,11 +1360,13 @@ export const reopenTicket = async ({
     await ticket.save();
   }
 
-  await publishTicketReopened({
-    workspaceId: workspaceObjectId,
-    ticketId: ticket._id,
-    actorUserId,
-  });
+  if (didChange) {
+    await publishTicketReopened({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId,
+    });
+  }
 
   return {
     ticket: buildTicketReopenActionView(ticket),
