@@ -252,6 +252,94 @@ const stopRealtimeRuntime = async ({ httpServer, clients = [] } = {}) => {
 
 describe('Realtime collaboration behaviors', () => {
   maybeDbTest(
+    'viewer members can still use advisory collaboration signals on readable tickets',
+    async () => {
+      const owner = await createVerifiedUser();
+      const viewer = await createWorkspaceScopedTokenForRole({
+        owner,
+        roleKey: WORKSPACE_ROLES.VIEWER,
+      });
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+      const created = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'Realtime viewer collaboration ticket',
+          contactId: String(contact._id),
+        },
+      });
+
+      expect(created.status).toBe(200);
+
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+
+      let viewerClient = null;
+
+      try {
+        viewerClient = await connectRealtimeClient({
+          baseUrl,
+          token: viewer.accessToken,
+        });
+
+        await Promise.all([
+          waitForSocketEvent(viewerClient, 'ticket.presence.snapshot'),
+          emitWithAck(viewerClient, 'ticket.subscribe', {
+            ticketId: created.body.ticket._id,
+          }),
+        ]);
+
+        const presenceAck = await emitWithAck(
+          viewerClient,
+          'ticket.presence.set',
+          {
+            ticketId: created.body.ticket._id,
+            state: 'viewing',
+          }
+        );
+        const typingAck = await emitWithAck(viewerClient, 'ticket.typing.start', {
+          ticketId: created.body.ticket._id,
+          mode: 'public_reply',
+        });
+        const softClaimAck = await emitWithAck(
+          viewerClient,
+          'ticket.soft_claim.set',
+          {
+            ticketId: created.body.ticket._id,
+          }
+        );
+
+        expect(presenceAck).toEqual(
+          expect.objectContaining({
+            ok: true,
+            code: 'realtime.ticket.presence.updated',
+          })
+        );
+        expect(typingAck).toEqual(
+          expect.objectContaining({
+            ok: true,
+            code: 'realtime.ticket.typing.started',
+          })
+        );
+        expect(softClaimAck).toEqual(
+          expect.objectContaining({
+            ok: true,
+            code: 'realtime.ticket.softClaim.set',
+            data: expect.objectContaining({
+              ticketId: created.body.ticket._id,
+            }),
+          })
+        );
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [viewerClient],
+        });
+      }
+    }
+  );
+
+  maybeDbTest(
     'ticket subscribe emits a collaboration snapshot, presence updates are room-scoped, and same-state refreshes stay quiet',
     async () => {
       const owner = await createVerifiedUser();

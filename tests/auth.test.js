@@ -51,6 +51,20 @@ const createVerifiedUser = async ({
   };
 };
 
+const loginUser = async ({ email, password }) => {
+  const response = await request(app).post('/api/auth/login').send({
+    email,
+    password,
+  });
+
+  expect(response.status).toBe(200);
+
+  return {
+    accessToken: response.body.tokens.accessToken,
+    refreshToken: response.body.tokens.refreshToken,
+  };
+};
+
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
 describe('Auth + OTP flows', () => {
@@ -406,4 +420,55 @@ describe('Auth + OTP flows', () => {
 
     expect(me.status).toBe(401);
   });
+
+  maybeDbTest(
+    'change-password revokes existing sessions even when no realtime server is active',
+    async () => {
+      const email = 'change-password@example.com';
+      const password = 'Password123!';
+      const newPassword = 'Password456!';
+
+      const verified = await createVerifiedUser({
+        email,
+        password,
+      });
+
+      const secondSession = await loginUser({
+        email,
+        password,
+      });
+
+      const response = await request(app)
+        .post('/api/auth/change-password')
+        .set('Authorization', `Bearer ${verified.accessToken}`)
+        .send({
+          currentPassword: password,
+          newPassword,
+        });
+
+      expect(response.status).toBe(200);
+      expect(response.body.messageKey).toBe('success.auth.passwordChanged');
+
+      const refreshAfterChange = await request(app)
+        .post('/api/auth/refresh')
+        .send({
+          refreshToken: secondSession.refreshToken,
+        });
+
+      expect(refreshAfterChange.status).toBe(401);
+      expect(refreshAfterChange.body.messageKey).toBe(
+        'errors.auth.sessionRevoked'
+      );
+
+      const loginWithNewPassword = await request(app).post('/api/auth/login').send({
+        email,
+        password: newPassword,
+      });
+
+      expect(loginWithNewPassword.status).toBe(200);
+      expect(loginWithNewPassword.body.messageKey).toBe(
+        'success.auth.loggedIn'
+      );
+    }
+  );
 });

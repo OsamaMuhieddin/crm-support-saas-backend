@@ -19,6 +19,7 @@ import {
   ensureWorkspaceForVerifiedUser,
   getActiveWorkspaceContext,
 } from '../../workspaces/services/workspaces.service.js';
+import { disconnectRealtimeSessionSocketsBatch } from '../../../infra/realtime/index.js';
 
 const buildSafeUser = (user) => ({
   _id: user._id,
@@ -53,6 +54,12 @@ const assertActiveNonSuspendedUser = (user) => {
   if (user.status !== 'active') {
     throw createError('errors.auth.userSuspended', 403);
   }
+};
+
+const disconnectRevokedRealtimeSessions = async (sessionIds = []) => {
+  await disconnectRealtimeSessionSocketsBatch({
+    sessionIds,
+  });
 };
 
 export const signup = async ({ email, password, name }) => {
@@ -338,7 +345,8 @@ export const resetPassword = async ({ email, code, newPassword }) => {
   user.passwordHash = await hashPassword(newPassword);
   await user.save();
 
-  await revokeAllUserSessions(user._id);
+  const revokedSessionIds = await revokeAllUserSessions(user._id);
+  await disconnectRevokedRealtimeSessions(revokedSessionIds);
 
   return {};
 };
@@ -377,12 +385,14 @@ export const getMe = async ({ userId, sessionId }) => {
 };
 
 export const logout = async ({ sessionId }) => {
-  await revokeSessionById(sessionId);
+  const revokedSessionIds = await revokeSessionById(sessionId);
+  await disconnectRevokedRealtimeSessions(revokedSessionIds);
   return {};
 };
 
 export const logoutAll = async ({ userId }) => {
-  await revokeAllUserSessions(userId);
+  const revokedSessionIds = await revokeAllUserSessions(userId);
+  await disconnectRevokedRealtimeSessions(revokedSessionIds);
   return {};
 };
 
@@ -416,7 +426,8 @@ export const changePassword = async ({
   user.passwordHash = await hashPassword(newPassword);
   await user.save();
 
-  await revokeAllUserSessions(user._id);
+  const revokedSessionIds = await revokeAllUserSessions(user._id);
+  await disconnectRevokedRealtimeSessions(revokedSessionIds);
 
   return {};
 };

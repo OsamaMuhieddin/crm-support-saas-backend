@@ -36,6 +36,7 @@ import {
   publishTicketAssignmentChanged,
   publishTicketClosed,
   publishTicketCreated,
+  publishTicketMessageCreated,
   publishTicketReopened,
   publishTicketSolved,
   publishTicketStatusChanged,
@@ -671,6 +672,7 @@ export const createTicket = async ({
 
   let ticket = null;
   let conversation = null;
+  let initialMessageResult = null;
 
   try {
     ticket = await Ticket.create({
@@ -704,7 +706,7 @@ export const createTicket = async ({
     await ticket.save();
 
     if (initialMessage) {
-      await createTicketMessage({
+      initialMessageResult = await createTicketMessage({
         workspaceId: workspaceObjectId,
         ticketId: ticket._id,
         createdByUserId,
@@ -735,6 +737,16 @@ export const createTicket = async ({
     ticketId: ticket._id,
     actorUserId: createdByUserId,
   });
+
+  if (initialMessageResult) {
+    await publishTicketMessageCreated({
+      workspaceId: workspaceObjectId,
+      ticketId: ticket._id,
+      actorUserId: createdByUserId,
+      messageRecord: initialMessageResult.messageRecord,
+      conversation: initialMessageResult.conversation,
+    });
+  }
 
   return result;
 };

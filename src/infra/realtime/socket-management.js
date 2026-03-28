@@ -40,3 +40,32 @@ export const disconnectRealtimeSessionSockets = async ({ sessionId } = {}) => {
     return 0;
   }
 };
+
+export const disconnectRealtimeSessionSocketsBatch = async ({
+  sessionIds = [],
+} = {}) => {
+  const normalizedSessionIds = [
+    ...new Set(
+      (Array.isArray(sessionIds) ? sessionIds : [])
+        .map((sessionId) => String(sessionId || '').trim())
+        .filter(Boolean)
+    ),
+  ];
+
+  if (normalizedSessionIds.length === 0) {
+    return 0;
+  }
+
+  const disconnectedCounts = await Promise.all(
+    normalizedSessionIds.map((sessionId) =>
+      disconnectRealtimeSessionSockets({
+        sessionId,
+      })
+    )
+  );
+
+  return disconnectedCounts.reduce(
+    (total, current) => total + Number(current || 0),
+    0
+  );
+};

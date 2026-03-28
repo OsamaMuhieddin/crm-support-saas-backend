@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { io as createSocketClient } from 'socket.io-client';
+import { jest } from '@jest/globals';
 import app from '../src/app.js';
 import { realtimeConfig } from '../src/config/realtime.config.js';
 import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
@@ -7,7 +8,10 @@ import { TICKET_MESSAGE_TYPE } from '../src/constants/ticket-message-type.js';
 import { TICKET_PARTICIPANT_TYPE } from '../src/constants/ticket-participant-type.js';
 import { TICKET_STATUS } from '../src/constants/ticket-status.js';
 import { createHttpServer } from '../src/server.js';
-import { shutdownRealtime } from '../src/infra/realtime/index.js';
+import {
+  realtimePublisher,
+  shutdownRealtime,
+} from '../src/infra/realtime/index.js';
 import { Contact } from '../src/modules/customers/models/contact.model.js';
 import {
   captureFallbackEmail,
@@ -255,6 +259,149 @@ const stopRealtimeRuntime = async ({ httpServer, clients = [] } = {}) => {
 };
 
 describe('Realtime business events', () => {
+  maybeDbTest(
+    'ticket create without initialMessage does not publish message or conversation live events',
+    async () => {
+      const owner = await createVerifiedUser();
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+      const emitToRoomsSpy = jest.spyOn(realtimePublisher, 'emitToRooms');
+      const emitToTicketSpy = jest.spyOn(realtimePublisher, 'emitToTicket');
+
+      try {
+        const created = await createTicketRequest({
+          accessToken: owner.accessToken,
+          body: {
+            subject: 'Realtime create without initial message',
+            contactId: String(contact._id),
+          },
+        });
+
+        expect(created.status).toBe(200);
+
+        expect(
+          emitToRoomsSpy.mock.calls.filter(
+            ([payload]) => payload?.event === 'ticket.created'
+          )
+        ).toHaveLength(1);
+        expect(
+          emitToTicketSpy.mock.calls.filter(
+            ([payload]) => payload?.event === 'message.created'
+          )
+        ).toHaveLength(0);
+        expect(
+          emitToRoomsSpy.mock.calls.filter(
+            ([payload]) => payload?.event === 'conversation.updated'
+          )
+        ).toHaveLength(0);
+      } finally {
+        emitToRoomsSpy.mockRestore();
+        emitToTicketSpy.mockRestore();
+      }
+    }
+  );
+
+  maybeDbTest(
+    'ticket create with initialMessage publishes ticket created plus message and conversation events once in order',
+    async () => {
+      const owner = await createVerifiedUser();
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+      const emitToRoomsSpy = jest.spyOn(realtimePublisher, 'emitToRooms');
+      const emitToTicketSpy = jest.spyOn(realtimePublisher, 'emitToTicket');
+
+      try {
+        const created = await createTicketRequest({
+          accessToken: owner.accessToken,
+          body: {
+            subject: 'Realtime create with initial message',
+            contactId: String(contact._id),
+            initialMessage: {
+              type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
+              bodyText: 'Initial customer message body',
+            },
+          },
+        });
+
+        expect(created.status).toBe(200);
+
+        const ticketCreatedCalls = emitToRoomsSpy.mock.calls.filter(
+          ([payload]) => payload?.event === 'ticket.created'
+        );
+        const conversationUpdatedCalls = emitToRoomsSpy.mock.calls.filter(
+          ([payload]) => payload?.event === 'conversation.updated'
+        );
+        const messageCreatedCalls = emitToTicketSpy.mock.calls.filter(
+          ([payload]) => payload?.event === 'message.created'
+        );
+
+        expect(ticketCreatedCalls).toHaveLength(1);
+        expect(messageCreatedCalls).toHaveLength(1);
+        expect(conversationUpdatedCalls).toHaveLength(1);
+
+        expect(messageCreatedCalls[0][0]).toEqual(
+          expect.objectContaining({
+            event: 'message.created',
+            workspaceId: owner.workspaceId,
+            data: expect.objectContaining({
+              message: expect.objectContaining({
+                bodyText: 'Initial customer message body',
+                type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
+              }),
+              conversation: expect.objectContaining({
+                messageCount: 1,
+                lastMessageType: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
+              }),
+            }),
+          })
+        );
+        expect(conversationUpdatedCalls[0][0]).toEqual(
+          expect.objectContaining({
+            event: 'conversation.updated',
+            workspaceId: owner.workspaceId,
+            data: expect.objectContaining({
+              ticket: expect.objectContaining({
+                _id: created.body.ticket._id,
+                status: TICKET_STATUS.OPEN,
+                messageCount: 1,
+                lastMessageType: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
+              }),
+              conversation: expect.objectContaining({
+                messageCount: 1,
+                lastMessageType: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
+              }),
+            }),
+          })
+        );
+
+        const ticketCreatedIndex = emitToRoomsSpy.mock.calls.findIndex(
+          ([payload]) => payload?.event === 'ticket.created'
+        );
+        const conversationUpdatedIndex = emitToRoomsSpy.mock.calls.findIndex(
+          ([payload]) => payload?.event === 'conversation.updated'
+        );
+        const messageCreatedIndex = emitToTicketSpy.mock.calls.findIndex(
+          ([payload]) => payload?.event === 'message.created'
+        );
+
+        const ticketCreatedOrder =
+          emitToRoomsSpy.mock.invocationCallOrder[ticketCreatedIndex];
+        const conversationUpdatedOrder =
+          emitToRoomsSpy.mock.invocationCallOrder[conversationUpdatedIndex];
+        const messageCreatedOrder =
+          emitToTicketSpy.mock.invocationCallOrder[messageCreatedIndex];
+
+        expect(ticketCreatedOrder).toBeLessThan(messageCreatedOrder);
+        expect(messageCreatedOrder).toBeLessThan(conversationUpdatedOrder);
+      } finally {
+        emitToRoomsSpy.mockRestore();
+        emitToTicketSpy.mockRestore();
+      }
+    }
+  );
+
   maybeDbTest(
     'ticket create and ticket update emit only inside the owning workspace and ticket rooms',
     async () => {

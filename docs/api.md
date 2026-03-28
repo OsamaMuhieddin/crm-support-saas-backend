@@ -217,9 +217,10 @@ Session-context endpoints:
 2. Optionally call `GET /api/realtime/bootstrap` to hydrate the current realtime path, feature flags, and canonical user/workspace context summary.
 3. Open a Socket.IO connection using the same access token semantics as HTTP auth.
 4. The socket is always authenticated against the current session workspace; old access tokens become invalid after `POST /api/workspaces/switch`, and existing sockets from that session are disconnected so the frontend can reconnect with the fresh token.
-5. Subscribe explicitly to the current workspace room with `workspace.subscribe`.
-6. Subscribe explicitly to a readable ticket room with `ticket.subscribe` when the UI opens that ticket.
-7. Treat MongoDB-backed REST reads as the source of truth; realtime is a live-collaboration transport, not a replacement for canonical reads.
+5. Session-revocation flows (`POST /api/auth/logout`, `POST /api/auth/logout-all`, `POST /api/auth/change-password`, `POST /api/auth/reset-password`) also trigger a best-effort immediate disconnect for sockets bound to the revoked sessions.
+6. Subscribe explicitly to the current workspace room with `workspace.subscribe`.
+7. Subscribe explicitly to a readable ticket room with `ticket.subscribe` when the UI opens that ticket.
+8. Treat MongoDB-backed REST reads as the source of truth; realtime is a live-collaboration transport, not a replacement for canonical reads.
 
 ## Realtime / Live Collaboration
 
@@ -263,6 +264,7 @@ Session-context endpoints:
 - Frontend implication:
   - after `POST /api/workspaces/switch`, the old access token is behaviorally invalid for both HTTP and socket connections
   - the backend also disconnects existing sockets from that session so the client can reconnect with the new access token cleanly
+  - logout/logout-all/change-password/reset-password also disconnect sockets tied to revoked sessions on a best-effort basis
 
 ### Connection model
 
@@ -356,6 +358,7 @@ Session-context endpoints:
   - `user:{userId}` for lightweight personal notices such as `ticket_assigned`, `ticket_unassigned`, `ticket_participant_added`, and `ticket_participant_removed`
 - Current trigger mapping:
   - `POST /api/tickets` -> `ticket.created`
+  - `POST /api/tickets` with `initialMessage` -> `ticket.created`, then `message.created`, then `conversation.updated`
   - `PATCH /api/tickets/:id` -> `ticket.updated`
   - `POST /api/tickets/:id/assign` and `POST /api/tickets/:id/self-assign` -> `ticket.assigned`
   - `POST /api/tickets/:id/unassign` -> `ticket.unassigned`
@@ -427,6 +430,7 @@ Session-context endpoints:
 - Presence, typing, and soft-claim are ephemeral live signals only.
 - They do not update MongoDB ticket truth and they do not replace REST reads.
 - The current collaboration state source is the realtime collaboration store backed by the shared Redis foundation when enabled, with single-instance in-memory fallback in dev/test.
+- Any active readable member, including `viewer`, may send these advisory collaboration signals in the current internal-only phase.
 - Frontend should reconnect by:
   - reconnecting the socket with the current access token
   - re-running `workspace.subscribe` and `ticket.subscribe`
@@ -1035,6 +1039,7 @@ Session-context endpoints:
   - `403` `errors.auth.userSuspended`
 - Notes:
   - On success, all user sessions are revoked.
+  - Realtime sockets bound to those revoked sessions are disconnected on a best-effort basis.
 
 ### GET `/api/auth/me`
 
@@ -1090,6 +1095,8 @@ Session-context endpoints:
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended`
+- Notes:
+  - Realtime sockets bound to the current revoked session are disconnected on a best-effort basis.
 
 ### POST `/api/auth/logout-all`
 
@@ -1110,6 +1117,8 @@ Session-context endpoints:
 - Common errors:
   - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
   - `403` `errors.auth.userSuspended`
+- Notes:
+  - Realtime sockets bound to revoked sessions are disconnected on a best-effort basis.
 
 ### POST `/api/auth/change-password`
 
@@ -1143,6 +1152,7 @@ Session-context endpoints:
   - `403` `errors.auth.userSuspended`
 - Notes:
   - On success, all sessions are revoked. User must login again.
+  - Realtime sockets bound to revoked sessions are disconnected on a best-effort basis.
 
 ## 5) Workspace Context Endpoints
 
@@ -3389,6 +3399,7 @@ npm run mailboxes:backfill-default
   - `initialMessage.attachmentFileIds` optional unique mongo id array (`max 20`)
   - attachment ids must reference current-workspace files with `storageStatus = ready`
   - create-time `customer_message` opens the ticket; create-time `internal_note` leaves ticket status unchanged
+  - when `initialMessage` is present, realtime still publishes the normal `message.created` and `conversation.updated` events after `ticket.created`
   - no SLA request fields are accepted on ticket create; SLA is resolved automatically from mailbox/workspace configuration when present
 - Success `200`:
 

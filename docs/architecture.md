@@ -61,6 +61,7 @@ utils/ (optional, module-local pure helpers only)
 - MongoDB and REST remain the source of truth; sockets do not bypass module business logic.
 - Business live events are published from the existing service layer only after successful writes and after downstream counters/SLA side effects are finalized.
 - Existing sockets in a session are disconnected when `POST /api/workspaces/switch` changes the active workspace so the client reconnects under the fresh token/workspace context.
+- Existing sockets for revoked sessions are also disconnected on a best-effort basis during logout, logout-all, change-password, and reset-password flows.
 - Socket auth mirrors the existing HTTP access-token/session/workspace model:
   - valid JWT signature, issuer, and audience
   - `typ=access`, `ver=1`
@@ -77,10 +78,12 @@ utils/ (optional, module-local pure helpers only)
   - message and conversation summary events
   - ticket participant change events
   - lightweight user-targeted notices
+- Ticket create with `initialMessage` still emits `ticket.created` first, then the same message/conversation event pair used by later message writes.
 - Current ephemeral collaboration signals:
   - ticket presence snapshots and change events
   - typing indicators with TTL refresh/expiry semantics
   - advisory soft-claim state with TTL refresh/expiry semantics
+- Any active readable member, including `viewer`, may publish these advisory collaboration signals in the current internal-only phase.
 - Collaboration actions use a modest per-socket throttle window to suppress conflicting bursts while still allowing quiet same-state refreshes.
 - Collaboration state lives outside MongoDB ticket truth and is coordinated through the shared Redis foundation when enabled, with a single-instance in-memory fallback for local/test runtime parity.
 - Expiry-driven collaboration broadcasts are best-effort per node; snapshot-on-subscribe/reconnect remains the correctness path for stale cleanup recovery.

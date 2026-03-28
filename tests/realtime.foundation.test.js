@@ -78,6 +78,20 @@ const createVerifiedUser = async ({
   };
 };
 
+const loginUser = async ({ email, password }) => {
+  const response = await request(app).post('/api/auth/login').send({
+    email,
+    password,
+  });
+
+  expect(response.status).toBe(200);
+
+  return {
+    accessToken: response.body.tokens.accessToken,
+    refreshToken: response.body.tokens.refreshToken,
+  };
+};
+
 const createInviteWithToken = async ({
   workspaceId,
   accessToken,
@@ -439,6 +453,219 @@ describe('Realtime collaboration foundation', () => {
         await stopRealtimeRuntime({
           httpServer,
           clients: [staleClient],
+        });
+      }
+    }
+  );
+
+  maybeDbTest(
+    'logout disconnects realtime sockets for the current revoked session immediately',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: nextEmail('realtime-logout-owner'),
+      });
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+
+      let client = null;
+
+      try {
+        client = await connectRealtimeClient({
+          baseUrl,
+          token: owner.accessToken,
+        });
+
+        const disconnectPromise = waitForDisconnect(client);
+        const logoutResponse = await request(app)
+          .post('/api/auth/logout')
+          .set('Authorization', `Bearer ${owner.accessToken}`)
+          .send({});
+
+        expect(logoutResponse.status).toBe(200);
+        expect(logoutResponse.body.messageKey).toBe('success.auth.loggedOut');
+        expect(await disconnectPromise).toBe('io server disconnect');
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [client],
+        });
+      }
+    }
+  );
+
+  maybeDbTest(
+    'logout-all disconnects realtime sockets for every revoked session immediately',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: nextEmail('realtime-logout-all-owner'),
+      });
+      const secondSession = await loginUser({
+        email: owner.email,
+        password: owner.password,
+      });
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+
+      let firstClient = null;
+      let secondClient = null;
+
+      try {
+        [firstClient, secondClient] = await Promise.all([
+          connectRealtimeClient({
+            baseUrl,
+            token: owner.accessToken,
+          }),
+          connectRealtimeClient({
+            baseUrl,
+            token: secondSession.accessToken,
+          }),
+        ]);
+
+        const firstDisconnectPromise = waitForDisconnect(firstClient);
+        const secondDisconnectPromise = waitForDisconnect(secondClient);
+        const logoutAllResponse = await request(app)
+          .post('/api/auth/logout-all')
+          .set('Authorization', `Bearer ${owner.accessToken}`)
+          .send({});
+
+        expect(logoutAllResponse.status).toBe(200);
+        expect(logoutAllResponse.body.messageKey).toBe(
+          'success.auth.loggedOutAll'
+        );
+
+        const [firstReason, secondReason] = await Promise.all([
+          firstDisconnectPromise,
+          secondDisconnectPromise,
+        ]);
+
+        expect(firstReason).toBe('io server disconnect');
+        expect(secondReason).toBe('io server disconnect');
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [firstClient, secondClient],
+        });
+      }
+    }
+  );
+
+  maybeDbTest(
+    'change-password disconnects realtime sockets for all revoked sessions immediately',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: nextEmail('realtime-change-password-owner'),
+      });
+      const secondSession = await loginUser({
+        email: owner.email,
+        password: owner.password,
+      });
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+
+      let firstClient = null;
+      let secondClient = null;
+
+      try {
+        [firstClient, secondClient] = await Promise.all([
+          connectRealtimeClient({
+            baseUrl,
+            token: owner.accessToken,
+          }),
+          connectRealtimeClient({
+            baseUrl,
+            token: secondSession.accessToken,
+          }),
+        ]);
+
+        const firstDisconnectPromise = waitForDisconnect(firstClient);
+        const secondDisconnectPromise = waitForDisconnect(secondClient);
+        const changePasswordResponse = await request(app)
+          .post('/api/auth/change-password')
+          .set('Authorization', `Bearer ${owner.accessToken}`)
+          .send({
+            currentPassword: owner.password,
+            newPassword: 'Password456!',
+          });
+
+        expect(changePasswordResponse.status).toBe(200);
+        expect(changePasswordResponse.body.messageKey).toBe(
+          'success.auth.passwordChanged'
+        );
+
+        const [firstReason, secondReason] = await Promise.all([
+          firstDisconnectPromise,
+          secondDisconnectPromise,
+        ]);
+
+        expect(firstReason).toBe('io server disconnect');
+        expect(secondReason).toBe('io server disconnect');
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [firstClient, secondClient],
+        });
+      }
+    }
+  );
+
+  maybeDbTest(
+    'reset-password disconnects realtime sockets for all revoked sessions immediately',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: nextEmail('realtime-reset-password-owner'),
+      });
+      const secondSession = await loginUser({
+        email: owner.email,
+        password: owner.password,
+      });
+      const forgot = await captureFallbackEmail(() =>
+        request(app).post('/api/auth/forgot-password').send({
+          email: owner.email,
+        })
+      );
+      const resetCode = extractOtpCodeFromLogs(forgot.logs);
+
+      expect(forgot.response.status).toBe(200);
+      expect(resetCode).toBeTruthy();
+
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+
+      let firstClient = null;
+      let secondClient = null;
+
+      try {
+        [firstClient, secondClient] = await Promise.all([
+          connectRealtimeClient({
+            baseUrl,
+            token: owner.accessToken,
+          }),
+          connectRealtimeClient({
+            baseUrl,
+            token: secondSession.accessToken,
+          }),
+        ]);
+
+        const firstDisconnectPromise = waitForDisconnect(firstClient);
+        const secondDisconnectPromise = waitForDisconnect(secondClient);
+        const resetResponse = await request(app).post('/api/auth/reset-password').send({
+          email: owner.email,
+          code: resetCode,
+          newPassword: 'Password456!',
+        });
+
+        expect(resetResponse.status).toBe(200);
+        expect(resetResponse.body.messageKey).toBe(
+          'success.auth.passwordReset'
+        );
+
+        const [firstReason, secondReason] = await Promise.all([
+          firstDisconnectPromise,
+          secondDisconnectPromise,
+        ]);
+
+        expect(firstReason).toBe('io server disconnect');
+        expect(secondReason).toBe('io server disconnect');
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [firstClient, secondClient],
         });
       }
     }

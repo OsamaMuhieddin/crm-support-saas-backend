@@ -354,6 +354,7 @@ Auth requirements:
 
 - Require valid bearer access token.
 - Require active user.
+- Auth/session revocation flows now best-effort disconnect any connected realtime sockets bound to the revoked sessions.
 
 #### Tickets Endpoints
 
@@ -770,6 +771,8 @@ Not fully covered by runtime tests:
 - `sla` now exposes active business-hours/policy management plus ticket first-response/resolution runtime behavior.
 - `sla` still postpones next-response SLA, holidays, reminders/escalations/notifications, BullMQ/jobs, cycle-history, and historical/date-range reporting.
 - `realtime` now exposes an authenticated bootstrap endpoint, socket auth/room foundations, ticket/message/participant live business event publishing, and ephemeral ticket presence/typing/soft-claim coordination for the internal workspace app.
+- Ticket create with `initialMessage` now publishes `ticket.created` plus the same `message.created` and `conversation.updated` live events used by later message writes.
+- Viewer members remain allowed to send advisory collaboration signals on readable tickets in the current internal-only phase.
 - Mounted route groups `inbox`, `integrations`, and `admin` are empty.
 - Several domains currently ship schema/model groundwork without exposed APIs.
 - Jobs subsystem under `src/infra/jobs` is placeholder only.

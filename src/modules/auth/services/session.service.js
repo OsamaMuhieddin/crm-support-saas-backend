@@ -11,6 +11,17 @@ import {
 
 const nowDate = () => new Date();
 
+const listActiveSessionIds = async (query = {}) => {
+  const sessions = await Session.find({
+    ...query,
+    revokedAt: null,
+  })
+    .select('_id')
+    .lean();
+
+  return sessions.map((session) => String(session._id));
+};
+
 const buildTokenPair = ({ userId, sessionId, workspaceId, roleKey }) => {
   const refreshToken = signRefreshToken({ userId, sessionId });
   const accessToken = signAccessToken({ userId, sessionId, workspaceId, roleKey });
@@ -135,9 +146,19 @@ export const rotateSessionTokens = async ({
 };
 
 export const revokeSessionById = async (sessionId) => {
-  await Session.updateOne(
+  const revokedSessionIds = await listActiveSessionIds({
+    _id: sessionId,
+  });
+
+  if (revokedSessionIds.length === 0) {
+    return [];
+  }
+
+  await Session.updateMany(
     {
-      _id: sessionId,
+      _id: {
+        $in: revokedSessionIds,
+      },
       revokedAt: null
     },
     {
@@ -146,12 +167,24 @@ export const revokeSessionById = async (sessionId) => {
       }
     }
   );
+
+  return revokedSessionIds;
 };
 
 export const revokeAllUserSessions = async (userId) => {
+  const revokedSessionIds = await listActiveSessionIds({
+    userId,
+  });
+
+  if (revokedSessionIds.length === 0) {
+    return [];
+  }
+
   await Session.updateMany(
     {
-      userId,
+      _id: {
+        $in: revokedSessionIds,
+      },
       revokedAt: null
     },
     {
@@ -160,4 +193,6 @@ export const revokeAllUserSessions = async (userId) => {
       }
     }
   );
+
+  return revokedSessionIds;
 };
