@@ -5,6 +5,7 @@ import {
   assertRedisConfig,
   attachRedisErrorLogger,
   closeAllRedisClients,
+  closeRedisClient,
   connectRedisClient,
   createRedisClientInstance,
   getRedisRuntimeStatus,
@@ -59,6 +60,13 @@ export const getRealtimeRedisStatus = () => ({
 });
 
 export const closeRealtimeRedis = async () => {
+  if (adapterClients) {
+    await Promise.allSettled([
+      closeRedisClient(adapterClients.pubClient),
+      closeRedisClient(adapterClients.subClient),
+    ]);
+  }
+
   await closeAllRedisClients();
   adapterClients = null;
 };

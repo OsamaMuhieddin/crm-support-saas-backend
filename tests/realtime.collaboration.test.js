@@ -210,6 +210,31 @@ const waitForSocketEvent = (client, event) =>
     client.once(event, resolve);
   });
 
+const waitForMatchingSocketEvent = (
+  client,
+  event,
+  predicate,
+  timeoutMs = 2000
+) =>
+  new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      client.off(event, handleEvent);
+      reject(new Error(`Timed out waiting for ${event}`));
+    }, timeoutMs);
+
+    const handleEvent = (payload) => {
+      if (!predicate(payload)) {
+        return;
+      }
+
+      clearTimeout(timer);
+      client.off(event, handleEvent);
+      resolve(payload);
+    };
+
+    client.on(event, handleEvent);
+  });
+
 const expectNoSocketEvent = async (client, event, timeoutMs = 250) =>
   new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -467,9 +492,15 @@ describe('Realtime collaboration behaviors', () => {
         await noDuplicatePresence;
         await waitForActionThrottle();
 
-        const replyingChangedPromise = waitForSocketEvent(
+        const replyingChangedPromise = waitForMatchingSocketEvent(
           observerClient,
-          'ticket.presence.changed'
+          'ticket.presence.changed',
+          (payload) =>
+            Array.isArray(payload?.data?.presence) &&
+            payload.data.presence.some(
+              (entry) =>
+                entry?.userId === owner.userId && entry?.state === 'replying'
+            )
         );
         await emitWithAck(ownerClient, 'ticket.presence.set', {
           ticketId: created.body.ticket._id,

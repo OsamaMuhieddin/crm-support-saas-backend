@@ -724,6 +724,13 @@ NPM scripts:
 - `npm run test`
 - `npm run mailboxes:backfill-default`
 
+Developer utility scripts:
+
+- `node tests/manual/realtime-smoke-test.js`
+  - Requires `REALTIME_ACCESS_TOKEN`
+  - Optional: `REALTIME_BASE_URL`, `REALTIME_TICKET_ID`, `REALTIME_PRESENCE_STATE`
+  - Uses `/api/realtime/bootstrap`, connects a real Socket.IO client, subscribes the authenticated workspace, optionally subscribes a ticket, and logs incoming live events for quick manual verification.
+
 Maintenance script:
 
 - `scripts/backfill-default-mailboxes.js`:
@@ -754,8 +761,18 @@ Covered areas:
 - SLA business-hours helpers/validation, business-time math helpers, policy helpers/selection rules, management endpoints, ticket runtime behavior, summary endpoint, RBAC, and mailbox optional override compatibility.
 - Ticket category/tag CRUD-like dictionary behavior, RBAC, and anti-enumeration.
 - Ticket assignment/lifecycle/participant actions and their guardrails.
+- Realtime foundation, business events, and collaboration flows through real `socket.io-client` connections and REST-triggered writes.
 - Validation key existence in i18n for key modules.
 - Storage provider config fail-fast behavior.
+
+Realtime test runtime modes:
+
+- The same realtime integration suites are intended to pass in these env-driven modes:
+  - `REDIS_ENABLED=false` and `REALTIME_REDIS_ADAPTER_ENABLED=false`
+  - `REDIS_ENABLED=true` and `REALTIME_REDIS_ADAPTER_ENABLED=false`
+  - `REDIS_ENABLED=true` and `REALTIME_REDIS_ADAPTER_ENABLED=true`
+- When Redis-backed modes are used, a local Redis instance is expected to be reachable at `REDIS_URL`.
+- Adapter-enabled tests in the current Jest runtime verify boot/wiring and normal socket flows in a single process; they do not prove cross-node fan-out by themselves.
 
 Not fully covered by runtime tests:
 

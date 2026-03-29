@@ -25,6 +25,9 @@ import {
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
 let sequence = 0;
+const isRedisEnabled = process.env.REDIS_ENABLED === 'true';
+const isRealtimeRedisAdapterEnabled =
+  process.env.REALTIME_REDIS_ADAPTER_ENABLED === 'true';
 
 const nextValue = (prefix) => {
   sequence += 1;
@@ -216,6 +219,12 @@ const createContactRecord = async ({ workspaceId }) =>
     email: nextEmail('realtime-contact'),
     phone: '+963955555555',
   });
+
+const createTicketRequest = async ({ accessToken, body }) =>
+  request(app)
+    .post('/api/tickets')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send(body);
 
 const createTicketRecord = async ({ workspaceId, contactId, subject }) => {
   const workspace = await Workspace.findOne({
@@ -886,8 +895,8 @@ describe('Realtime collaboration foundation', () => {
             actionThrottleMs: realtimeConfig.collaboration.actionThrottleMs,
           }),
           redis: expect.objectContaining({
-            enabled: false,
-            adapterEnabled: false,
+            enabled: isRedisEnabled,
+            adapterEnabled: isRealtimeRedisAdapterEnabled,
             connected: false,
             adapterConnected: false,
           }),
@@ -895,6 +904,76 @@ describe('Realtime collaboration foundation', () => {
       );
       expect(response.body.realtime.user._id).toBe(owner.userId);
       expect(response.body.realtime.workspace._id).toBe(owner.workspaceId);
+    }
+  );
+
+  maybeDbTest(
+    'realtime bootstrap reflects the active Redis runtime mode after live collaboration initializes',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: nextEmail('realtime-bootstrap-runtime-owner'),
+      });
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+      const created = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'Realtime bootstrap runtime ticket',
+          contactId: String(contact._id),
+        },
+      });
+
+      expect(created.status).toBe(200);
+
+      const { httpServer, baseUrl } = await startRealtimeRuntime();
+      let client = null;
+
+      try {
+        client = await connectRealtimeClient({
+          baseUrl,
+          token: owner.accessToken,
+        });
+
+        await Promise.all([
+          waitForSocketEvent(client, 'ticket.presence.snapshot'),
+          emitWithAck(client, 'ticket.subscribe', {
+            ticketId: created.body.ticket._id,
+          }),
+        ]);
+
+        const presenceAck = await emitWithAck(client, 'ticket.presence.set', {
+          ticketId: created.body.ticket._id,
+          state: 'viewing',
+        });
+
+        expect(presenceAck).toEqual(
+          expect.objectContaining({
+            ok: true,
+            code: 'realtime.ticket.presence.updated',
+          })
+        );
+
+        const response = await request(app)
+          .get('/api/realtime/bootstrap')
+          .set('Authorization', `Bearer ${owner.accessToken}`);
+
+        expect(response.status).toBe(200);
+        expect(response.body.realtime.redis).toEqual(
+          expect.objectContaining({
+            enabled: isRedisEnabled,
+            connected: isRedisEnabled,
+            adapterEnabled: isRealtimeRedisAdapterEnabled,
+            adapterConnected:
+              isRedisEnabled && isRealtimeRedisAdapterEnabled,
+          })
+        );
+      } finally {
+        await stopRealtimeRuntime({
+          httpServer,
+          clients: [client],
+        });
+      }
     }
   );
 });

@@ -2,15 +2,37 @@
 
 ## High-level modules
 
-- Workspaces: tenant root and active workspace context
-- Users/Agents: workspace members and authentication identity
-- Customers: contacts and organizations
-- Files: private file storage plus polymorphic file links
-- Mailboxes: workspace-scoped inbox/mailbox dictionaries
+Current module inventory under `src/modules` falls into three practical groups.
+
+### Routed API modules
+
+- Health: operational health endpoint
+- Auth: authentication, sessions, password and account access flows
+- Workspaces: tenant root, memberships, invitations, and active workspace context
+- Users: workspace user and member management
+- Customers: contacts, organizations, and contact identities
+- Mailboxes: workspace-scoped mailbox dictionaries and defaults
 - Tickets: core support workflow with conversations, messages, dictionaries, assignment, lifecycle, and participants
+- Inbox: inbox-facing conversation and ticket application surface
 - SLA: business-hours and policy management plus ticket first-response/resolution runtime behavior
-- Realtime: internal authenticated collaboration transport, room subscriptions, business-event publishing, and Redis-backed ephemeral collaboration signals
-- Inbox/Conversations, Integrations, Plans, Admin: broader platform areas that may expand further over time
+- Integrations: integration-facing API surface
+- Admin: platform/admin operational endpoints
+- Files: private file storage plus polymorphic file links
+- Realtime: authenticated collaboration endpoint surface for subscriptions and live state
+
+### Internal or data-only modules
+
+- Platform: platform-level persistence models such as admin sessions and metrics
+- Billing: plans, addons, subscriptions, entitlements, and usage metering models
+- Automations: automation rule models and schemas
+- Notifications: notification persistence models and schemas
+- Roles: shared role-related models/schemas placeholder module
+
+### Notes on maturity
+
+- Not every module is mounted under `/api` yet.
+- Some modules currently exist only to register Mongoose models and schemas for future routed features.
+- The routed module list is defined centrally in `src/routes/index.js`.
 
 ## Layers
 
@@ -19,10 +41,12 @@
 - **Shared (`src/shared`)**: errors, middlewares, utils, validators
 - **Infra (`src/infra`)**: db + jobs + storage adapters (MinIO/local) + realtime/Redis coordination foundations
 - **Config (`src/config`)**: env configuration
+- **Constants (`src/constants`)**: shared enums and domain constants
+- **i18n (`src/i18n`)**: localized message catalogs and translation bootstrap
 
 ## Nest-like module pattern in Express
 
-Each module follows this structure:
+Router-backed business modules typically follow this structure:
 
 src/modules/<module>/
 index.js
@@ -42,16 +66,36 @@ utils/ (optional, module-local pure helpers only)
 - schemas define reusable subdocuments within the module.
 - validators define request validation rules.
 - utils/ is optional and should contain small module-local pure helpers that are reused inside the module but do not belong in `shared/`.
+- Some thinner or internal modules intentionally expose only the pieces they need today, such as `models/`, `schemas/`, or a small routed surface without the full folder set.
 
 ## Implemented module style
 
 - Protected business modules are workspace-scoped through the active session workspace.
+- The current routed API modules are: `health`, `auth`, `workspaces`, `users`, `customers`, `tickets`, `inbox`, `sla`, `integrations`, `admin`, `files`, `mailboxes`, and `realtime`.
+- Additional internal modules currently present in `src/modules` are: `platform`, `billing`, `automations`, `notifications`, and `roles`.
 - Controllers orchestrate request and response handling only.
 - Services own business rules, tenancy checks, invariants, and denormalized updates.
 - Models define Mongoose persistence shape, including soft-delete fields where the module uses them.
 - Validators use `express-validator` and are wrapped by the shared validation middleware.
 - Module-local utilities should stay inside the module when they are not cross-cutting enough for `src/shared`.
 - Success and error responses follow the localized global response envelope defined in `src/app.js`.
+
+## Workspaces module notes
+
+- Workspaces are the tenant root for protected business routes; most workspace-scoped access is derived from the active workspace stored on the current session.
+- `GET /api/workspaces/mine` lists the current user's active memberships with workspace basics and role context for workspace selection.
+- `POST /api/workspaces/switch` is the only supported way to change the active workspace for a session; it updates `session.workspaceId`, returns a fresh access token, and forces existing realtime sockets for that session to reconnect under the new workspace context.
+- Invite acceptance creates or re-activates membership but does not auto-switch the active workspace as a side effect.
+- Invite management is workspace-scoped and restricted to `owner|admin` inside the currently active workspace.
+
+## Auth module notes
+
+- Auth uses a session-backed JWT model rather than stateless access tokens.
+- Access tokens carry the current user, session, workspace, and role context (`sub`, `sid`, `wid`, `r`) with `typ=access` and `ver=1`.
+- Request authentication re-checks the backing session on every access-token use, including revoked/expired state and exact workspace match between `session.workspaceId` and token `wid`.
+- Refresh tokens are session-bound, stored hashed in the session record, and rotated on refresh; a refresh-token hash mismatch revokes the session.
+- Login, verified-email login, and refresh all resolve an active workspace context before minting tokens so the session always carries a concrete workspace.
+- Logout, logout-all, change-password, and reset-password revoke affected sessions and best-effort disconnect their existing realtime sockets.
 
 ## Realtime foundation notes
 
@@ -88,6 +132,24 @@ utils/ (optional, module-local pure helpers only)
 - Collaboration state lives outside MongoDB ticket truth and is coordinated through the shared Redis foundation when enabled, with a single-instance in-memory fallback for local/test runtime parity.
 - Expiry-driven collaboration broadcasts are best-effort per node; snapshot-on-subscribe/reconnect remains the correctness path for stale cleanup recovery.
 - Redis is available as optional shared infrastructure, while the Socket.IO Redis adapter remains behind explicit realtime env flags so horizontal fan-out can be enabled later without reworking the rest of the codebase.
+- The main realtime integration suites are intended to run unchanged in three env-driven modes: no Redis, Redis-backed collaboration store without the Socket.IO adapter, and Redis-backed collaboration store with the adapter enabled.
+
+## Mailboxes v1 module notes
+
+- Mailboxes are workspace-scoped operational dictionaries protected by active workspace membership, with writes restricted to `owner|admin`.
+- Each workspace has a canonical default mailbox expressed both as `workspace.defaultMailboxId` and as exactly one active mailbox flagged `isDefault`; the service layer actively realigns drift between those two sources of truth.
+- A default mailbox must be active, a default mailbox cannot be deactivated, and the last active mailbox in a workspace cannot be deactivated.
+- Creating or activating mailboxes may trigger default-mailbox backfill/alignment so every workspace can maintain a usable default target.
+- Mailboxes may optionally point to an active SLA policy, which participates in ticket SLA selection ahead of the workspace default policy.
+
+## SLA v1 module notes
+
+- The SLA module owns workspace-scoped business-hours definitions, SLA policies, and summary/reporting endpoints.
+- Reads are available to active workspace members; writes and policy/business-hours actions are restricted to `owner|admin`.
+- Workspace `defaultSlaPolicyId` and mailbox `slaPolicyId` together form the policy-selection chain used by tickets; mailbox-specific policy selection wins over the workspace default.
+- Policy activation, deactivation, and set-default actions maintain canonical default-policy state and may clear or replace existing mailbox/workspace references when a policy is deactivated.
+- Tickets snapshot selected SLA policy and business-hours data into `ticket.sla` so later policy edits do not rewrite historical ticket runtime context.
+- Ticket SLA runtime derives live first-response/resolution status from ticket lifecycle events, including business-hours-aware due times, breach tracking, pause/resume behavior, and reopen handling.
 
 ## Files v1 module notes
 
