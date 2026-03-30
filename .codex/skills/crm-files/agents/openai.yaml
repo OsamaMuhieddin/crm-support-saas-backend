@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Files"
+  short_description: "File storage rules for the repo"
+  default_prompt: "Use $crm-files to work on file storage, file links, uploads, or downloads in this repository."

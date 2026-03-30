@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Support Backend"
+  short_description: "Repo rules for CRM backend work"
+  default_prompt: "Use $crm-support-backend to implement or document changes in this CRM support backend repository."

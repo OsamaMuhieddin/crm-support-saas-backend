@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Debug Tests"
+  short_description: "Debugging and test workflow for repo"
+  default_prompt: "Use $crm-debug-tests to debug failures, add tests, or run targeted validation in this repository."

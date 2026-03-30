@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Localization"
+  short_description: "Locale and message-key repo rules"
+  default_prompt: "Use $crm-localization to work on localized responses or locale files in this repository."

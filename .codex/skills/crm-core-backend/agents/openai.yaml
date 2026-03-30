@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Core Backend"
+  short_description: "Core repo rules for backend work"
+  default_prompt: "Use $crm-core-backend to apply the core backend rules for this repository."

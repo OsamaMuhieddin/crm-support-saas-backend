@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM Module Ops"
+  short_description: "Mailbox, SLA, customer repo rules"
+  default_prompt: "Use $crm-mailboxes-sla-customers to work on mailboxes, SLA, or customer modules in this repository."

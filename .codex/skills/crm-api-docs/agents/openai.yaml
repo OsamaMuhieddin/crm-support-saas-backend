@@ -1,0 +1,4 @@
+interface:
+  display_name: "CRM API Docs"
+  short_description: "API doc rules for this backend"
+  default_prompt: "Use $crm-api-docs to write or update API documentation for this repository."
