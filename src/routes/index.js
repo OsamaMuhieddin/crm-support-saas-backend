@@ -13,6 +13,7 @@ import adminRouter from '../modules/admin/index.js';
 import filesRouter from '../modules/files/index.js';
 import mailboxesRouter from '../modules/mailboxes/index.js';
 import realtimeRouter from '../modules/realtime/index.js';
+import billingRouter from '../modules/billing/index.js';
 
 const router = Router();
 
@@ -31,5 +32,6 @@ router.use('/admin', adminRouter);
 router.use('/files', filesRouter);
 router.use('/mailboxes', mailboxesRouter);
 router.use('/realtime', realtimeRouter);
+router.use('/billing', billingRouter);
 
 export default router;

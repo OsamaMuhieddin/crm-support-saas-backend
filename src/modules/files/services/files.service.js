@@ -18,6 +18,11 @@ import {
 } from '../../../infra/storage/index.js';
 import { storageConfig } from '../../../config/storage.config.js';
 import { softDeleteLinksForFile } from './file-links.service.js';
+import { assertWorkspaceUploadAllowed } from '../../billing/services/billing-enforcement.service.js';
+import {
+  incrementWorkspaceUploadsCount,
+  refreshWorkspaceBillingUsageSnapshot,
+} from '../../billing/services/billing-foundation.service.js';
 
 const SORT_ALLOWLIST = Object.freeze({
   createdAt: { createdAt: 1 },
@@ -203,6 +208,11 @@ export const uploadFile = async ({
   source = 'direct',
   metadata = null,
 }) => {
+  await assertWorkspaceUploadAllowed({
+    workspaceId,
+    incomingSizeBytes: file?.size || 0,
+  });
+
   const storage = getStorageProviderOrThrow();
   const bucket = resolveBucketName();
 
@@ -256,6 +266,17 @@ export const uploadFile = async ({
       source: source || 'direct',
       metadata: normalizedMetadata,
     });
+
+    try {
+      await incrementWorkspaceUploadsCount({
+        workspaceId,
+      });
+      await refreshWorkspaceBillingUsageSnapshot({
+        workspaceId,
+      });
+    } catch (usageError) {
+      console.error('BILLING FILE USAGE UPDATE ERROR:', usageError);
+    }
 
     return {
       file: buildFileView(created, { isLinked: false }),
@@ -567,6 +588,14 @@ export const deleteFileById = async ({
     fileId: file._id,
     deletedByUserId,
   });
+
+  try {
+    await refreshWorkspaceBillingUsageSnapshot({
+      workspaceId,
+    });
+  } catch (usageError) {
+    console.error('BILLING FILE USAGE REFRESH ERROR:', usageError);
+  }
 
   return {
     file: buildFileView(file, { isLinked: false }),

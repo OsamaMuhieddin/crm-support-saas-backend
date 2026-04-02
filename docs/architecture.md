@@ -19,11 +19,11 @@ Current module inventory under `src/modules` falls into three practical groups.
 - Admin: platform/admin operational endpoints
 - Files: private file storage plus polymorphic file links
 - Realtime: authenticated collaboration endpoint surface for subscriptions and live state
+- Billing: workspace-authenticated billing catalog, lifecycle reads, checkout, portal, Stripe webhook intake, and worker-backed sync foundations
 
 ### Internal or data-only modules
 
 - Platform: platform-level persistence models such as admin sessions and metrics
-- Billing: plans, addons, subscriptions, entitlements, and usage metering models
 - Automations: automation rule models and schemas
 - Notifications: notification persistence models and schemas
 - Roles: shared role-related models/schemas placeholder module
@@ -71,8 +71,8 @@ utils/ (optional, module-local pure helpers only)
 ## Implemented module style
 
 - Protected business modules are workspace-scoped through the active session workspace.
-- The current routed API modules are: `health`, `auth`, `workspaces`, `users`, `customers`, `tickets`, `inbox`, `sla`, `integrations`, `admin`, `files`, `mailboxes`, and `realtime`.
-- Additional internal modules currently present in `src/modules` are: `platform`, `billing`, `automations`, `notifications`, and `roles`.
+- The current routed API modules are: `health`, `auth`, `workspaces`, `users`, `customers`, `tickets`, `inbox`, `sla`, `integrations`, `admin`, `files`, `mailboxes`, `realtime`, and `billing`.
+- Additional internal modules currently present in `src/modules` are: `platform`, `automations`, `notifications`, and `roles`.
 - Controllers orchestrate request and response handling only.
 - Services own business rules, tenancy checks, invariants, and denormalized updates.
 - Models define Mongoose persistence shape, including soft-delete fields where the module uses them.
@@ -171,3 +171,16 @@ utils/ (optional, module-local pure helpers only)
 - Ticket detail may still hydrate already-linked inactive category and tag references for historical integrity.
 - Message flow is manual-first in v1, with message-owned file attachments and reverse ticket-level file links.
 - Assignment is single-assignee; participants are separate internal metadata and do not grant access.
+
+## Billing v1 runtime notes
+
+- `src/modules/billing` now exposes the workspace billing runtime under `/api/billing`.
+- Workspace-facing billing reads and actions are restricted to active workspace members with `owner|admin` role.
+- The module syncs a fixed internal plan/add-on catalog before serving billing reads or checkout flows.
+- The module auto-bootstraps one current workspace subscription foundation record and one entitlement snapshot on demand.
+- Current protected endpoints expose catalog, subscription, entitlements, usage, summary, checkout session creation, and billing portal session creation.
+- A public Stripe webhook intake route now lives under `/api/billing/webhooks/stripe`.
+- Stripe SDK usage is isolated inside the billing provider service seam; controllers and higher-level billing services speak internal billing terms.
+- Billing lifecycle sync persists webhook events first, then hands off follow-up processing to BullMQ using the existing shared Redis config path.
+- Dedicated billing workers now process webhook follow-up jobs and provide queue foundations for lifecycle and repair work.
+- Trial expiry without billing setup now transitions locally into grace and `past_due` state so read models reflect unpaid lifecycle before enforcement is added elsewhere.

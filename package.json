@@ -8,6 +8,15 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "billing:sync-catalog": "node scripts/sync-billing-catalog.js",
+    "billing:worker": "node src/workers/billing.worker.js",
+    "billing:replay-webhooks": "node scripts/replay-billing-webhooks.js",
+    "billing:sync-workspace": "node scripts/sync-billing-workspace.js",
+    "billing:repair-workspace": "node scripts/repair-billing-workspace.js",
+    "billing:backfill-foundations": "node scripts/backfill-billing-foundations.js",
+    "billing:migrate-v1": "node scripts/migrate-billing-v1.js",
     "mailboxes:backfill-default": "node scripts/backfill-default-mailboxes.js",
     "sla:backfill-policy-priorities": "node scripts/backfill-sla-policy-priorities.js"
   },
@@ -15,10 +24,12 @@
     "@sendgrid/mail": "^8.1.6",
     "@socket.io/redis-adapter": "^8.3.0",
     "bcryptjs": "^3.0.3",
+    "bullmq": "^5.71.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "express-validator": "^7.1.0",
+    "ioredis": "^5.10.1",
     "jsonwebtoken": "^9.0.3",
     "libphonenumber-js": "^1.12.40",
     "minio": "^8.0.7",
@@ -27,12 +38,14 @@
     "multer": "^2.1.1",
     "nodemailer": "^8.0.1",
     "redis": "^5.11.0",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+    "stripe": "^21.0.1"
   },
   "devDependencies": {
     "jest": "^29.7.0",
     "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.1.4",
+    "prettier": "3.8.1",
     "socket.io-client": "^4.8.3",
     "supertest": "^7.2.2"
   }

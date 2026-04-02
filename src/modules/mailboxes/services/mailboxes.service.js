@@ -7,6 +7,10 @@ import { escapeRegex } from '../../../shared/utils/regex.js';
 import { Mailbox } from '../models/mailbox.model.js';
 import { Workspace } from '../../workspaces/models/workspace.model.js';
 import { findSlaPolicyInWorkspaceOrThrow } from '../../sla/services/sla-reference.service.js';
+import {
+  assertWorkspaceMailboxWriteAllowed,
+  assertWorkspaceSlaWriteAllowed,
+} from '../../billing/services/billing-enforcement.service.js';
 
 const DEFAULT_MAILBOX_NAME = 'Support';
 
@@ -670,7 +674,15 @@ export const createMailbox = async ({ workspaceId, payload }) => {
   try {
     let resolvedSlaPolicyId = null;
 
+    await assertWorkspaceMailboxWriteAllowed({
+      workspaceId: workspaceObjectId,
+    });
+
     if (normalized.slaPolicyId) {
+      await assertWorkspaceSlaWriteAllowed({
+        workspaceId: workspaceObjectId,
+      });
+
       const policy = await findSlaPolicyInWorkspaceOrThrow({
         workspaceId: workspaceObjectId,
         policyId: normalized.slaPolicyId,
@@ -859,6 +871,10 @@ export const updateMailbox = async ({ workspaceId, mailboxId, payload }) => {
         continue;
       }
 
+      await assertWorkspaceSlaWriteAllowed({
+        workspaceId: workspaceObjectId,
+      });
+
       const policy = await findSlaPolicyInWorkspaceOrThrow({
         workspaceId: workspaceObjectId,
         policyId: value,
@@ -923,6 +939,10 @@ export const activateMailbox = async ({ workspaceId, mailboxId }) => {
   });
 
   if (!mailbox.isActive) {
+    await assertWorkspaceMailboxWriteAllowed({
+      workspaceId: workspaceObjectId,
+    });
+
     mailbox.isActive = true;
     await mailbox.save();
   }

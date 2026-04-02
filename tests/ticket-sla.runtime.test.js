@@ -12,6 +12,7 @@ import {
   extractInviteTokenFromLogs,
   extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
+import { setWorkspaceBillingPlanForTests } from './helpers/billing.js';
 
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
@@ -97,6 +98,11 @@ const createVerifiedUser = async ({
     code: signup.code,
   });
   expect(verify.status).toBe(200);
+
+  await setWorkspaceBillingPlanForTests({
+    workspaceId: verify.body.user.defaultWorkspaceId,
+    planKey: 'business',
+  });
 
   return {
     email,
@@ -925,6 +931,67 @@ describe('Ticket SLA runtime behavior', () => {
       );
       expect(summaryAsViewer.body.summary.runtime.resolution.breached).toBe(1);
       expect(summaryAsViewer.body.summary.runtime.resolution.paused).toBe(1);
+    }
+  );
+
+  maybeDbTest(
+    'historical ticket SLA snapshots remain readable after downgrade while new tickets stop receiving SLA',
+    async () => {
+      const owner = await createVerifiedUser();
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId,
+      });
+
+      const defaultSla = await setupWorkspaceSla({
+        accessToken: owner.accessToken,
+      });
+      await setDefaultSlaPolicy({
+        accessToken: owner.accessToken,
+        policyId: defaultSla.policy.body.policy._id,
+      });
+
+      const legacyTicket = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'Legacy SLA ticket',
+          contactId: String(contact._id),
+        },
+      });
+      expect(legacyTicket.status).toBe(200);
+      expect(legacyTicket.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+
+      await setWorkspaceBillingPlanForTests({
+        workspaceId: owner.workspaceId,
+        planKey: 'starter',
+      });
+
+      const legacyDetail = await request(app)
+        .get(`/api/tickets/${legacyTicket.body.ticket._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(legacyDetail.status).toBe(200);
+      expect(legacyDetail.body.ticket.sla.policyName).toBe(
+        defaultSla.policy.body.policy.name
+      );
+      expect(legacyDetail.body.ticket.sla.isApplicable).toBe(true);
+
+      const newTicket = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'No SLA after downgrade',
+          contactId: String(contact._id),
+        },
+      });
+      expect(newTicket.status).toBe(200);
+      expect(newTicket.body.ticket.sla.policyName).toBeNull();
+      expect(newTicket.body.ticket.sla.isApplicable).toBe(false);
+      expect(newTicket.body.ticket.sla.firstResponseStatus).toBe(
+        'not_applicable'
+      );
+      expect(newTicket.body.ticket.sla.resolutionStatus).toBe(
+        'not_applicable'
+      );
     }
   );
 });

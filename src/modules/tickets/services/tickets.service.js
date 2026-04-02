@@ -42,6 +42,7 @@ import {
   publishTicketStatusChanged,
   publishTicketUpdated,
 } from './ticket-live-events.service.js';
+import { incrementWorkspaceTicketsCreated } from '../../billing/services/billing-foundation.service.js';
 
 const SORT_ALLOWLIST = Object.freeze({
   number: { number: 1, _id: 1 },
@@ -731,6 +732,14 @@ export const createTicket = async ({
     workspaceId: workspaceObjectId,
     ticketId: ticket._id,
   });
+
+  try {
+    await incrementWorkspaceTicketsCreated({
+      workspaceId: workspaceObjectId,
+    });
+  } catch (usageError) {
+    console.error('BILLING TICKET USAGE UPDATE ERROR:', usageError);
+  }
 
   await publishTicketCreated({
     workspaceId: workspaceObjectId,

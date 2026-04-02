@@ -17,6 +17,7 @@ import { Workspace } from '../src/modules/workspaces/models/workspace.model.js';
 import { Conversation } from '../src/modules/tickets/models/conversation.model.js';
 import { Ticket } from '../src/modules/tickets/models/ticket.model.js';
 import { TicketCounter } from '../src/modules/tickets/models/ticket-counter.model.js';
+import { UsageMeter } from '../src/modules/billing/models/usage-meter.model.js';
 
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
@@ -999,4 +1000,31 @@ describe('Core tickets endpoints', () => {
       expect(String(ticketAfter.mailboxId)).toBe(String(ticketBefore.mailboxId));
     }
   );
+
+  maybeDbTest('ticket creation increments monthly billing usage without blocking creation', async () => {
+    const owner = await createVerifiedUser();
+    const contact = await createContactRecord({
+      workspaceId: owner.workspaceId,
+    });
+
+    const response = await createTicketRequest({
+      accessToken: owner.accessToken,
+      body: {
+        subject: 'Billing usage counter ticket',
+        contactId: String(contact._id),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.messageKey).toBe('success.ticket.created');
+
+    const periodKey = new Date().toISOString().slice(0, 7);
+    const meter = await UsageMeter.findOne({
+      workspaceId: owner.workspaceId,
+      periodKey,
+    }).lean();
+
+    expect(meter).toBeTruthy();
+    expect(meter.ticketsCreated).toBe(1);
+  });
 });

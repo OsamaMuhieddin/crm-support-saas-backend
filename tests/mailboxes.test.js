@@ -10,6 +10,10 @@ import {
   extractInviteTokenFromLogs,
   extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
+import {
+  patchPlanForTests,
+  setWorkspaceBillingPlanForTests,
+} from './helpers/billing.js';
 
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
@@ -42,6 +46,11 @@ const createVerifiedUser = async ({
     code: signup.code,
   });
   expect(verify.status).toBe(200);
+
+  await setWorkspaceBillingPlanForTests({
+    workspaceId: verify.body.user.defaultWorkspaceId,
+    planKey: 'business',
+  });
 
   return {
     email,
@@ -754,5 +763,88 @@ describe('Mailbox v1 endpoints + workspace bootstrap/backfill', () => {
       .set('Authorization', `Bearer ${ownerB.accessToken}`);
     expect(ownerBGetA.status).toBe(404);
     expect(ownerBGetA.body.messageKey).toBe('errors.mailbox.notFound');
+  });
+
+  maybeDbTest('create mailbox is blocked when the active mailbox limit is reached', async () => {
+    const owner = await createVerifiedUser({
+      email: 'mailbox-limit-create-owner@example.com',
+    });
+
+    await patchPlanForTests({
+      planKey: 'business',
+      limits: {
+        mailboxes: 1,
+      },
+    });
+
+    const response = await createMailbox({
+      accessToken: owner.accessToken,
+      name: 'Should Be Blocked',
+      emailAddress: 'blocked-mailbox@example.com',
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.messageKey).toBe(
+      'errors.billing.mailboxLimitExceeded'
+    );
+  });
+
+  maybeDbTest('activate mailbox is blocked when the active mailbox limit is reached', async () => {
+    const owner = await createVerifiedUser({
+      email: 'mailbox-limit-activate-owner@example.com',
+    });
+
+    await patchPlanForTests({
+      planKey: 'business',
+      limits: {
+        mailboxes: 1,
+      },
+    });
+
+    const inactiveMailbox = await Mailbox.create({
+      workspaceId: owner.workspaceId,
+      name: 'Inactive Queue',
+      isDefault: false,
+      isActive: false,
+    });
+
+    const response = await request(app)
+      .post(`/api/mailboxes/${inactiveMailbox._id}/activate`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({});
+
+    expect(response.status).toBe(409);
+    expect(response.body.messageKey).toBe(
+      'errors.billing.mailboxLimitExceeded'
+    );
+  });
+
+  maybeDbTest('inactive mailboxes do not consume active mailbox quota', async () => {
+    const owner = await createVerifiedUser({
+      email: 'mailbox-inactive-quota-owner@example.com',
+    });
+
+    await patchPlanForTests({
+      planKey: 'business',
+      limits: {
+        mailboxes: 2,
+      },
+    });
+
+    await Mailbox.create({
+      workspaceId: owner.workspaceId,
+      name: 'Inactive Does Not Count',
+      isDefault: false,
+      isActive: false,
+    });
+
+    const response = await createMailbox({
+      accessToken: owner.accessToken,
+      name: 'Second Active Queue',
+      emailAddress: 'second-active@example.com',
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.mailbox.isActive).toBe(true);
   });
 });

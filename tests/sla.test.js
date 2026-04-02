@@ -10,6 +10,7 @@ import {
   extractInviteTokenFromLogs,
   extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
+import { setWorkspaceBillingPlanForTests } from './helpers/billing.js';
 
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
@@ -89,6 +90,11 @@ const createVerifiedUser = async ({
     code: signup.code,
   });
   expect(verify.status).toBe(200);
+
+  await setWorkspaceBillingPlanForTests({
+    workspaceId: verify.body.user.defaultWorkspaceId,
+    planKey: 'business',
+  });
 
   return {
     email,
@@ -1198,6 +1204,118 @@ describe('SLA v1 foundations + management surface', () => {
       expect(viewerSetDefault.body.messageKey).toBe(
         'errors.auth.forbiddenRole'
       );
+    }
+  );
+
+  maybeDbTest(
+    'SLA writes are blocked when the workspace plan no longer includes SLA while historical reads remain available',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: 'sla-plan-gated-owner@example.com',
+      });
+
+      const businessHours = await createBusinessHours({
+        accessToken: owner.accessToken,
+        name: 'Legacy SLA Hours',
+      });
+      expect(businessHours.status).toBe(200);
+
+      const policy = await createSlaPolicy({
+        accessToken: owner.accessToken,
+        businessHoursId: businessHours.body.businessHours._id,
+        name: 'Legacy SLA Policy',
+      });
+      expect(policy.status).toBe(200);
+
+      const mailbox = await request(app)
+        .post('/api/mailboxes')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          name: 'Legacy SLA Queue',
+          emailAddress: 'legacy-sla-queue@example.com',
+          slaPolicyId: policy.body.policy._id,
+        });
+      expect(mailbox.status).toBe(200);
+
+      await setWorkspaceBillingPlanForTests({
+        workspaceId: owner.workspaceId,
+        planKey: 'starter',
+      });
+
+      const createBusinessHoursBlocked = await createBusinessHours({
+        accessToken: owner.accessToken,
+        name: 'Blocked Hours',
+      });
+      expect(createBusinessHoursBlocked.status).toBe(409);
+      expect(createBusinessHoursBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const updateBusinessHoursBlocked = await request(app)
+        .patch(`/api/sla/business-hours/${businessHours.body.businessHours._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          name: 'Blocked Update',
+        });
+      expect(updateBusinessHoursBlocked.status).toBe(409);
+      expect(updateBusinessHoursBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const createPolicyBlocked = await request(app)
+        .post('/api/sla/policies')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          name: 'Blocked Policy',
+          businessHoursId: businessHours.body.businessHours._id,
+          rulesByPriority: defaultRulesByPriority,
+        });
+      expect(createPolicyBlocked.status).toBe(409);
+      expect(createPolicyBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const updatePolicyBlocked = await request(app)
+        .patch(`/api/sla/policies/${policy.body.policy._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          name: 'Blocked Policy Update',
+        });
+      expect(updatePolicyBlocked.status).toBe(409);
+      expect(updatePolicyBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const setDefaultBlocked = await request(app)
+        .post(`/api/sla/policies/${policy.body.policy._id}/set-default`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({});
+      expect(setDefaultBlocked.status).toBe(409);
+      expect(setDefaultBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const mailboxAssignmentBlocked = await request(app)
+        .patch(`/api/mailboxes/${mailbox.body.mailbox._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          slaPolicyId: policy.body.policy._id,
+        });
+      expect(mailboxAssignmentBlocked.status).toBe(409);
+      expect(mailboxAssignmentBlocked.body.messageKey).toBe(
+        'errors.billing.slaNotIncluded'
+      );
+
+      const policyRead = await request(app)
+        .get(`/api/sla/policies/${policy.body.policy._id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(policyRead.status).toBe(200);
+      expect(policyRead.body.policy._id).toBe(policy.body.policy._id);
+
+      const summaryRead = await request(app)
+        .get('/api/sla/summary')
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(summaryRead.status).toBe(200);
     }
   );
 });

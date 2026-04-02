@@ -18,6 +18,7 @@ import {
   extractInviteTokenFromLogs,
   extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
+import { patchPlanForTests } from './helpers/billing.js';
 
 const maybeDbTest = globalThis.__DB_TESTS_DISABLED__ ? test.skip : test;
 
@@ -726,5 +727,85 @@ describe('Files v1 endpoints', () => {
 
     expect(response.status).toBe(503);
     expect(response.body.messageKey).toBe('errors.file.storageUnavailable');
+  });
+
+  maybeDbTest('upload is blocked when storage byte limit would be exceeded', async () => {
+    const owner = await createVerifiedUser({
+      email: 'files-storage-limit-owner@example.com',
+    });
+
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        storageBytes: 3,
+      },
+    });
+
+    const response = await uploadTextFile(
+      owner.accessToken,
+      'storage-limit.txt',
+      '1234'
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body.messageKey).toBe(
+      'errors.billing.storageLimitExceeded'
+    );
+  });
+
+  maybeDbTest('upload is blocked when monthly upload limit is reached', async () => {
+    const owner = await createVerifiedUser({
+      email: 'files-monthly-upload-limit-owner@example.com',
+    });
+
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        uploadsPerMonth: 1,
+      },
+    });
+
+    const first = await uploadTextFile(owner.accessToken, 'monthly-one.txt');
+    expect(first.status).toBe(200);
+
+    const second = await uploadTextFile(owner.accessToken, 'monthly-two.txt');
+    expect(second.status).toBe(409);
+    expect(second.body.messageKey).toBe(
+      'errors.billing.uploadLimitExceeded'
+    );
+  });
+
+  maybeDbTest('delete decrements current storage usage but does not decrement uploads this period', async () => {
+    const owner = await createVerifiedUser({
+      email: 'files-delete-usage-owner@example.com',
+    });
+
+    const upload = await uploadTextFile(
+      owner.accessToken,
+      'usage-delete.txt',
+      'hello usage'
+    );
+    expect(upload.status).toBe(200);
+
+    const usageAfterUpload = await request(app)
+      .get('/api/billing/usage')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+
+    expect(usageAfterUpload.status).toBe(200);
+    expect(usageAfterUpload.body.usage.current.storageBytes).toBeGreaterThan(0);
+    expect(usageAfterUpload.body.usage.monthly.uploadsCount).toBe(1);
+
+    const deleted = await request(app)
+      .delete(`/api/files/${upload.body.file._id}`)
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+    expect(deleted.status).toBe(200);
+
+    const usageAfterDelete = await request(app)
+      .get('/api/billing/usage')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+
+    expect(usageAfterDelete.status).toBe(200);
+    expect(usageAfterDelete.body.usage.current.storageBytes).toBe(0);
+    expect(usageAfterDelete.body.usage.monthly.uploadsCount).toBe(1);
   });
 });

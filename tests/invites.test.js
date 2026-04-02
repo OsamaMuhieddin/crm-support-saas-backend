@@ -13,6 +13,10 @@ import {
   extractInviteTokenFromLogs,
   extractOtpCodeFromLogs
 } from './helpers/email-capture.js';
+import {
+  patchPlanForTests,
+  setWorkspaceBillingPlanForTests,
+} from './helpers/billing.js';
 
 const signupAndCaptureOtp = async ({ email, password = 'Password123!', name }) => {
   const { response, logs } = await captureFallbackEmail(() =>
@@ -310,5 +314,211 @@ describe('Workspace invites lifecycle', () => {
 
     expect(meResponse.status).toBe(200);
     expect(meResponse.body.workspace._id).toBe(owner.workspaceId);
+  });
+
+  maybeDbTest('create invite is blocked when seat capacity is full and pending invites consume reserved seats', async () => {
+    const owner = await createVerifiedUser({
+      email: 'owner-seat-limit-create@example.com'
+    });
+
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        seatsIncluded: 3,
+      },
+    });
+
+    const firstInvite = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: 'seat-limit-a@example.com',
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+    const secondInvite = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: 'seat-limit-b@example.com',
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+
+    expect(firstInvite.response.status).toBe(200);
+    expect(secondInvite.response.status).toBe(200);
+
+    const blocked = await request(app)
+      .post(`/api/workspaces/${owner.workspaceId}/invites`)
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({
+        email: 'seat-limit-c@example.com',
+        roleKey: WORKSPACE_ROLES.AGENT,
+      });
+
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.messageKey).toBe('errors.billing.seatLimitExceeded');
+  });
+
+  maybeDbTest('accept invite for verified user is blocked when seat capacity is unavailable at activation time', async () => {
+    const owner = await createVerifiedUser({
+      email: 'owner-seat-limit-accept@example.com'
+    });
+    const invitee = await createVerifiedUser({
+      email: 'seat-limit-accept-user@example.com'
+    });
+
+    const created = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: invitee.user.email,
+      roleKey: WORKSPACE_ROLES.ADMIN
+    });
+
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        seatsIncluded: 1,
+      },
+    });
+
+    const acceptResponse = await request(app).post('/api/workspaces/invites/accept').send({
+      token: created.token,
+      email: invitee.user.email
+    });
+
+    expect(acceptResponse.status).toBe(409);
+    expect(acceptResponse.body.messageKey).toBe('errors.billing.seatLimitExceeded');
+
+    const invite = await WorkspaceInvite.findById(created.response.body.invite._id);
+    expect(invite.status).toBe(INVITE_STATUS.PENDING);
+  });
+
+  maybeDbTest('verify-email invite finalization is blocked when seat capacity is unavailable at activation time', async () => {
+    const owner = await createVerifiedUser({
+      email: 'owner-seat-limit-finalize@example.com'
+    });
+
+    const created = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: 'seat-limit-finalize-user@example.com',
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+
+    const acceptResult = await captureFallbackEmail(() =>
+      request(app).post('/api/workspaces/invites/accept').send({
+        token: created.token,
+        email: 'seat-limit-finalize-user@example.com',
+        password: 'Password123!',
+        name: 'Seat Finalize User'
+      })
+    );
+
+    expect(acceptResult.response.status).toBe(200);
+    expect(acceptResult.response.body.messageKey).toBe(
+      'success.invite.acceptRequiresVerification'
+    );
+
+    const verifyCode = extractOtpCodeFromLogs(acceptResult.logs);
+    expect(verifyCode).toBeTruthy();
+
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        seatsIncluded: 1,
+      },
+    });
+
+    const verifyResponse = await request(app).post('/api/auth/verify-email').send({
+      email: 'seat-limit-finalize-user@example.com',
+      code: verifyCode,
+      inviteToken: created.token
+    });
+
+    expect(verifyResponse.status).toBe(409);
+    expect(verifyResponse.body.messageKey).toBe('errors.billing.seatLimitExceeded');
+
+    const invite = await WorkspaceInvite.findById(created.response.body.invite._id);
+    expect(invite.status).toBe(INVITE_STATUS.PENDING);
+  });
+
+  maybeDbTest('suspended and removed members do not consume seats while pending invites still do', async () => {
+    const owner = await createVerifiedUser({
+      email: 'owner-seat-suspended-removed@example.com'
+    });
+    const firstMember = await createVerifiedUser({
+      email: 'seat-suspended-member@example.com'
+    });
+    const secondMember = await createVerifiedUser({
+      email: 'seat-removed-member@example.com'
+    });
+
+    const firstInvite = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: firstMember.user.email,
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+    const secondInvite = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: secondMember.user.email,
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+
+    expect(
+      (await request(app).post('/api/workspaces/invites/accept').send({
+        token: firstInvite.token,
+        email: firstMember.user.email
+      })).status
+    ).toBe(200);
+    expect(
+      (await request(app).post('/api/workspaces/invites/accept').send({
+        token: secondInvite.token,
+        email: secondMember.user.email
+      })).status
+    ).toBe(200);
+
+    const [firstMembership, secondMembership] = await Promise.all([
+      WorkspaceMember.findOne({
+        workspaceId: owner.workspaceId,
+        userId: firstMember.user._id,
+      }),
+      WorkspaceMember.findOne({
+        workspaceId: owner.workspaceId,
+        userId: secondMember.user._id,
+      }),
+    ]);
+
+    firstMembership.status = MEMBER_STATUS.SUSPENDED;
+    await firstMembership.save();
+
+    secondMembership.status = MEMBER_STATUS.REMOVED;
+    secondMembership.removedAt = new Date();
+    await secondMembership.save();
+
+    await setWorkspaceBillingPlanForTests({
+      workspaceId: owner.workspaceId,
+      planKey: 'starter',
+    });
+    await patchPlanForTests({
+      planKey: 'starter',
+      limits: {
+        seatsIncluded: 3,
+      },
+    });
+
+    const reserveA = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: 'seat-open-a@example.com',
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+    const reserveB = await createInviteWithToken({
+      workspaceId: owner.workspaceId,
+      accessToken: owner.accessToken,
+      email: 'seat-open-b@example.com',
+      roleKey: WORKSPACE_ROLES.AGENT
+    });
+
+    expect(reserveA.response.status).toBe(200);
+    expect(reserveB.response.status).toBe(200);
   });
 });

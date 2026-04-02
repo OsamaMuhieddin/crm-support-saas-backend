@@ -96,6 +96,8 @@ Session-context endpoints:
 
 ## 3) Quick Start Flows
 
+The flows in this section are product-wide entry points. Billing keeps its own quick-start block immediately before the billing endpoint reference so checkout, portal, and webhook-driven sync stay documented next to the billing APIs.
+
 ### Flow A: Signup -> Verify Email -> Me
 
 1. `POST /api/auth/signup` with `email`, `password`, optional `name`.
@@ -4867,6 +4869,555 @@ npm run mailboxes:backfill-default
   - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
 - Notes:
   - the operation is idempotent.
+
+## 14) Billing Quick Start Flows
+
+### Flow A: Open Billing Summary
+
+1. Authenticate with a workspace-scoped access token as an `owner` or `admin`.
+2. Ensure the target workspace is the active workspace for the session.
+3. Call `GET /api/billing/summary`.
+4. Use the returned subscription, entitlements, usage, and billing flags as the FE bootstrap state.
+
+### Flow B: Start First Paid Billing Setup
+
+1. Call `GET /api/billing/catalog` and let the user choose one fixed plan plus optional `extra_seat` and `extra_storage` add-ons.
+2. Call `POST /api/billing/checkout-session`.
+3. Redirect the user to the returned Stripe Checkout URL.
+4. Wait for Stripe webhook sync to update local subscription state.
+
+### Flow C: Open Billing Portal For Ongoing Changes
+
+1. Ensure the workspace already has a Stripe customer linkage.
+2. Call `POST /api/billing/portal-session`.
+3. Redirect the user to the returned Stripe Billing Portal URL.
+4. Let Stripe webhooks sync upgrades, downgrades, payment recovery, and cancellation state back into the local billing records.
+
+## 15) Billing Endpoints Reference
+
+### GET `/api/billing/catalog`
+
+- Purpose: return the fixed active Billing v1 catalog for the active workspace session.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "catalog": {
+    "version": "v1",
+    "provider": "stripe",
+    "currency": "USD",
+    "trialDays": 14,
+    "graceDays": 7,
+    "defaultPlanKey": "starter",
+    "plans": [
+      {
+        "_id": "65f1...",
+        "key": "starter",
+        "name": "Starter",
+        "price": 29,
+        "currency": "USD",
+        "isActive": true,
+        "sortOrder": 1,
+        "catalogVersion": "v1",
+        "limits": {
+          "seatsIncluded": 3,
+          "mailboxes": 1,
+          "storageBytes": 5368709120,
+          "uploadsPerMonth": 1000,
+          "ticketsPerMonth": 3000
+        },
+        "features": {
+          "billingEnabled": true,
+          "portalEnabled": true,
+          "checkoutEnabled": true,
+          "slaEnabled": false
+        }
+      },
+      {
+        "_id": "65f2...",
+        "key": "business",
+        "name": "Business",
+        "price": 199,
+        "currency": "USD",
+        "isActive": true,
+        "sortOrder": 3,
+        "catalogVersion": "v1",
+        "limits": {
+          "seatsIncluded": 25,
+          "mailboxes": 10,
+          "storageBytes": 107374182400,
+          "uploadsPerMonth": 8000,
+          "ticketsPerMonth": 20000
+        },
+        "features": {
+          "billingEnabled": true,
+          "portalEnabled": true,
+          "checkoutEnabled": true,
+          "slaEnabled": true
+        }
+      }
+    ],
+    "addons": [
+      {
+        "_id": "65f3...",
+        "key": "extra_seat",
+        "name": "Extra Seat",
+        "type": "seat",
+        "price": 12,
+        "currency": "USD",
+        "isActive": true,
+        "sortOrder": 1,
+        "catalogVersion": "v1",
+        "effects": {
+          "seats": 1,
+          "storageBytes": 0
+        }
+      },
+      {
+        "_id": "65f4...",
+        "key": "extra_storage",
+        "name": "Extra Storage",
+        "type": "usage",
+        "price": 10,
+        "currency": "USD",
+        "isActive": true,
+        "sortOrder": 2,
+        "catalogVersion": "v1",
+        "effects": {
+          "seats": 0,
+          "storageBytes": 26843545600
+        }
+      }
+    ]
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+
+### GET `/api/billing/subscription`
+
+- Purpose: return the current workspace subscription foundation view.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "subscription": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "provider": "stripe",
+    "status": "active",
+    "plan": {
+      "_id": "65f2...",
+      "key": "growth",
+      "name": "Growth",
+      "price": 79,
+      "currency": "USD",
+      "isActive": true,
+      "sortOrder": 2,
+      "catalogVersion": "v1",
+      "limits": {
+        "seatsIncluded": 10,
+        "mailboxes": 3,
+        "storageBytes": 26843545600,
+        "uploadsPerMonth": 3000,
+        "ticketsPerMonth": 8000
+      },
+      "features": {
+        "billingEnabled": true,
+        "portalEnabled": true,
+        "checkoutEnabled": true,
+        "slaEnabled": true
+      }
+    },
+    "addonItems": [
+      {
+        "addon": {
+          "_id": "65f3...",
+          "key": "extra_seat",
+          "name": "Extra Seat",
+          "type": "seat",
+          "price": 12,
+          "currency": "USD",
+          "isActive": true,
+          "sortOrder": 1,
+          "catalogVersion": "v1",
+          "effects": {
+            "seats": 1,
+            "storageBytes": 0
+          }
+        },
+        "quantity": 2
+      }
+    ],
+    "stripeCustomerId": "cus_123",
+    "stripeSubscriptionId": "sub_123",
+    "currentPeriodStart": "2026-03-31T00:00:00.000Z",
+    "currentPeriodEnd": "2026-04-30T00:00:00.000Z",
+    "trialStartedAt": "2026-03-31T00:00:00.000Z",
+    "trialEndsAt": "2026-04-14T00:00:00.000Z",
+    "graceStartsAt": null,
+    "graceEndsAt": null,
+    "pastDueAt": null,
+    "partialBlockStartsAt": null,
+    "canceledAt": null,
+    "cancelAtPeriodEnd": false,
+    "lastSyncedAt": "2026-03-31T10:00:00.000Z",
+    "catalogVersion": "v1",
+    "metadata": {
+      "source": "stripe",
+      "stripeStatus": "active",
+      "lastStripeEventType": "customer.subscription.updated"
+    },
+    "flags": {
+      "isTrialing": false,
+      "isPastDue": false,
+      "isInGracePeriod": false,
+      "isPartialBlockActive": false,
+      "cancelAtPeriodEnd": false,
+      "overLimit": {
+        "seats": false,
+        "mailboxes": false,
+        "storageBytes": false,
+        "uploadsPerMonth": false,
+        "ticketsPerMonth": false,
+        "any": false
+      }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+- Notes:
+  - the backend auto-bootstraps billing foundation rows when the active workspace does not have them yet.
+  - if a workspace finishes its trial without setting up billing, local lifecycle fields move into grace and `past_due` state without pretending a payment was made.
+
+### GET `/api/billing/entitlements`
+
+- Purpose: return the current computed entitlement snapshot for the active workspace.
+- Requirements:
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "entitlements": {
+    "limits": {
+      "seatsIncluded": 12,
+      "mailboxes": 3,
+      "storageBytes": 26843545600,
+      "uploadsPerMonth": 3000,
+      "ticketsPerMonth": 8000
+    },
+    "features": {
+      "billingEnabled": true,
+      "portalEnabled": true,
+      "checkoutEnabled": true,
+      "slaEnabled": true
+    },
+    "usage": {
+      "current": {
+        "seatsUsed": 4,
+        "activeMailboxes": 2,
+        "storageBytes": 73400320
+      },
+      "monthly": {
+        "periodKey": "2026-03",
+        "ticketsCreated": 11,
+        "uploadsCount": 7
+      }
+    },
+    "overLimit": {
+      "seats": false,
+      "mailboxes": false,
+      "storageBytes": false,
+      "uploadsPerMonth": false,
+      "ticketsPerMonth": false,
+      "any": false
+    },
+    "computedAt": "2026-03-31T10:00:00.000Z",
+    "sourceSnapshot": {
+      "catalogVersion": "v1",
+      "plan": {
+        "_id": "65f2...",
+        "key": "growth",
+        "name": "Growth"
+      }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+
+### GET `/api/billing/usage`
+
+- Purpose: return the active workspace billing usage view.
+- Requirements:
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "usage": {
+    "current": {
+      "seatsUsed": 4,
+      "activeMailboxes": 2,
+      "storageBytes": 73400320
+    },
+    "monthly": {
+      "periodKey": "2026-03",
+      "ticketsCreated": 11,
+      "uploadsCount": 7
+    },
+    "overLimit": {
+      "seats": false,
+      "mailboxes": false,
+      "storageBytes": false,
+      "uploadsPerMonth": false,
+      "ticketsPerMonth": false,
+      "any": false
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+
+### GET `/api/billing/summary`
+
+- Purpose: return a compact FE-oriented billing summary for the active workspace.
+- Requirements:
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "summary": {
+    "subscription": {
+      "_id": "65f1...",
+      "workspaceId": "65aa...",
+      "provider": "stripe",
+      "status": "past_due",
+      "trialEndsAt": "2026-04-14T00:00:00.000Z",
+      "graceStartsAt": "2026-04-14T00:00:00.000Z",
+      "graceEndsAt": "2026-04-21T00:00:00.000Z",
+      "partialBlockStartsAt": null
+    },
+    "entitlements": {
+      "limits": {
+        "seatsIncluded": 3,
+        "mailboxes": 1,
+        "storageBytes": 5368709120,
+        "uploadsPerMonth": 1000,
+        "ticketsPerMonth": 3000
+      },
+      "features": {
+        "billingEnabled": true,
+        "portalEnabled": true,
+        "checkoutEnabled": true,
+        "slaEnabled": false
+      }
+    },
+    "usage": {
+      "current": {
+        "seatsUsed": 1,
+        "activeMailboxes": 1,
+        "storageBytes": 0
+      },
+      "monthly": {
+        "periodKey": "2026-04",
+        "ticketsCreated": 0,
+        "uploadsCount": 0
+      },
+      "overLimit": {
+        "seats": false,
+        "mailboxes": false,
+        "storageBytes": false,
+        "uploadsPerMonth": false,
+        "ticketsPerMonth": false,
+        "any": false
+      }
+    },
+    "flags": {
+      "isTrialing": false,
+      "isPastDue": true,
+      "isInGracePeriod": true,
+      "isPartialBlockActive": false,
+      "cancelAtPeriodEnd": false,
+      "overLimit": {
+        "seats": false,
+        "mailboxes": false,
+        "storageBytes": false,
+        "uploadsPerMonth": false,
+        "ticketsPerMonth": false,
+        "any": false
+      }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+
+### POST `/api/billing/checkout-session`
+
+- Purpose: create a Stripe Checkout session for first paid billing setup for the active workspace.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "planKey": "growth",
+  "addonItems": [
+    {
+      "addonKey": "extra_seat",
+      "quantity": 2
+    }
+  ],
+  "successUrl": "https://app.example.com/settings/billing/success",
+  "cancelUrl": "https://app.example.com/settings/billing/cancel"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.billing.checkoutSessionCreated",
+  "message": "Checkout session created successfully.",
+  "checkoutSession": {
+    "sessionId": "cs_test_123",
+    "url": "https://checkout.stripe.com/c/pay/cs_test_123",
+    "expiresAt": "2026-03-31T11:00:00.000Z",
+    "provider": "stripe"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `409` `errors.billing.checkoutUnavailable | errors.billing.checkoutAlreadyManagedInPortal`
+  - `404` `errors.billing.planNotFound | errors.billing.addonNotFound`
+  - `422` `errors.validation.failed | errors.billing.checkoutUrlsRequired`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable | errors.billing.providerNotConfigured | errors.billing.providerPriceMissing`
+- Notes:
+  - this route is intended for initial paid setup when the workspace does not already have a managed Stripe subscription.
+  - once a Stripe subscription exists, ongoing upgrades, downgrades, add-on changes, payment recovery, and cancellation-state changes are handled through the billing portal and then synced back by webhooks.
+  - starting Checkout does not reset local usage counters.
+
+### POST `/api/billing/portal-session`
+
+- Purpose: create a Stripe Billing Portal session for the active workspace.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "returnUrl": "https://app.example.com/settings/billing"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.billing.portalSessionCreated",
+  "message": "Billing portal session created successfully.",
+  "portalSession": {
+    "url": "https://billing.stripe.com/p/session/test_123",
+    "provider": "stripe",
+    "createdAt": "2026-03-31T10:00:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `409` `errors.billing.portalUnavailable`
+  - `422` `errors.validation.failed`
+  - `503` `errors.billing.disabled | errors.billing.providerNotConfigured`
+
+### POST `/api/billing/webhooks/stripe`
+
+- Purpose: accept Stripe webhook events, verify signatures, persist them idempotently, and enqueue follow-up processing.
+- Requirements:
+  - public endpoint
+  - Stripe must send the raw signed JSON body
+  - `stripe-signature` header is required
+- Request body:
+  - raw Stripe event JSON
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.billing.webhookAccepted",
+  "message": "Billing webhook accepted successfully.",
+  "accepted": true,
+  "duplicate": false,
+  "queued": true,
+  "webhookEventId": "65fa...",
+  "eventId": "evt_123",
+  "eventType": "customer.subscription.updated"
+}
+```
+
+- Common errors:
+  - `400` `errors.billing.webhookSignatureInvalid`
+  - `503` `errors.billing.providerNotConfigured | errors.billing.webhookNotConfigured`
+- Notes:
+  - the event is persisted before the queue step so replay and repair remain possible if Redis or worker processing is temporarily unavailable.
+  - duplicate Stripe event ids are accepted idempotently and do not create duplicate inbox rows.
 
 ### POST `/api/tickets/tags/:id/deactivate`
 

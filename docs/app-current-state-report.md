@@ -25,6 +25,7 @@ Implemented business pillars:
 - Workspace-based tenancy and explicit active-workspace switching.
 - Workspace invite lifecycle (create, resend, revoke, accept, finalize).
 - Internal realtime collaboration for authenticated workspace clients, including Socket.IO bootstrap/auth/rooms, ticket/message/participant live business events, and ephemeral ticket presence/typing/soft-claim coordination.
+- Billing v1 runtime with fixed catalog sync, workspace billing reads, Stripe checkout/portal entrypoints, Stripe webhook intake, and worker-backed lifecycle sync foundations.
 - Secure file upload/list/download/delete inside workspace boundaries.
 - Mailbox queue management with strict default-mailbox invariants.
 - SLA v1 active surface: business-hours management, SLA policy management, workspace default policy assignment, mailbox optional SLA overrides, ticket SLA snapshot/runtime behavior, and lightweight SLA summary.
@@ -42,7 +43,7 @@ Partially implemented business pillars:
 Planned business pillars with data models but no live API flows yet:
 
 - Integrations management.
-- Billing/plan enforcement runtime logic.
+- Billing enforcement across invites, mailboxes, files, tickets, and SLA capability.
 - Automations execution.
 - Notifications delivery workflows.
 - Platform admin runtime workflows.
@@ -170,6 +171,16 @@ Current effective permissions by feature:
 7. Reopen resumes from remaining business time instead of resetting a fresh resolution target, while `closed` remains downstream of resolution success.
 8. Ticket list/detail/action responses derive SLA statuses in memory, and `GET /api/sla/summary` exposes lightweight runtime-aware workspace totals without hidden writes.
 
+#### Flow J: Billing v1 Workspace Billing Runtime
+
+1. Owner/Admin authenticates with a workspace-scoped access token.
+2. Frontend loads `GET /api/billing/catalog` to read the fixed active plan/add-on catalog.
+3. Frontend loads `GET /api/billing/summary` to bootstrap current subscription, entitlements, usage, and trial/grace flags.
+4. Frontend can start first paid setup with `POST /api/billing/checkout-session`.
+5. Existing paying workspaces can open Stripe Billing Portal with `POST /api/billing/portal-session`.
+6. Stripe webhooks land on `POST /api/billing/webhooks/stripe`, are persisted idempotently, and are processed through billing workers.
+7. The backend auto-syncs the fixed catalog and auto-creates missing workspace billing foundation records on demand.
+
 ### 2.4 Business State Summary
 
 Production-ready business slices:
@@ -191,7 +202,7 @@ Foundation-only slices:
 - Users API stub.
 - Inbox/Admin routes mounted but empty.
 - SLA v1 next-response/jobs/reporting/holiday/cycle-history additions beyond the active runtime surface.
-- Billing/automations/notifications/platform models are present but no runtime product flows.
+- Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, Stripe webhook intake, and lifecycle sync foundations; automations/notifications/platform remain model-only.
 
 ## 3) Technical Side
 
@@ -554,7 +565,7 @@ Any request under those paths currently falls through to 404.
 | `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                                                              |
 | `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                                                          |
 | `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
-| `billing`       | No             | No API                                                                                                 | Models implemented only                                                                                                                                                                              |
+| `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, billing webhook inbox persistence, and worker-backed lifecycle sync |
 | `notifications` | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
 | `platform`      | No             | No API                                                                                                 | Models implemented only                                                                                                                                                                              |
 | `roles`         | No             | No API                                                                                                 | No schema content yet                                                                                                                                                                                |
@@ -632,11 +643,12 @@ Any request under those paths currently falls through to 404.
 
 | Model          | Purpose                         | Key Fields                                                                                                            | Important Indexes/Constraints                                                      |
 | -------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `Plan`         | Plan catalog                    | `key`, `name`, `price`, `currency`, `limits`, `features`                                                              | Unique `key`                                                                       |
-| `Addon`        | Addon catalog                   | `key`, `name`, `type`, `price`, `currency`, `effects`                                                                 | Unique `key`                                                                       |
-| `Subscription` | Workspace subscription state    | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `stripeCustomerId`, `stripeSubscriptionId`, period fields | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId` |
-| `Entitlement`  | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `computedAt`, `sourceSnapshot`                                                   | Unique partial `workspaceId` when not deleted                                      |
-| `UsageMeter`   | Monthly usage counters          | `workspaceId`, `periodKey`, usage counters                                                                            | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`)              |
+| `Plan`         | Fixed plan catalog              | `key`, `name`, `price`, `currency`, `limits`, `features`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata` | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                 |
+| `Addon`        | Fixed add-on catalog            | `key`, `name`, `type`, `price`, `currency`, `effects`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata`    | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                 |
+| `Subscription` | Workspace subscription state    | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `provider`, Stripe ids, trial/grace/period fields       | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId`; unique partial index on `stripeSubscriptionId` |
+| `Entitlement`  | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `usage`, `computedAt`, `sourceSnapshot`                                         | Unique partial `workspaceId` when not deleted                                      |
+| `UsageMeter`   | Monthly usage counters          | `workspaceId`, `periodKey`, `ticketsCreated`, `uploadsCount`                                                          | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`)              |
+| `BillingWebhookEvent` | Billing webhook inbox    | `workspaceId`, `provider`, `eventId`, `eventType`, `status`, `receivedAt`, `processedAt`, `enqueuedAt`, `processingJobId`, `payloadHash`, `payload`, `normalizedPayload`, `lastError`, `lastEnqueueError` | Unique (`provider`,`eventId`); indexes on status/time, provider/eventType, and workspace/time |
 
 #### 3.6.10 Automations, Notifications, Platform Collections
 
@@ -722,6 +734,10 @@ NPM scripts:
 - `npm run dev`
 - `npm run start`
 - `npm run test`
+- `npm run billing:sync-catalog`
+- `npm run billing:worker`
+- `npm run billing:replay-webhooks`
+- `npm run billing:sync-workspace -- <workspaceId>`
 - `npm run mailboxes:backfill-default`
 
 Developer utility scripts:
@@ -732,6 +748,21 @@ Developer utility scripts:
   - Uses `/api/realtime/bootstrap`, connects a real Socket.IO client, subscribes the authenticated workspace, optionally subscribes a ticket, and logs incoming live events for quick manual verification.
 
 Maintenance script:
+
+- `scripts/sync-billing-catalog.js`:
+- Connects DB.
+- Syncs the fixed Billing v1 plan/add-on catalog manifest into MongoDB.
+- Prints the sync summary and is safe to re-run.
+
+- `scripts/replay-billing-webhooks.js`:
+- Connects DB.
+- Replays pending or failed persisted billing webhook inbox events.
+- Prints processed and failed counts.
+
+- `scripts/sync-billing-workspace.js`:
+- Connects DB.
+- Re-syncs one workspace billing subscription from the provider-facing billing service seam.
+- Prints the resulting workspace billing status.
 
 - `scripts/backfill-default-mailboxes.js`:
 - Connects DB.
@@ -761,6 +792,7 @@ Covered areas:
 - SLA business-hours helpers/validation, business-time math helpers, policy helpers/selection rules, management endpoints, ticket runtime behavior, summary endpoint, RBAC, and mailbox optional override compatibility.
 - Ticket category/tag CRUD-like dictionary behavior, RBAC, and anti-enumeration.
 - Ticket assignment/lifecycle/participant actions and their guardrails.
+- Billing catalog sync, workspace billing reads, checkout/portal RBAC and validation, webhook verification/idempotency, and provider lifecycle sync behavior.
 - Realtime foundation, business events, and collaboration flows through real `socket.io-client` connections and REST-triggered writes.
 - Validation key existence in i18n for key modules.
 - Storage provider config fail-fast behavior.
@@ -778,7 +810,7 @@ Not fully covered by runtime tests:
 
 - Empty route modules (`inbox/integrations/admin`) because no behavior yet.
 - SLA jobs/reminders/reporting/holiday behavior because the active runtime surface still stops at first-response/resolution without background processing.
-- Model-only modules (`billing/automations/notifications/platform`) because no API flows yet.
+- Automations/notifications/platform modules because they still have no runtime APIs.
 
 ### 3.12 Known Current Gaps and Implementation Notes
 
@@ -792,8 +824,8 @@ Not fully covered by runtime tests:
 - Viewer members remain allowed to send advisory collaboration signals on readable tickets in the current internal-only phase.
 - Mounted route groups `inbox`, `integrations`, and `admin` are empty.
 - Several domains currently ship schema/model groundwork without exposed APIs.
-- Jobs subsystem under `src/infra/jobs` is placeholder only.
-- Seeding is documented as planned but not implemented.
+- Background jobs now use BullMQ foundations on top of the shared Redis config path, with dedicated billing workers for webhook follow-up processing plus lifecycle and repair queue seams.
+- Billing catalog seeding/sync is implemented; broader demo seed data is still not implemented.
 
 ### 3.13 Defined Enums and Constants (Current)
 
@@ -812,7 +844,7 @@ Not fully covered by runtime tests:
 | `MESSAGE_DIRECTION`           | `inbound`, `outbound`                                                    |
 | `TICKET_MESSAGE_TYPE`         | `customer_message`, `public_reply`, `internal_note`, `system_event`      |
 | `NOTIFICATION_TYPE`           | `ticket_assigned`, `ticket_mention`, `ticket_reply`, `system`, `billing` |
-| `BILLING_SUBSCRIPTION_STATUS` | `trialing`, `active`, `past_due`, `canceled`, `incomplete`               |
+| `BILLING_SUBSCRIPTION_STATUS` | `trialing`, `active`, `past_due`, `canceled`, `incomplete`, `incomplete_expired` |
 | `BILLING_ADDON_TYPE`          | `seat`, `usage`, `feature`                                               |
 | `PLATFORM_ROLES`              | `super_admin`, `platform_admin`, `platform_support`                      |
 
@@ -939,6 +971,17 @@ This section is an explicit endpoint inventory from mounted route code.
 
 - `GET /api/realtime/bootstrap`
 
+### Billing
+
+- `GET /api/billing/catalog`
+- `GET /api/billing/subscription`
+- `GET /api/billing/entitlements`
+- `GET /api/billing/usage`
+- `GET /api/billing/summary`
+- `POST /api/billing/checkout-session`
+- `POST /api/billing/portal-session`
+- `POST /api/billing/webhooks/stripe`
+
 ### Mounted Empty Router Prefixes
 
 - `/api/inbox`
@@ -957,5 +1000,6 @@ Today's backend is strongest in:
 - Mailboxes v1 with robust default-state consistency logic.
 - SLA v1 active surface with business-hours/policy management, workspace default and mailbox override assignment, ticket snapshot/runtime behavior, and lightweight summary support.
 - Tickets core records with workspace numbering, reference validation, and dictionary-backed categorization.
+- Billing v1 read-only workspace foundation with fixed catalog sync, subscription bootstrap, and entitlement/usage summary reads.
 
 The codebase also contains substantial forward-looking data modeling for deeper SLA runtime behavior, billing, automations, integrations, notifications, and platform admin domains, with runtime APIs to be incrementally added on top.

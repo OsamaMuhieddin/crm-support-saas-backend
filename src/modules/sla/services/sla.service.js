@@ -28,6 +28,7 @@ import {
   findSlaPolicyInWorkspaceOrThrow,
 } from './sla-reference.service.js';
 import { deriveTicketSlaState } from './sla-ticket-runtime.service.js';
+import { assertWorkspaceSlaWriteAllowed } from '../../billing/services/billing-enforcement.service.js';
 
 const ELEVATED_WORKSPACE_ROLES = new Set([
   WORKSPACE_ROLES.OWNER,
@@ -796,6 +797,10 @@ export const createBusinessHours = async ({ workspaceId, payload }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const normalized = normalizeBusinessHoursCreatePayload(payload);
 
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId: workspaceObjectId,
+  });
+
   await findWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     projection: '_id',
@@ -816,6 +821,10 @@ export const updateBusinessHours = async ({
   businessHoursId,
   payload,
 }) => {
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId,
+  });
+
   const businessHours = await findBusinessHoursInWorkspaceOrThrow({
     workspaceId,
     businessHoursId,
@@ -1007,6 +1016,10 @@ export const createSlaPolicy = async ({ workspaceId, payload }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const normalized = normalizeSlaPolicyCreatePayload(payload);
 
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId: workspaceObjectId,
+  });
+
   await findWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     projection: '_id',
@@ -1037,6 +1050,10 @@ export const createSlaPolicy = async ({ workspaceId, payload }) => {
 };
 
 export const updateSlaPolicy = async ({ workspaceId, policyId, payload }) => {
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId,
+  });
+
   const policy = await findSlaPolicyInWorkspaceOrThrow({
     workspaceId,
     policyId,
@@ -1094,6 +1111,10 @@ export const updateSlaPolicy = async ({ workspaceId, policyId, payload }) => {
 };
 
 export const activateSlaPolicy = async ({ workspaceId, policyId }) => {
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId,
+  });
+
   const workspace = await findWorkspaceOrThrow({
     workspaceId,
     projection: '_id defaultSlaPolicyId',
@@ -1121,6 +1142,10 @@ export const deactivateSlaPolicy = async ({
   policyId,
   replacementPolicyId = null,
 }) => {
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId,
+  });
+
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const workspace = await findWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
@@ -1258,6 +1283,11 @@ export const deactivateSlaPolicy = async ({
 
 export const setDefaultSlaPolicy = async ({ workspaceId, policyId }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
+
+  await assertWorkspaceSlaWriteAllowed({
+    workspaceId: workspaceObjectId,
+  });
+
   const policy = await findSlaPolicyInWorkspaceOrThrow({
     workspaceId: workspaceObjectId,
     policyId,

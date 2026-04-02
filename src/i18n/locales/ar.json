@@ -34,6 +34,11 @@
       "activated": "تم تفعيل صندوق البريد بنجاح.",
       "deactivated": "تم تعطيل صندوق البريد بنجاح."
     },
+    "billing": {
+      "checkoutSessionCreated": "تم إنشاء جلسة الدفع بنجاح.",
+      "portalSessionCreated": "تم إنشاء جلسة بوابة الفوترة بنجاح.",
+      "webhookAccepted": "تم قبول حدث الفوترة بنجاح."
+    },
     "sla": {
       "businessHours": {
         "created": "تم إنشاء ساعات العمل بنجاح.",
@@ -169,6 +174,32 @@
       "defaultCannotDeactivate": "لا يمكن تعطيل صندوق البريد الافتراضي.",
       "lastActiveCannotDeactivate": "لا يمكن تعطيل آخر صندوق بريد نشط.",
       "defaultConflict": "تعذر تحديث صندوق البريد الافتراضي. يرجى إعادة المحاولة."
+    },
+    "billing": {
+      "disabled": "الفوترة غير مفعلة حاليًا.",
+      "catalogUnavailable": "كتالوج الفوترة غير متاح حاليًا.",
+      "planNotFound": "لم يتم العثور على خطة الفوترة المحددة.",
+      "addonNotFound": "لم يتم العثور على إضافة فوترة واحدة أو أكثر من الإضافات المحددة.",
+      "providerNotConfigured": "إعدادات موفر الفوترة غير مكتملة.",
+      "providerPriceMissing": "يوجد نقص في ربط أسعار الموفر داخل كتالوج الفوترة.",
+      "customerUnavailable": "تعذر تجهيز عميل الفوترة حاليًا.",
+      "checkoutUnavailable": "الدفع غير متاح للخطة المحددة.",
+      "checkoutUrlsRequired": "روابط نجاح الدفع وإلغائه مطلوبة.",
+      "checkoutAlreadyManagedInPortal": "توجد لهذه المساحة اشتراك مُدار بالفعل. استخدم بوابة الفوترة بدلًا من ذلك.",
+      "portalUnavailable": "بوابة الفوترة غير متاحة لهذه المساحة بعد.",
+      "subscriptionNotFound": "لم يتم العثور على اشتراك الفوترة.",
+      "providerSyncFailed": "فشلت مزامنة موفر الفوترة.",
+      "seatLimitExceeded": "تم الوصول إلى حد المقاعد لهذه المساحة.",
+      "mailboxLimitExceeded": "تم الوصول إلى حد صناديق البريد النشطة لهذه المساحة.",
+      "storageLimitExceeded": "سيتجاوز هذا الرفع حد التخزين المسموح.",
+      "uploadLimitExceeded": "تم الوصول إلى حد الرفع الشهري لهذه المساحة.",
+      "slaNotIncluded": "ميزة SLA غير متضمنة في خطة الفوترة الحالية.",
+      "partialBlockActive": "الحظر الجزئي للفوترة نشط حاليًا. ما زالت إجراءات الترقية واستعادة الدفع وتقليل الاستخدام متاحة.",
+      "webhookNotConfigured": "إعدادات webhook الخاصة بالفوترة غير مكتملة.",
+      "webhookSignatureInvalid": "توقيع webhook الخاص بالفوترة غير صالح.",
+      "webhookPayloadInvalid": "حمولة webhook الخاصة بالفوترة غير صالحة.",
+      "webhookProcessingFailed": "فشلت معالجة webhook الخاص بالفوترة.",
+      "webhookEventNotFound": "لم يتم العثور على حدث webhook الخاص بالفوترة."
     },
     "sla": {
       "businessHoursNotFound": "لم يتم العثور على ساعات العمل.",

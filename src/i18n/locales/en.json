@@ -34,6 +34,11 @@
       "activated": "Mailbox activated successfully.",
       "deactivated": "Mailbox deactivated successfully."
     },
+    "billing": {
+      "checkoutSessionCreated": "Checkout session created successfully.",
+      "portalSessionCreated": "Billing portal session created successfully.",
+      "webhookAccepted": "Billing webhook accepted successfully."
+    },
     "sla": {
       "businessHours": {
         "created": "Business hours created successfully.",
@@ -169,6 +174,32 @@
       "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
       "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
       "defaultConflict": "Unable to update default mailbox. Please retry."
+    },
+    "billing": {
+      "disabled": "Billing is currently disabled.",
+      "catalogUnavailable": "Billing catalog is currently unavailable.",
+      "planNotFound": "The selected billing plan was not found.",
+      "addonNotFound": "One or more selected billing add-ons were not found.",
+      "providerNotConfigured": "Billing provider configuration is incomplete.",
+      "providerPriceMissing": "The billing catalog is missing provider price mapping.",
+      "customerUnavailable": "Unable to prepare the billing customer right now.",
+      "checkoutUnavailable": "Checkout is not available for the selected plan.",
+      "checkoutUrlsRequired": "Checkout success and cancel URLs are required.",
+      "checkoutAlreadyManagedInPortal": "This workspace already has a managed subscription. Use the billing portal instead.",
+      "portalUnavailable": "Billing portal is not available for this workspace yet.",
+      "subscriptionNotFound": "Billing subscription was not found.",
+      "providerSyncFailed": "Billing provider sync failed.",
+      "seatLimitExceeded": "Seat limit reached for this workspace.",
+      "mailboxLimitExceeded": "Active mailbox limit reached for this workspace.",
+      "storageLimitExceeded": "Storage limit would be exceeded by this upload.",
+      "uploadLimitExceeded": "Monthly upload limit reached for this workspace.",
+      "slaNotIncluded": "SLA is not included in the current billing plan.",
+      "partialBlockActive": "Billing partial block is active. Upgrade, payment recovery, and corrective actions remain available.",
+      "webhookNotConfigured": "Billing webhook configuration is incomplete.",
+      "webhookSignatureInvalid": "Billing webhook signature is invalid.",
+      "webhookPayloadInvalid": "Billing webhook payload is invalid.",
+      "webhookProcessingFailed": "Billing webhook processing failed.",
+      "webhookEventNotFound": "Billing webhook event was not found."
     },
     "sla": {
       "businessHoursNotFound": "Business hours not found.",

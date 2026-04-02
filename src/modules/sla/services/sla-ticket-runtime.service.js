@@ -11,6 +11,7 @@ import {
   getSlaRuleForPriority,
   resolveSlaSelection,
 } from '../utils/sla-policy.helpers.js';
+import { isWorkspaceSlaEnabled } from '../../billing/services/billing-enforcement.service.js';
 
 const ACTIVE_RESOLUTION_STATUSES = new Set([
   TICKET_STATUS.NEW,
@@ -250,6 +251,14 @@ export const resolveTicketSlaSnapshot = async ({
   priority,
   createdAt = new Date(),
 }) => {
+  const slaEnabled = await isWorkspaceSlaEnabled({
+    workspaceId,
+  });
+
+  if (!slaEnabled) {
+    return {};
+  }
+
   const selection = resolveSlaSelection({
     mailbox,
     workspace,

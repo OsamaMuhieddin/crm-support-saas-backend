@@ -19,12 +19,7 @@ const usageMeterSchema = new mongoose.Schema(
       min: 0,
       default: 0
     },
-    storageBytesUsed: {
-      type: Number,
-      min: 0,
-      default: 0
-    },
-    apiCalls: {
+    uploadsCount: {
       type: Number,
       min: 0,
       default: 0

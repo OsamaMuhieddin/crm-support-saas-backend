@@ -1,3 +1,7 @@
-﻿// Placeholder for jobs subsystem (Agenda/Scheduler).
-export const startJobs = async () => {};
-export const stopJobs = async () => {};
+﻿import {
+  startBillingWorkers,
+  stopBillingWorkers,
+} from '../../modules/billing/services/billing-queue.service.js';
+
+export const startJobs = async () => startBillingWorkers();
+export const stopJobs = async () => stopBillingWorkers();

@@ -28,6 +28,34 @@ setDefaultEnv('INVITE_EXPIRES_DAYS', '7');
 setDefaultEnv('EMAIL_FROM', 'test@example.com');
 setDefaultEnv('APP_BASE_URL', 'http://localhost:5000');
 setDefaultEnv('FRONTEND_BASE_URL', 'http://frontend.local');
+setDefaultEnv('BILLING_ENABLED', 'true');
+setDefaultEnv('BILLING_TRIAL_DAYS', '14');
+setDefaultEnv('BILLING_PROVIDER', 'stripe');
+setDefaultEnv('BILLING_CURRENCY', 'USD');
+setDefaultEnv('BILLING_GRACE_DAYS', '7');
+setDefaultEnv('BILLING_CATALOG_VERSION', 'v1');
+setDefaultEnv('STRIPE_SECRET_KEY', 'sk_test_123');
+setDefaultEnv('STRIPE_WEBHOOK_SECRET', 'whsec_test_123');
+setDefaultEnv(
+  'STRIPE_CHECKOUT_SUCCESS_URL',
+  'http://frontend.local/billing/success'
+);
+setDefaultEnv(
+  'STRIPE_CHECKOUT_CANCEL_URL',
+  'http://frontend.local/billing/cancel'
+);
+setDefaultEnv(
+  'STRIPE_PORTAL_RETURN_URL',
+  'http://frontend.local/settings/billing'
+);
+setDefaultEnv('STRIPE_PRICE_STARTER_MONTHLY', 'price_starter_monthly');
+setDefaultEnv('STRIPE_PRICE_GROWTH_MONTHLY', 'price_growth_monthly');
+setDefaultEnv('STRIPE_PRICE_BUSINESS_MONTHLY', 'price_business_monthly');
+setDefaultEnv('STRIPE_PRICE_EXTRA_SEAT_MONTHLY', 'price_extra_seat_monthly');
+setDefaultEnv(
+  'STRIPE_PRICE_EXTRA_STORAGE_MONTHLY',
+  'price_extra_storage_monthly'
+);
 setDefaultEnv('REALTIME_ENABLED', 'true');
 setDefaultEnv('REALTIME_PATH', '/socket.io');
 setDefaultEnv('REALTIME_TRANSPORTS', 'websocket,polling');

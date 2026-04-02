@@ -24,6 +24,11 @@ import {
 import { createOtp } from '../../auth/services/otp.service.js';
 import { mintAccessTokenForSession } from '../../auth/services/session.service.js';
 import { ensureWorkspaceDefaultMailbox } from '../../mailboxes/services/mailboxes.service.js';
+import {
+  assertWorkspaceMemberActivationAllowed,
+  assertWorkspaceSeatReservationAllowed,
+} from '../../billing/services/billing-enforcement.service.js';
+import { createInitialWorkspaceBillingFoundation } from '../../billing/services/billing-foundation.service.js';
 import { disconnectRealtimeSessionSockets } from '../../../infra/realtime/index.js';
 
 const oneDayMs = 24 * 60 * 60 * 1000;
@@ -272,10 +277,27 @@ const findInviteByRawToken = async (token) => {
   return invite;
 };
 
-const createOrActivateMember = async ({ workspaceId, userId, roleKey }) => {
+const createOrActivateMember = async ({
+  workspaceId,
+  userId,
+  roleKey,
+  reservedInviteId = null,
+}) => {
   const existing = await WorkspaceMember.findOne({ workspaceId, userId });
 
   if (existing) {
+    const needsSeatActivation =
+      existing.status !== MEMBER_STATUS.ACTIVE ||
+      existing.deletedAt !== null ||
+      existing.removedAt !== null;
+
+    if (needsSeatActivation) {
+      await assertWorkspaceMemberActivationAllowed({
+        workspaceId,
+        reservedInviteId,
+      });
+    }
+
     existing.status = MEMBER_STATUS.ACTIVE;
     existing.removedAt = null;
     existing.deletedAt = null;
@@ -284,6 +306,11 @@ const createOrActivateMember = async ({ workspaceId, userId, roleKey }) => {
     await existing.save();
     return existing;
   }
+
+  await assertWorkspaceMemberActivationAllowed({
+    workspaceId,
+    reservedInviteId,
+  });
 
   return WorkspaceMember.create({
     workspaceId,
@@ -342,6 +369,7 @@ export const ensureWorkspaceForVerifiedUser = async ({
       workspaceId: invite.workspaceId,
       userId: user._id,
       roleKey: invite.roleKey,
+      reservedInviteId: invite._id,
     });
 
     invite.status = INVITE_STATUS.ACCEPTED;
@@ -390,6 +418,15 @@ export const ensureWorkspaceForVerifiedUser = async ({
       user.lastWorkspaceId = workspace._id;
     }
     await user.save();
+
+    try {
+      await createInitialWorkspaceBillingFoundation({
+        workspaceId: workspace._id,
+      });
+    } catch (error) {
+      console.error('WORKSPACE BILLING BOOTSTRAP ERROR:', error);
+    }
+
     hasUserChanges = false;
   }
 
@@ -559,6 +596,10 @@ export const createWorkspaceInvite = async ({
       throw createError('errors.invite.alreadyMember', 409);
     }
   }
+
+  await assertWorkspaceSeatReservationAllowed({
+    workspaceId,
+  });
 
   const token = generateSecureToken(32);
   const tokenHash = hashValue(token);
@@ -804,6 +845,7 @@ export const acceptWorkspaceInvite = async ({
     workspaceId: invite.workspaceId,
     userId: user._id,
     roleKey: invite.roleKey,
+    reservedInviteId: invite._id,
   });
 
   invite.status = INVITE_STATUS.ACCEPTED;

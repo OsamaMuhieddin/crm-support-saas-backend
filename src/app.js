@@ -21,6 +21,7 @@ if (process.env.TRUST_PROXY) {
 
 // Middlewares
 app.use(cors());
+app.use('/api/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 app.use(langMiddleware);
