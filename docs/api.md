@@ -75,7 +75,92 @@ Session-context endpoints:
   - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
 - `APP_BASE_URL` is still backend runtime base URL.
 
-## 2) Auth model & authorization model
+## 2) Local Billing v1 Dev/Test Setup
+
+This section is for local Billing v1 integration and manual Stripe testing. It documents local runtime setup, not the public API contract itself.
+
+### Required local runtime
+
+- Backend runs on the host machine with `npm run dev`.
+- Billing worker runs as a separate local process with `npm run billing:worker`.
+- Redis is required for BullMQ-backed webhook processing and replay workers:
+  - `docker compose -f docker-compose.redis.yml up -d`
+- Stripe CLI runs in Docker Compose and forwards webhooks to the local backend webhook route:
+  - `docker compose -f docker-compose.stripe.yml up -d stripe-cli`
+  - `docker compose -f docker-compose.stripe.yml logs -f stripe-cli`
+
+### Required billing env
+
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- Stripe price ids for the seeded catalog:
+  - `STRIPE_PRICE_STARTER_MONTHLY`
+  - `STRIPE_PRICE_GROWTH_MONTHLY`
+  - `STRIPE_PRICE_BUSINESS_MONTHLY`
+  - `STRIPE_PRICE_EXTRA_SEAT_MONTHLY`
+  - `STRIPE_PRICE_EXTRA_STORAGE_MONTHLY`
+- Redis/BullMQ toggle for local automation:
+  - `REDIS_ENABLED=true`
+  - `REDIS_URL=redis://127.0.0.1:6379`
+
+### Stripe webhook forwarding note
+
+- The Stripe CLI container uses `STRIPE_SECRET_KEY` from `.env`.
+- Read the generated `whsec_...` signing secret from:
+  - `docker compose -f docker-compose.stripe.yml logs -f stripe-cli`
+- Copy that `whsec_...` value into `STRIPE_WEBHOOK_SECRET`.
+- Restart the backend after changing `STRIPE_WEBHOOK_SECRET`.
+
+### Local setup commands
+
+Initial or changed local billing setup:
+
+1. Start Redis:
+   - `docker compose -f docker-compose.redis.yml up -d`
+2. Sync catalog + backfill workspace billing foundations:
+   - `npm run billing:migrate-v1`
+3. Start backend:
+   - `npm run dev`
+4. Start billing worker:
+   - `npm run billing:worker`
+5. Start Stripe CLI forwarding:
+   - `docker compose -f docker-compose.stripe.yml up -d stripe-cli`
+   - `docker compose -f docker-compose.stripe.yml logs -f stripe-cli`
+
+Normal daily runtime after local billing data is already prepared:
+
+- `npm run dev`
+- `npm run billing:worker`
+- `docker compose -f docker-compose.redis.yml up -d`
+- `docker compose -f docker-compose.stripe.yml up -d stripe-cli`
+
+`npm run billing:migrate-v1` is not required on every start. Run it when:
+
+- the local DB is fresh and billing foundations were not created yet
+- the seeded billing catalog changed
+- local billing data needs to be resynced/backfilled after catalog changes
+
+### Optional local stress-test catalog values
+
+For faster manual enforcement testing, local developers may temporarily reduce the seeded `starter` plan and add-on limits in:
+
+- `src/modules/billing/utils/billing-catalog.manifest.js`
+
+Example local-only stress-test values:
+
+- Starter seats: `1`
+- Starter mailboxes: `1`
+- Starter storage: `5 MB`
+- Starter uploads/month: `2`
+- Starter tickets/month: `3`
+- Extra seat add-on: `+1`
+- Extra storage add-on: `+5 MB`
+
+After changing the manifest locally, rerun:
+
+- `npm run billing:migrate-v1`
+
+## 3) Auth model & authorization model
 
 - Users can belong to multiple workspaces through workspace memberships.
 - Every session has exactly one active workspace context (`session.workspaceId`).
@@ -94,7 +179,7 @@ Session-context endpoints:
   - role is `owner` or `admin`
   - `:workspaceId` must match token workspace (`wid`)
 
-## 3) Quick Start Flows
+## 4) Quick Start Flows
 
 The flows in this section are product-wide entry points. Billing keeps its own quick-start block immediately before the billing endpoint reference so checkout, portal, and webhook-driven sync stay documented next to the billing APIs.
 
