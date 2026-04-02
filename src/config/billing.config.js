@@ -39,6 +39,10 @@ const toTrimmedString = (value, fallback = null) => {
 export const billingConfig = Object.freeze({
   enabled: toBool(process.env.BILLING_ENABLED, true),
   trialDays: Math.max(0, toInt(process.env.BILLING_TRIAL_DAYS, 14)),
+  devTestCatalogLimitsEnabled: toBool(
+    process.env.BILLING_DEV_TEST_CATALOG_LIMITS,
+    false
+  ),
   provider: toTrimmedString(
     process.env.BILLING_PROVIDER,
     'stripe'

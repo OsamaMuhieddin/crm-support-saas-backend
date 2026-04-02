@@ -3,24 +3,24 @@ export const BILLING_PLAN_LIMIT_KEYS = Object.freeze({
   MAILBOXES: 'mailboxes',
   STORAGE_BYTES: 'storageBytes',
   UPLOADS_PER_MONTH: 'uploadsPerMonth',
-  TICKETS_PER_MONTH: 'ticketsPerMonth'
+  TICKETS_PER_MONTH: 'ticketsPerMonth',
 });
 
 export const BILLING_PLAN_FEATURE_KEYS = Object.freeze({
   BILLING_ENABLED: 'billingEnabled',
   PORTAL_ENABLED: 'portalEnabled',
   CHECKOUT_ENABLED: 'checkoutEnabled',
-  SLA_ENABLED: 'slaEnabled'
+  SLA_ENABLED: 'slaEnabled',
 });
 
 export const BILLING_ADDON_KEYS = Object.freeze({
   EXTRA_SEAT: 'extra_seat',
-  EXTRA_STORAGE: 'extra_storage'
+  EXTRA_STORAGE: 'extra_storage',
 });
 
 export const BILLING_ADDON_EFFECT_KEYS = Object.freeze({
   SEATS: 'seats',
-  STORAGE_BYTES: 'storageBytes'
+  STORAGE_BYTES: 'storageBytes',
 });
 
 const PLAN_LIMIT_DEFAULTS = Object.freeze({
@@ -28,31 +28,31 @@ const PLAN_LIMIT_DEFAULTS = Object.freeze({
   [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: null,
   [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: null,
   [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: null,
-  [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: null
+  [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: null,
 });
 
 const PLAN_FEATURE_DEFAULTS = Object.freeze({
   [BILLING_PLAN_FEATURE_KEYS.BILLING_ENABLED]: true,
   [BILLING_PLAN_FEATURE_KEYS.PORTAL_ENABLED]: true,
   [BILLING_PLAN_FEATURE_KEYS.CHECKOUT_ENABLED]: true,
-  [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: false
+  [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: false,
 });
 
 const ADDON_EFFECT_DEFAULTS = Object.freeze({
   [BILLING_ADDON_EFFECT_KEYS.SEATS]: 0,
-  [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: 0
+  [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: 0,
 });
 
 const CURRENT_USAGE_DEFAULTS = Object.freeze({
   seatsUsed: 0,
   activeMailboxes: 0,
-  storageBytes: 0
+  storageBytes: 0,
 });
 
 const MONTHLY_USAGE_DEFAULTS = Object.freeze({
   periodKey: null,
   ticketsCreated: 0,
-  uploadsCount: 0
+  uploadsCount: 0,
 });
 
 const normalizeNonNegativeNumber = (value, fallback = 0) => {
@@ -90,7 +90,9 @@ const normalizeBoolean = (value, fallback = false) => {
 };
 
 const normalizeAddonKey = (value) => {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   return normalized || null;
 };
 
@@ -122,7 +124,7 @@ export const normalizePlanLimits = (input = {}) => ({
   [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: normalizeLimitValue(
     input?.[BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH],
     PLAN_LIMIT_DEFAULTS[BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]
-  )
+  ),
 });
 
 export const normalizePlanFeatures = (input = {}) => ({
@@ -141,7 +143,7 @@ export const normalizePlanFeatures = (input = {}) => ({
   [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: normalizeBoolean(
     input?.[BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED],
     PLAN_FEATURE_DEFAULTS[BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]
-  )
+  ),
 });
 
 export const normalizeAddonEffects = (input = {}) => ({
@@ -152,7 +154,7 @@ export const normalizeAddonEffects = (input = {}) => ({
   [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: normalizeNonNegativeNumber(
     input?.[BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES],
     ADDON_EFFECT_DEFAULTS[BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]
-  )
+  ),
 });
 
 export const normalizeSubscriptionAddonItems = (items = []) =>
@@ -161,7 +163,10 @@ export const normalizeSubscriptionAddonItems = (items = []) =>
         .map((item) => ({
           addonId: item?.addonId ? String(item.addonId) : null,
           addonKey: normalizeAddonKey(item?.addonKey),
-          quantity: Math.max(1, Math.trunc(normalizeNonNegativeNumber(item?.quantity, 1)))
+          quantity: Math.max(
+            1,
+            Math.trunc(normalizeNonNegativeNumber(item?.quantity, 1))
+          ),
         }))
         .filter((item) => item.addonId || item.addonKey)
     : [];
@@ -179,11 +184,12 @@ export const normalizeUsageSnapshot = (input = {}) => ({
     storageBytes: normalizeNonNegativeNumber(
       input?.current?.storageBytes,
       CURRENT_USAGE_DEFAULTS.storageBytes
-    )
+    ),
   },
   monthly: {
     periodKey:
-      typeof input?.monthly?.periodKey === 'string' && input.monthly.periodKey.trim()
+      typeof input?.monthly?.periodKey === 'string' &&
+      input.monthly.periodKey.trim()
         ? input.monthly.periodKey.trim()
         : MONTHLY_USAGE_DEFAULTS.periodKey,
     ticketsCreated: normalizeNonNegativeNumber(
@@ -193,8 +199,8 @@ export const normalizeUsageSnapshot = (input = {}) => ({
     uploadsCount: normalizeNonNegativeNumber(
       input?.monthly?.uploadsCount,
       MONTHLY_USAGE_DEFAULTS.uploadsCount
-    )
-  }
+    ),
+  },
 });
 
 export const isBillingLimitEnforced = (value) => {
@@ -207,7 +213,8 @@ export const isBillingLimitEnforced = (value) => {
 };
 
 export const isBillingLimitExceeded = ({ limit, usage }) =>
-  isBillingLimitEnforced(limit) && normalizeNonNegativeNumber(usage, 0) > Number(limit);
+  isBillingLimitEnforced(limit) &&
+  normalizeNonNegativeNumber(usage, 0) > Number(limit);
 
 export const buildOverLimitFlags = ({ limits = {}, usage = {} } = {}) => {
   const normalizedLimits = normalizePlanLimits(limits);
@@ -216,33 +223,36 @@ export const buildOverLimitFlags = ({ limits = {}, usage = {} } = {}) => {
   const flags = {
     seats: isBillingLimitExceeded({
       limit: normalizedLimits[BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED],
-      usage: normalizedUsage.current.seatsUsed
+      usage: normalizedUsage.current.seatsUsed,
     }),
     mailboxes: isBillingLimitExceeded({
       limit: normalizedLimits[BILLING_PLAN_LIMIT_KEYS.MAILBOXES],
-      usage: normalizedUsage.current.activeMailboxes
+      usage: normalizedUsage.current.activeMailboxes,
     }),
     storageBytes: isBillingLimitExceeded({
       limit: normalizedLimits[BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES],
-      usage: normalizedUsage.current.storageBytes
+      usage: normalizedUsage.current.storageBytes,
     }),
     uploadsPerMonth: isBillingLimitExceeded({
       limit: normalizedLimits[BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH],
-      usage: normalizedUsage.monthly.uploadsCount
+      usage: normalizedUsage.monthly.uploadsCount,
     }),
     ticketsPerMonth: isBillingLimitExceeded({
       limit: normalizedLimits[BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH],
-      usage: normalizedUsage.monthly.ticketsCreated
-    })
+      usage: normalizedUsage.monthly.ticketsCreated,
+    }),
   };
 
   return {
     ...flags,
-    any: Object.values(flags).some(Boolean)
+    any: Object.values(flags).some(Boolean),
   };
 };
 
-export const applyAddonEffectsToLimits = ({ limits = {}, addons = [] } = {}) => {
+export const applyAddonEffectsToLimits = ({
+  limits = {},
+  addons = [],
+} = {}) => {
   const normalizedLimits = normalizePlanLimits(limits);
   const resolvedAddons = Array.isArray(addons) ? addons : [];
 
@@ -282,6 +292,6 @@ export const normalizeEntitlementSnapshot = (input = {}) => {
       input?.sourceSnapshot && typeof input.sourceSnapshot === 'object'
         ? input.sourceSnapshot
         : null,
-    overLimit
+    overLimit,
   };
 };

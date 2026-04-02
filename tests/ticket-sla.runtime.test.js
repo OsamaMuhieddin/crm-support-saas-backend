@@ -10,7 +10,7 @@ import { addBusinessMinutes } from '../src/modules/sla/utils/business-time.helpe
 import {
   captureFallbackEmail,
   extractInviteTokenFromLogs,
-  extractOtpCodeFromLogs,
+  extractOtpCodeFromLogs
 } from './helpers/email-capture.js';
 import { setWorkspaceBillingPlanForTests } from './helpers/billing.js';
 
@@ -28,51 +28,51 @@ const nextEmail = (prefix) => `${nextValue(prefix)}@example.com`;
 const alwaysOpenWeeklySchedule = [0, 1, 2, 3, 4, 5, 6].map((dayOfWeek) => ({
   dayOfWeek,
   isOpen: true,
-  windows: [{ start: '00:00', end: '23:59' }],
+  windows: [{ start: '00:00', end: '23:59' }]
 }));
 
 const defaultRulesByPriority = {
   low: {
     firstResponseMinutes: 120,
-    resolutionMinutes: 480,
+    resolutionMinutes: 480
   },
   normal: {
     firstResponseMinutes: 60,
-    resolutionMinutes: 240,
+    resolutionMinutes: 240
   },
   high: {
     firstResponseMinutes: 30,
-    resolutionMinutes: 180,
+    resolutionMinutes: 180
   },
   urgent: {
     firstResponseMinutes: 15,
-    resolutionMinutes: 60,
-  },
+    resolutionMinutes: 60
+  }
 };
 
 const overrideRulesByPriority = {
   low: {
     firstResponseMinutes: 90,
-    resolutionMinutes: 300,
+    resolutionMinutes: 300
   },
   normal: {
     firstResponseMinutes: 45,
-    resolutionMinutes: 150,
+    resolutionMinutes: 150
   },
   high: {
     firstResponseMinutes: 20,
-    resolutionMinutes: 90,
+    resolutionMinutes: 90
   },
   urgent: {
     firstResponseMinutes: 5,
-    resolutionMinutes: 45,
-  },
+    resolutionMinutes: 45
+  }
 };
 
 const signupAndCaptureOtp = async ({
   email,
   password = 'Password123!',
-  name = 'Test User',
+  name = 'Test User'
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app).post('/api/auth/signup').send({ email, password, name })
@@ -80,14 +80,14 @@ const signupAndCaptureOtp = async ({
 
   return {
     response,
-    code: extractOtpCodeFromLogs(logs),
+    code: extractOtpCodeFromLogs(logs)
   };
 };
 
 const createVerifiedUser = async ({
   email = nextEmail('ticket-sla-owner'),
   password = 'Password123!',
-  name = 'Test User',
+  name = 'Test User'
 } = {}) => {
   const signup = await signupAndCaptureOtp({ email, password, name });
   expect(signup.response.status).toBe(200);
@@ -95,13 +95,13 @@ const createVerifiedUser = async ({
 
   const verify = await request(app).post('/api/auth/verify-email').send({
     email,
-    code: signup.code,
+    code: signup.code
   });
   expect(verify.status).toBe(200);
 
   await setWorkspaceBillingPlanForTests({
     workspaceId: verify.body.user.defaultWorkspaceId,
-    planKey: 'business',
+    planKey: 'business'
   });
 
   return {
@@ -109,7 +109,7 @@ const createVerifiedUser = async ({
     password,
     userId: verify.body.user._id,
     accessToken: verify.body.tokens.accessToken,
-    workspaceId: verify.body.user.defaultWorkspaceId,
+    workspaceId: verify.body.user.defaultWorkspaceId
   };
 };
 
@@ -117,7 +117,7 @@ const createInviteWithToken = async ({
   workspaceId,
   accessToken,
   email,
-  roleKey,
+  roleKey
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app)
@@ -128,20 +128,20 @@ const createInviteWithToken = async ({
 
   return {
     response,
-    token: extractInviteTokenFromLogs(logs),
+    token: extractInviteTokenFromLogs(logs)
   };
 };
 
 const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
   const member = await createVerifiedUser({
-    email: nextEmail(`ticket-sla-${roleKey}`),
+    email: nextEmail(`ticket-sla-${roleKey}`)
   });
 
   const invite = await createInviteWithToken({
     workspaceId: owner.workspaceId,
     accessToken: owner.accessToken,
     email: member.email,
-    roleKey,
+    roleKey
   });
 
   expect(invite.response.status).toBe(200);
@@ -151,13 +151,13 @@ const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
     .post('/api/workspaces/invites/accept')
     .send({
       token: invite.token,
-      email: member.email,
+      email: member.email
     });
   expect(accept.status).toBe(200);
 
   const login = await request(app).post('/api/auth/login').send({
     email: member.email,
-    password: member.password,
+    password: member.password
   });
   expect(login.status).toBe(200);
 
@@ -170,26 +170,26 @@ const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
 
   return {
     accessToken: switched.body.accessToken,
-    userId: member.userId,
+    userId: member.userId
   };
 };
 
 const createContactRecord = async ({
   workspaceId,
-  fullName = nextValue('SLA Contact'),
+  fullName = nextValue('SLA Contact')
 }) =>
   Contact.create({
     workspaceId,
     fullName,
     email: nextEmail('ticket-sla-contact'),
-    phone: '+963955555555',
+    phone: '+963955555555'
   });
 
 const createBusinessHours = async ({
   accessToken,
   name = nextValue('SLA Hours'),
   timezone = 'UTC',
-  weeklySchedule = alwaysOpenWeeklySchedule,
+  weeklySchedule = alwaysOpenWeeklySchedule
 }) =>
   request(app)
     .post('/api/sla/business-hours')
@@ -197,14 +197,14 @@ const createBusinessHours = async ({
     .send({
       name,
       timezone,
-      weeklySchedule,
+      weeklySchedule
     });
 
 const createSlaPolicy = async ({
   accessToken,
   businessHoursId,
   name = nextValue('SLA Policy'),
-  rulesByPriority = defaultRulesByPriority,
+  rulesByPriority = defaultRulesByPriority
 }) =>
   request(app)
     .post('/api/sla/policies')
@@ -212,7 +212,7 @@ const createSlaPolicy = async ({
     .send({
       name,
       businessHoursId,
-      rulesByPriority,
+      rulesByPriority
     });
 
 const setDefaultSlaPolicy = async ({ accessToken, policyId }) =>
@@ -225,7 +225,7 @@ const createMailbox = async ({
   accessToken,
   name,
   emailAddress,
-  slaPolicyId,
+  slaPolicyId
 }) =>
   request(app)
     .post('/api/mailboxes')
@@ -233,7 +233,7 @@ const createMailbox = async ({
     .send({
       name,
       emailAddress,
-      ...(slaPolicyId ? { slaPolicyId } : {}),
+      ...(slaPolicyId ? { slaPolicyId } : {})
     });
 
 const createTicketRequest = async ({ accessToken, body }) =>
@@ -250,7 +250,7 @@ const createTicketMessageRequest = async ({ accessToken, ticketId, body }) =>
 
 const setupWorkspaceSla = async ({
   accessToken,
-  rulesByPriority = defaultRulesByPriority,
+  rulesByPriority = defaultRulesByPriority
 }) => {
   const businessHours = await createBusinessHours({ accessToken });
   expect(businessHours.status).toBe(200);
@@ -258,13 +258,13 @@ const setupWorkspaceSla = async ({
   const policy = await createSlaPolicy({
     accessToken,
     businessHoursId: businessHours.body.businessHours._id,
-    rulesByPriority,
+    rulesByPriority
   });
   expect(policy.status).toBe(200);
 
   return {
     businessHours,
-    policy,
+    policy
   };
 };
 
@@ -274,15 +274,15 @@ describe('Ticket SLA runtime behavior', () => {
     async () => {
       const owner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const defaultSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       const setDefault = await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: defaultSla.policy.body.policy._id,
+        policyId: defaultSla.policy.body.policy._id
       });
       expect(setDefault.status).toBe(200);
 
@@ -291,8 +291,8 @@ describe('Ticket SLA runtime behavior', () => {
         body: {
           subject: 'Workspace default SLA ticket',
           contactId: String(contact._id),
-          priority: TICKET_PRIORITY.HIGH,
-        },
+          priority: TICKET_PRIORITY.HIGH
+        }
       });
 
       expect(workspaceDefaultTicket.status).toBe(200);
@@ -323,8 +323,8 @@ describe('Ticket SLA runtime behavior', () => {
         minutes: 30,
         businessHours: {
           timezone: 'UTC',
-          weeklySchedule: alwaysOpenWeeklySchedule,
-        },
+          weeklySchedule: alwaysOpenWeeklySchedule
+        }
       });
       expect(workspaceDefaultTicket.body.ticket.sla.firstResponseDueAt).toBe(
         expectedDefaultDueAt.toISOString()
@@ -332,13 +332,13 @@ describe('Ticket SLA runtime behavior', () => {
 
       const overrideSla = await setupWorkspaceSla({
         accessToken: owner.accessToken,
-        rulesByPriority: overrideRulesByPriority,
+        rulesByPriority: overrideRulesByPriority
       });
       const overrideMailbox = await createMailbox({
         accessToken: owner.accessToken,
         name: nextValue('Override Queue'),
         emailAddress: `${nextValue('override')}@example.com`,
-        slaPolicyId: overrideSla.policy.body.policy._id,
+        slaPolicyId: overrideSla.policy.body.policy._id
       });
       expect(overrideMailbox.status).toBe(200);
 
@@ -348,8 +348,8 @@ describe('Ticket SLA runtime behavior', () => {
           subject: 'Mailbox override SLA ticket',
           mailboxId: overrideMailbox.body.mailbox._id,
           contactId: String(contact._id),
-          priority: TICKET_PRIORITY.URGENT,
-        },
+          priority: TICKET_PRIORITY.URGENT
+        }
       });
 
       expect(mailboxOverrideTicket.status).toBe(200);
@@ -371,14 +371,14 @@ describe('Ticket SLA runtime behavior', () => {
 
       const ownerWithoutSla = await createVerifiedUser();
       const noSlaContact = await createContactRecord({
-        workspaceId: ownerWithoutSla.workspaceId,
+        workspaceId: ownerWithoutSla.workspaceId
       });
       const noSlaTicket = await createTicketRequest({
         accessToken: ownerWithoutSla.accessToken,
         body: {
           subject: 'No SLA still works',
-          contactId: String(noSlaContact._id),
-        },
+          contactId: String(noSlaContact._id)
+        }
       });
 
       expect(noSlaTicket.status).toBe(200);
@@ -397,23 +397,23 @@ describe('Ticket SLA runtime behavior', () => {
     async () => {
       const owner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const defaultSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: defaultSla.policy.body.policy._id,
+        policyId: defaultSla.policy.body.policy._id
       });
 
       const created = await createTicketRequest({
         accessToken: owner.accessToken,
         body: {
           subject: 'Message SLA behavior',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(created.status).toBe(200);
 
@@ -422,8 +422,8 @@ describe('Ticket SLA runtime behavior', () => {
         ticketId: created.body.ticket._id,
         body: {
           type: TICKET_MESSAGE_TYPE.INTERNAL_NOTE,
-          bodyText: 'Internal-only note',
-        },
+          bodyText: 'Internal-only note'
+        }
       });
       expect(internalNote.status).toBe(200);
 
@@ -441,8 +441,8 @@ describe('Ticket SLA runtime behavior', () => {
         ticketId: created.body.ticket._id,
         body: {
           type: TICKET_MESSAGE_TYPE.PUBLIC_REPLY,
-          bodyText: 'First public reply',
-        },
+          bodyText: 'First public reply'
+        }
       });
 
       expect(publicReply.status).toBe(200);
@@ -483,8 +483,8 @@ describe('Ticket SLA runtime behavior', () => {
         ticketId: created.body.ticket._id,
         body: {
           type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
-          bodyText: 'Customer resumed work',
-        },
+          bodyText: 'Customer resumed work'
+        }
       });
 
       expect(customerMessage.status).toBe(200);
@@ -502,8 +502,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Late first response ticket',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(lateReplyTicket.status).toBe(200);
 
@@ -511,12 +511,12 @@ describe('Ticket SLA runtime behavior', () => {
         {
           _id: lateReplyTicket.body.ticket._id,
           workspaceId: owner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
-            'sla.firstResponseDueAt': new Date(Date.now() - 60 * 1000),
-          },
+            'sla.firstResponseDueAt': new Date(Date.now() - 60 * 1000)
+          }
         }
       );
 
@@ -525,8 +525,8 @@ describe('Ticket SLA runtime behavior', () => {
         ticketId: lateReplyTicket.body.ticket._id,
         body: {
           type: TICKET_MESSAGE_TYPE.PUBLIC_REPLY,
-          bodyText: 'Late reply',
-        },
+          bodyText: 'Late reply'
+        }
       });
 
       expect(latePublicReply.status).toBe(200);
@@ -544,26 +544,26 @@ describe('Ticket SLA runtime behavior', () => {
     async () => {
       const owner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const defaultSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: defaultSla.policy.body.policy._id,
+        policyId: defaultSla.policy.body.policy._id
       });
 
       const overrideSla = await setupWorkspaceSla({
         accessToken: owner.accessToken,
-        rulesByPriority: overrideRulesByPriority,
+        rulesByPriority: overrideRulesByPriority
       });
       const overrideMailbox = await createMailbox({
         accessToken: owner.accessToken,
         name: nextValue('Patch Override Queue'),
         emailAddress: `${nextValue('patch-override')}@example.com`,
-        slaPolicyId: overrideSla.policy.body.policy._id,
+        slaPolicyId: overrideSla.policy.body.policy._id
       });
       expect(overrideMailbox.status).toBe(200);
 
@@ -572,8 +572,8 @@ describe('Ticket SLA runtime behavior', () => {
         body: {
           subject: 'Patch SLA snapshot ticket',
           contactId: String(contact._id),
-          priority: TICKET_PRIORITY.LOW,
-        },
+          priority: TICKET_PRIORITY.LOW
+        }
       });
       expect(created.status).toBe(200);
       expect(created.body.ticket.messageCount).toBe(0);
@@ -585,7 +585,7 @@ describe('Ticket SLA runtime behavior', () => {
         .patch(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
-          priority: TICKET_PRIORITY.URGENT,
+          priority: TICKET_PRIORITY.URGENT
         });
 
       expect(updatePriority.status).toBe(200);
@@ -605,7 +605,7 @@ describe('Ticket SLA runtime behavior', () => {
         .patch(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
-          mailboxId: overrideMailbox.body.mailbox._id,
+          mailboxId: overrideMailbox.body.mailbox._id
         });
 
       expect(updateMailbox.status).toBe(200);
@@ -628,7 +628,9 @@ describe('Ticket SLA runtime behavior', () => {
       expect(updateMailbox.body.ticket.sla.firstResponseTargetMinutes).toBe(5);
       expect(updateMailbox.body.ticket.sla.resolutionTargetMinutes).toBe(45);
 
-      const storedTicket = await Ticket.findById(created.body.ticket._id).lean();
+      const storedTicket = await Ticket.findById(
+        created.body.ticket._id
+      ).lean();
       expect(String(storedTicket.mailboxId)).toBe(
         overrideMailbox.body.mailbox._id
       );
@@ -648,23 +650,23 @@ describe('Ticket SLA runtime behavior', () => {
     async () => {
       const owner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const defaultSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: defaultSla.policy.body.policy._id,
+        policyId: defaultSla.policy.body.policy._id
       });
 
       const statusTicket = await createTicketRequest({
         accessToken: owner.accessToken,
         body: {
           subject: 'Status-driven SLA behavior',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(statusTicket.status).toBe(200);
 
@@ -694,8 +696,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Late solve ticket',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(lateSolveTicket.status).toBe(200);
 
@@ -703,12 +705,12 @@ describe('Ticket SLA runtime behavior', () => {
         {
           _id: lateSolveTicket.body.ticket._id,
           workspaceId: owner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
-            'sla.resolutionDueAt': new Date(Date.now() - 60 * 1000),
-          },
+            'sla.resolutionDueAt': new Date(Date.now() - 60 * 1000)
+          }
         }
       );
 
@@ -735,8 +737,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Reopen keeps remaining business time',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(reopenTicket.status).toBe(200);
 
@@ -744,7 +746,7 @@ describe('Ticket SLA runtime behavior', () => {
         {
           _id: reopenTicket.body.ticket._id,
           workspaceId: owner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
@@ -755,8 +757,8 @@ describe('Ticket SLA runtime behavior', () => {
             'sla.resolutionRemainingMinutes': 30,
             'sla.isResolutionPaused': false,
             'sla.resolutionPausedAt': null,
-            'sla.resolutionRunningSince': null,
-          },
+            'sla.resolutionRunningSince': null
+          }
         }
       );
 
@@ -787,38 +789,38 @@ describe('Ticket SLA runtime behavior', () => {
       const owner = await createVerifiedUser();
       const viewer = await createWorkspaceScopedTokenForRole({
         owner,
-        roleKey: WORKSPACE_ROLES.VIEWER,
+        roleKey: WORKSPACE_ROLES.VIEWER
       });
       const otherOwner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const otherContact = await createContactRecord({
-        workspaceId: otherOwner.workspaceId,
+        workspaceId: otherOwner.workspaceId
       });
 
       const ownerSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: ownerSla.policy.body.policy._id,
+        policyId: ownerSla.policy.body.policy._id
       });
 
       const otherOwnerSla = await setupWorkspaceSla({
-        accessToken: otherOwner.accessToken,
+        accessToken: otherOwner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: otherOwner.accessToken,
-        policyId: otherOwnerSla.policy.body.policy._id,
+        policyId: otherOwnerSla.policy.body.policy._id
       });
 
       const overdueTicket = await createTicketRequest({
         accessToken: owner.accessToken,
         body: {
           subject: 'Overdue unresolved ticket',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(overdueTicket.status).toBe(200);
 
@@ -826,15 +828,15 @@ describe('Ticket SLA runtime behavior', () => {
         {
           _id: overdueTicket.body.ticket._id,
           workspaceId: owner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
             'sla.firstResponseDueAt': new Date(Date.now() - 5 * 60 * 1000),
             'sla.resolutionDueAt': new Date(Date.now() - 5 * 60 * 1000),
             'sla.isFirstResponseBreached': false,
-            'sla.isResolutionBreached': false,
-          },
+            'sla.isResolutionBreached': false
+          }
         }
       );
 
@@ -842,8 +844,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Paused ticket for summary',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(pausedTicket.status).toBe(200);
 
@@ -852,8 +854,8 @@ describe('Ticket SLA runtime behavior', () => {
         ticketId: pausedTicket.body.ticket._id,
         body: {
           type: TICKET_MESSAGE_TYPE.PUBLIC_REPLY,
-          bodyText: 'Agent paused the clock',
-        },
+          bodyText: 'Agent paused the clock'
+        }
       });
       expect(pausedReply.status).toBe(200);
 
@@ -861,8 +863,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: otherOwner.accessToken,
         body: {
           subject: 'Other workspace overdue ticket',
-          contactId: String(otherContact._id),
-        },
+          contactId: String(otherContact._id)
+        }
       });
       expect(otherWorkspaceOverdue.status).toBe(200);
 
@@ -870,12 +872,12 @@ describe('Ticket SLA runtime behavior', () => {
         {
           _id: otherWorkspaceOverdue.body.ticket._id,
           workspaceId: otherOwner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
-            'sla.resolutionDueAt': new Date(Date.now() - 5 * 60 * 1000),
-          },
+            'sla.resolutionDueAt': new Date(Date.now() - 5 * 60 * 1000)
+          }
         }
       );
 
@@ -939,23 +941,23 @@ describe('Ticket SLA runtime behavior', () => {
     async () => {
       const owner = await createVerifiedUser();
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const defaultSla = await setupWorkspaceSla({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       await setDefaultSlaPolicy({
         accessToken: owner.accessToken,
-        policyId: defaultSla.policy.body.policy._id,
+        policyId: defaultSla.policy.body.policy._id
       });
 
       const legacyTicket = await createTicketRequest({
         accessToken: owner.accessToken,
         body: {
           subject: 'Legacy SLA ticket',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(legacyTicket.status).toBe(200);
       expect(legacyTicket.body.ticket.sla.policyName).toBe(
@@ -964,7 +966,7 @@ describe('Ticket SLA runtime behavior', () => {
 
       await setWorkspaceBillingPlanForTests({
         workspaceId: owner.workspaceId,
-        planKey: 'starter',
+        planKey: 'starter'
       });
 
       const legacyDetail = await request(app)
@@ -980,8 +982,8 @@ describe('Ticket SLA runtime behavior', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'No SLA after downgrade',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(newTicket.status).toBe(200);
       expect(newTicket.body.ticket.sla.policyName).toBeNull();
@@ -989,9 +991,7 @@ describe('Ticket SLA runtime behavior', () => {
       expect(newTicket.body.ticket.sla.firstResponseStatus).toBe(
         'not_applicable'
       );
-      expect(newTicket.body.ticket.sla.resolutionStatus).toBe(
-        'not_applicable'
-      );
+      expect(newTicket.body.ticket.sla.resolutionStatus).toBe('not_applicable');
     }
   );
 });

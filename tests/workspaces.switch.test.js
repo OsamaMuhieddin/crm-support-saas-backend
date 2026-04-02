@@ -8,13 +8,13 @@ import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
 import {
   captureFallbackEmail,
   extractInviteTokenFromLogs,
-  extractOtpCodeFromLogs,
+  extractOtpCodeFromLogs
 } from './helpers/email-capture.js';
 
 const signupAndCaptureOtp = async ({
   email,
   password = 'Password123!',
-  name,
+  name
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app).post('/api/auth/signup').send({ email, password, name })
@@ -22,14 +22,14 @@ const signupAndCaptureOtp = async ({
 
   return {
     response,
-    code: extractOtpCodeFromLogs(logs),
+    code: extractOtpCodeFromLogs(logs)
   };
 };
 
 const createVerifiedUser = async ({
   email,
   password = 'Password123!',
-  name = 'Test User',
+  name = 'Test User'
 }) => {
   const signup = await signupAndCaptureOtp({ email, password, name });
   expect(signup.response.status).toBe(200);
@@ -37,7 +37,7 @@ const createVerifiedUser = async ({
 
   const verify = await request(app).post('/api/auth/verify-email').send({
     email,
-    code: signup.code,
+    code: signup.code
   });
 
   expect(verify.status).toBe(200);
@@ -48,7 +48,7 @@ const createVerifiedUser = async ({
     user: verify.body.user,
     accessToken: verify.body.tokens.accessToken,
     refreshToken: verify.body.tokens.refreshToken,
-    workspaceId: verify.body.user.defaultWorkspaceId,
+    workspaceId: verify.body.user.defaultWorkspaceId
   };
 };
 
@@ -56,7 +56,7 @@ const createInviteWithToken = async ({
   workspaceId,
   accessToken,
   email,
-  roleKey,
+  roleKey
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app)
@@ -67,7 +67,7 @@ const createInviteWithToken = async ({
 
   return {
     response,
-    token: extractInviteTokenFromLogs(logs),
+    token: extractInviteTokenFromLogs(logs)
   };
 };
 
@@ -78,25 +78,25 @@ describe('Workspace switching + explicit active workspace context', () => {
     'user with memberships in two workspaces can switch and old token is invalid',
     async () => {
       const memberUser = await createVerifiedUser({
-        email: 'switch-primary-member@example.com',
+        email: 'switch-primary-member@example.com'
       });
 
       const targetOwner = await createVerifiedUser({
-        email: 'switch-target-owner@example.com',
+        email: 'switch-target-owner@example.com'
       });
 
       const created = await createInviteWithToken({
         workspaceId: targetOwner.workspaceId,
         accessToken: targetOwner.accessToken,
         email: memberUser.email,
-        roleKey: WORKSPACE_ROLES.AGENT,
+        roleKey: WORKSPACE_ROLES.AGENT
       });
 
       const acceptResponse = await request(app)
         .post('/api/workspaces/invites/accept')
         .send({
           token: created.token,
-          email: memberUser.email,
+          email: memberUser.email
         });
 
       expect(acceptResponse.status).toBe(200);
@@ -105,7 +105,7 @@ describe('Workspace switching + explicit active workspace context', () => {
 
       const loginResponse = await request(app).post('/api/auth/login').send({
         email: memberUser.email,
-        password: memberUser.password,
+        password: memberUser.password
       });
 
       expect(loginResponse.status).toBe(200);
@@ -129,7 +129,7 @@ describe('Workspace switching + explicit active workspace context', () => {
       expect(mineWorkspaceIds).toEqual(
         expect.arrayContaining([
           memberUser.workspaceId,
-          targetOwner.workspaceId,
+          targetOwner.workspaceId
         ])
       );
       mineResponse.body.memberships.forEach((item) => {
@@ -170,25 +170,25 @@ describe('Workspace switching + explicit active workspace context', () => {
     'verified invite acceptance returns workspaceId and user can switch after login',
     async () => {
       const owner = await createVerifiedUser({
-        email: 'switch-verified-owner@example.com',
+        email: 'switch-verified-owner@example.com'
       });
 
       const invitee = await createVerifiedUser({
-        email: 'switch-verified-invitee@example.com',
+        email: 'switch-verified-invitee@example.com'
       });
 
       const created = await createInviteWithToken({
         workspaceId: owner.workspaceId,
         accessToken: owner.accessToken,
         email: invitee.email,
-        roleKey: WORKSPACE_ROLES.ADMIN,
+        roleKey: WORKSPACE_ROLES.ADMIN
       });
 
       const acceptResponse = await request(app)
         .post('/api/workspaces/invites/accept')
         .send({
           token: created.token,
-          email: invitee.email,
+          email: invitee.email
         });
 
       expect(acceptResponse.status).toBe(200);
@@ -197,7 +197,7 @@ describe('Workspace switching + explicit active workspace context', () => {
 
       const loginResponse = await request(app).post('/api/auth/login').send({
         email: invitee.email,
-        password: invitee.password,
+        password: invitee.password
       });
 
       expect(loginResponse.status).toBe(200);
@@ -231,7 +231,7 @@ describe('Workspace switching + explicit active workspace context', () => {
     'verify-email invite finalization returns workspaceId and requires explicit switch when user already had workspace',
     async () => {
       const existingUser = await createVerifiedUser({
-        email: 'switch-existing-unverified@example.com',
+        email: 'switch-existing-unverified@example.com'
       });
 
       await User.updateOne(
@@ -242,30 +242,30 @@ describe('Workspace switching + explicit active workspace context', () => {
       await OtpCode.updateMany(
         {
           emailNormalized: existingUser.email,
-          purpose: OTP_PURPOSE.VERIFY_EMAIL,
+          purpose: OTP_PURPOSE.VERIFY_EMAIL
         },
         {
           $set: {
-            lastSentAt: new Date(Date.now() - 60 * 1000),
-          },
+            lastSentAt: new Date(Date.now() - 60 * 1000)
+          }
         }
       );
 
       const inviter = await createVerifiedUser({
-        email: 'switch-finalize-owner@example.com',
+        email: 'switch-finalize-owner@example.com'
       });
 
       const created = await createInviteWithToken({
         workspaceId: inviter.workspaceId,
         accessToken: inviter.accessToken,
         email: existingUser.email,
-        roleKey: WORKSPACE_ROLES.AGENT,
+        roleKey: WORKSPACE_ROLES.AGENT
       });
 
       const acceptResult = await captureFallbackEmail(() =>
         request(app).post('/api/workspaces/invites/accept').send({
           token: created.token,
-          email: existingUser.email,
+          email: existingUser.email
         })
       );
 
@@ -283,7 +283,7 @@ describe('Workspace switching + explicit active workspace context', () => {
         .send({
           email: existingUser.email,
           code: verifyCode,
-          inviteToken: created.token,
+          inviteToken: created.token
         });
 
       expect(verifyResponse.status).toBe(200);

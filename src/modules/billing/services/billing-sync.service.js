@@ -610,45 +610,66 @@ export const persistStripeWebhookEvent = async ({
       event?.data?.object?.subscription || event?.data?.object?.id
     )
   };
+  const now = new Date();
+  const insertPayload = {
+    workspaceId: normalizedPayload.workspaceId
+      ? toObjectIdIfValid(normalizedPayload.workspaceId)
+      : null,
+    provider: billingConfig.provider,
+    eventId: event.id,
+    eventType: event.type,
+    status: BILLING_WEBHOOK_EVENT_STATUS.PENDING,
+    receivedAt: now,
+    processedAt: null,
+    enqueuedAt: null,
+    processingJobId: null,
+    attemptsCount: 0,
+    payloadHash,
+    payload,
+    normalizedPayload,
+    lastError: null,
+    lastEnqueueError: null,
+    createdAt: now,
+    updatedAt: now
+  };
 
   try {
-    const created = await BillingWebhookEvent.create({
-      workspaceId: normalizedPayload.workspaceId
-        ? toObjectIdIfValid(normalizedPayload.workspaceId)
-        : null,
-      provider: billingConfig.provider,
-      eventId: event.id,
-      eventType: event.type,
-      status: BILLING_WEBHOOK_EVENT_STATUS.PENDING,
-      payloadHash,
-      payload,
-      normalizedPayload
-    });
+    const result = await BillingWebhookEvent.collection.findOneAndUpdate(
+      {
+        provider: billingConfig.provider,
+        eventId: event.id
+      },
+      {
+        $setOnInsert: insertPayload
+      },
+      {
+        upsert: true,
+        returnDocument: 'after',
+        includeResultMetadata: true
+      }
+    );
+    const resultDocument = result?.value || null;
 
     return {
-      webhookEvent: created.toObject(),
-      created: true
+      webhookEvent: resultDocument,
+      created: !result?.lastErrorObject?.updatedExisting
     };
   } catch (error) {
-    if (error?.code !== 11000) {
-      throw error;
+    if (error?.code === 11000) {
+      const existing = await BillingWebhookEvent.findOne({
+        provider: billingConfig.provider,
+        eventId: event.id
+      }).lean();
+
+      if (existing?._id) {
+        return {
+          webhookEvent: existing,
+          created: false
+        };
+      }
     }
 
-    const existing = await BillingWebhookEvent.findOne({
-      provider: billingConfig.provider,
-      eventId: event.id
-    }).lean();
-
-    if (!existing?._id) {
-      throw createPendingWebhookEventError(
-        'Unable to reload duplicate billing webhook event after a uniqueness conflict.'
-      );
-    }
-
-    return {
-      webhookEvent: existing,
-      created: false
-    };
+    throw error;
   }
 };
 

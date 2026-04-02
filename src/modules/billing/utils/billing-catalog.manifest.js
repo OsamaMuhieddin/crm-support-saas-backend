@@ -4,11 +4,33 @@ import {
   BILLING_ADDON_EFFECT_KEYS,
   BILLING_ADDON_KEYS,
   BILLING_PLAN_FEATURE_KEYS,
-  BILLING_PLAN_LIMIT_KEYS
+  BILLING_PLAN_LIMIT_KEYS,
 } from './billing-canonical.js';
 
 const gb = (value) => value * 1024 * 1024 * 1024;
 const mb = (value) => value * 1024 * 1024;
+const starterLimits = billingConfig.devTestCatalogLimitsEnabled
+  ? {
+      [BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED]: 1,
+      [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 1,
+      [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: mb(5),
+      [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 2,
+      [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 3,
+    }
+  : {
+      [BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED]: 3,
+      [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 1,
+      [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: gb(5),
+      [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 1000,
+      [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 3000,
+    };
+const extraStorageAddonEffects = billingConfig.devTestCatalogLimitsEnabled
+  ? {
+      [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: mb(5),
+    }
+  : {
+      [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: gb(25),
+    };
 
 export const BILLING_CATALOG_DEFAULT_PLAN_KEY = 'starter';
 
@@ -24,24 +46,18 @@ export const billingCatalogManifest = Object.freeze({
       price: 29,
       currency: billingConfig.currency,
       sortOrder: 1,
-      limits: {
-        [BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED]: 1,
-        [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 1,
-        [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: mb(5),
-        [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 2,
-        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 3
-      },
+      limits: starterLimits,
       features: {
         [BILLING_PLAN_FEATURE_KEYS.BILLING_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.PORTAL_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.CHECKOUT_ENABLED]: true,
-        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: false
+        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: false,
       },
       providerMetadata: {
         stripe: {
-          priceId: billingConfig.stripe.prices.starter
-        }
-      }
+          priceId: billingConfig.stripe.prices.starter,
+        },
+      },
     },
     {
       key: 'growth',
@@ -54,19 +70,19 @@ export const billingCatalogManifest = Object.freeze({
         [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 3,
         [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: gb(25),
         [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 3000,
-        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 8000
+        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 8000,
       },
       features: {
         [BILLING_PLAN_FEATURE_KEYS.BILLING_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.PORTAL_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.CHECKOUT_ENABLED]: true,
-        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: true
+        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: true,
       },
       providerMetadata: {
         stripe: {
-          priceId: billingConfig.stripe.prices.growth
-        }
-      }
+          priceId: billingConfig.stripe.prices.growth,
+        },
+      },
     },
     {
       key: 'business',
@@ -79,20 +95,20 @@ export const billingCatalogManifest = Object.freeze({
         [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 10,
         [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: gb(100),
         [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 8000,
-        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 20000
+        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 20000,
       },
       features: {
         [BILLING_PLAN_FEATURE_KEYS.BILLING_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.PORTAL_ENABLED]: true,
         [BILLING_PLAN_FEATURE_KEYS.CHECKOUT_ENABLED]: true,
-        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: true
+        [BILLING_PLAN_FEATURE_KEYS.SLA_ENABLED]: true,
       },
       providerMetadata: {
         stripe: {
-          priceId: billingConfig.stripe.prices.business
-        }
-      }
-    }
+          priceId: billingConfig.stripe.prices.business,
+        },
+      },
+    },
   ],
   addons: [
     {
@@ -103,13 +119,13 @@ export const billingCatalogManifest = Object.freeze({
       currency: billingConfig.currency,
       sortOrder: 1,
       effects: {
-        [BILLING_ADDON_EFFECT_KEYS.SEATS]: 1
+        [BILLING_ADDON_EFFECT_KEYS.SEATS]: 1,
       },
       providerMetadata: {
         stripe: {
-          priceId: billingConfig.stripe.prices.extra_seat
-        }
-      }
+          priceId: billingConfig.stripe.prices.extra_seat,
+        },
+      },
     },
     {
       key: BILLING_ADDON_KEYS.EXTRA_STORAGE,
@@ -118,14 +134,12 @@ export const billingCatalogManifest = Object.freeze({
       price: 10,
       currency: billingConfig.currency,
       sortOrder: 2,
-      effects: {
-        [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: mb(5)
-      },
+      effects: extraStorageAddonEffects,
       providerMetadata: {
         stripe: {
-          priceId: billingConfig.stripe.prices.extra_storage
-        }
-      }
-    }
-  ]
+          priceId: billingConfig.stripe.prices.extra_storage,
+        },
+      },
+    },
+  ],
 });

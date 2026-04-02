@@ -8,7 +8,7 @@ import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
 import {
   captureFallbackEmail,
   extractInviteTokenFromLogs,
-  extractOtpCodeFromLogs,
+  extractOtpCodeFromLogs
 } from './helpers/email-capture.js';
 import { Organization } from '../src/modules/customers/models/organization.model.js';
 import { Contact } from '../src/modules/customers/models/contact.model.js';
@@ -33,7 +33,7 @@ const nextEmail = (prefix) => `${nextValue(prefix)}@example.com`;
 const signupAndCaptureOtp = async ({
   email,
   password = 'Password123!',
-  name = 'Test User',
+  name = 'Test User'
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app).post('/api/auth/signup').send({ email, password, name })
@@ -41,14 +41,14 @@ const signupAndCaptureOtp = async ({
 
   return {
     response,
-    code: extractOtpCodeFromLogs(logs),
+    code: extractOtpCodeFromLogs(logs)
   };
 };
 
 const createVerifiedUser = async ({
   email = nextEmail('ticket-owner'),
   password = 'Password123!',
-  name = 'Test User',
+  name = 'Test User'
 } = {}) => {
   const signup = await signupAndCaptureOtp({ email, password, name });
   expect(signup.response.status).toBe(200);
@@ -56,7 +56,7 @@ const createVerifiedUser = async ({
 
   const verify = await request(app).post('/api/auth/verify-email').send({
     email,
-    code: signup.code,
+    code: signup.code
   });
   expect(verify.status).toBe(200);
 
@@ -65,7 +65,7 @@ const createVerifiedUser = async ({
     password,
     userId: verify.body.user._id,
     accessToken: verify.body.tokens.accessToken,
-    workspaceId: verify.body.user.defaultWorkspaceId,
+    workspaceId: verify.body.user.defaultWorkspaceId
   };
 };
 
@@ -73,7 +73,7 @@ const createInviteWithToken = async ({
   workspaceId,
   accessToken,
   email,
-  roleKey,
+  roleKey
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app)
@@ -84,20 +84,20 @@ const createInviteWithToken = async ({
 
   return {
     response,
-    token: extractInviteTokenFromLogs(logs),
+    token: extractInviteTokenFromLogs(logs)
   };
 };
 
 const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
   const member = await createVerifiedUser({
-    email: nextEmail(`ticket-${roleKey}`),
+    email: nextEmail(`ticket-${roleKey}`)
   });
 
   const invite = await createInviteWithToken({
     workspaceId: owner.workspaceId,
     accessToken: owner.accessToken,
     email: member.email,
-    roleKey,
+    roleKey
   });
 
   expect(invite.response.status).toBe(200);
@@ -107,13 +107,13 @@ const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
     .post('/api/workspaces/invites/accept')
     .send({
       token: invite.token,
-      email: member.email,
+      email: member.email
     });
   expect(accept.status).toBe(200);
 
   const login = await request(app).post('/api/auth/login').send({
     email: member.email,
-    password: member.password,
+    password: member.password
   });
   expect(login.status).toBe(200);
 
@@ -128,14 +128,14 @@ const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
   return {
     accessToken: switched.body.accessToken,
     email: member.email,
-    userId: member.userId,
+    userId: member.userId
   };
 };
 
 const getDefaultMailbox = async (workspaceId) => {
   const workspace = await Workspace.findOne({
     _id: workspaceId,
-    deletedAt: null,
+    deletedAt: null
   })
     .select('_id defaultMailboxId')
     .lean();
@@ -145,43 +145,43 @@ const getDefaultMailbox = async (workspaceId) => {
   return Mailbox.findOne({
     _id: workspace.defaultMailboxId,
     workspaceId,
-    deletedAt: null,
+    deletedAt: null
   }).lean();
 };
 
 const createMailboxRecord = async ({
   workspaceId,
   name = nextValue('Mailbox'),
-  isActive = true,
+  isActive = true
 }) =>
   Mailbox.create({
     workspaceId,
     name,
     isActive,
-    isDefault: false,
+    isDefault: false
   });
 
 const createOrganizationRecord = async ({
   workspaceId,
-  name = nextValue('Organization'),
+  name = nextValue('Organization')
 }) =>
   Organization.create({
     workspaceId,
     name,
-    domain: `${nextValue('org')}.example.com`,
+    domain: `${nextValue('org')}.example.com`
   });
 
 const createContactRecord = async ({
   workspaceId,
   organizationId = null,
-  fullName = nextValue('Contact'),
+  fullName = nextValue('Contact')
 }) =>
   Contact.create({
     workspaceId,
     organizationId,
     fullName,
     email: nextEmail('contact'),
-    phone: '+963955555555',
+    phone: '+963955555555'
   });
 
 const createCategory = async ({ accessToken, name = nextValue('Category') }) =>
@@ -209,8 +209,8 @@ const expectValidationError = (response, field, messageKey) => {
     expect.arrayContaining([
       expect.objectContaining({
         field,
-        messageKey,
-      }),
+        messageKey
+      })
     ])
   );
 };
@@ -222,11 +222,11 @@ describe('Core tickets endpoints', () => {
       const owner = await createVerifiedUser();
       const defaultMailbox = await getDefaultMailbox(owner.workspaceId);
       const organization = await createOrganizationRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
         workspaceId: owner.workspaceId,
-        organizationId: organization._id,
+        organizationId: organization._id
       });
 
       const firstResponse = await createTicketRequest({
@@ -236,9 +236,9 @@ describe('Core tickets endpoints', () => {
           contactId: String(contact._id),
           initialMessage: {
             type: TICKET_MESSAGE_TYPE.INTERNAL_NOTE,
-            bodyText: 'Internal triage note',
-          },
-        },
+            bodyText: 'Internal triage note'
+          }
+        }
       });
 
       expect(firstResponse.status).toBe(200);
@@ -265,7 +265,7 @@ describe('Core tickets endpoints', () => {
           _id: firstResponse.body.ticket.conversationId,
           messageCount: 1,
           internalNoteCount: 1,
-          lastMessageType: TICKET_MESSAGE_TYPE.INTERNAL_NOTE,
+          lastMessageType: TICKET_MESSAGE_TYPE.INTERNAL_NOTE
         })
       );
 
@@ -279,7 +279,7 @@ describe('Core tickets endpoints', () => {
       const conversationCount = await Conversation.countDocuments({
         workspaceId: owner.workspaceId,
         ticketId: firstResponse.body.ticket._id,
-        deletedAt: null,
+        deletedAt: null
       });
       expect(conversationCount).toBe(1);
 
@@ -287,8 +287,8 @@ describe('Core tickets endpoints', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Second ticket number check',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
 
       expect(secondResponse.status).toBe(200);
@@ -301,14 +301,14 @@ describe('Core tickets endpoints', () => {
     async () => {
       const owner = await createVerifiedUser();
       const mailbox = await createMailboxRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const organization = await createOrganizationRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
         workspaceId: owner.workspaceId,
-        organizationId: organization._id,
+        organizationId: organization._id
       });
       const category = await createCategory({ accessToken: owner.accessToken });
       const tag = await createTag({ accessToken: owner.accessToken });
@@ -324,8 +324,8 @@ describe('Core tickets endpoints', () => {
           contactId: String(contact._id),
           organizationId: String(organization._id),
           categoryId: category.body.category._id,
-          tagIds: [tag.body.tag._id],
-        },
+          tagIds: [tag.body.tag._id]
+        }
       });
 
       expect(createResponse.status).toBe(200);
@@ -361,15 +361,15 @@ describe('Core tickets endpoints', () => {
       expect(detail.body.ticket.category).toEqual(
         expect.objectContaining({
           _id: category.body.category._id,
-          isActive: false,
+          isActive: false
         })
       );
       expect(detail.body.ticket.tags).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             _id: tag.body.tag._id,
-            isActive: false,
-          }),
+            isActive: false
+          })
         ])
       );
     }
@@ -381,10 +381,10 @@ describe('Core tickets endpoints', () => {
       const owner = await createVerifiedUser();
       const defaultMailbox = await getDefaultMailbox(owner.workspaceId);
       const alternateMailbox = await createMailboxRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const category = await createCategory({ accessToken: owner.accessToken });
       const tag = await createTag({ accessToken: owner.accessToken });
@@ -399,8 +399,8 @@ describe('Core tickets endpoints', () => {
           contactId: String(contact._id),
           categoryId: category.body.category._id,
           tagIds: [tag.body.tag._id],
-          priority: TICKET_PRIORITY.HIGH,
-        },
+          priority: TICKET_PRIORITY.HIGH
+        }
       });
       expect(first.status).toBe(200);
 
@@ -409,8 +409,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Beta mailbox ticket',
           mailboxId: String(alternateMailbox._id),
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(second.status).toBe(200);
 
@@ -423,7 +423,7 @@ describe('Core tickets endpoints', () => {
         number: closedNumber,
         subject: 'Closed historical ticket',
         status: TICKET_STATUS.CLOSED,
-        contactId: contact._id,
+        contactId: contact._id
       });
 
       const defaultList = await request(app)
@@ -489,12 +489,12 @@ describe('Core tickets endpoints', () => {
         {
           _id: first.body.ticket._id,
           workspaceId: owner.workspaceId,
-          deletedAt: null,
+          deletedAt: null
         },
         {
           $set: {
-            status: TICKET_STATUS.PENDING,
-          },
+            status: TICKET_STATUS.PENDING
+          }
         }
       );
 
@@ -510,11 +510,11 @@ describe('Core tickets endpoints', () => {
         expect.arrayContaining([
           expect.objectContaining({
             _id: first.body.ticket._id,
-            status: TICKET_STATUS.PENDING,
+            status: TICKET_STATUS.PENDING
           }),
           expect.objectContaining({
-            status: TICKET_STATUS.CLOSED,
-          }),
+            status: TICKET_STATUS.CLOSED
+          })
         ])
       );
 
@@ -540,16 +540,16 @@ describe('Core tickets endpoints', () => {
       const owner = await createVerifiedUser();
       const firstMailbox = await getDefaultMailbox(owner.workspaceId);
       const secondMailbox = await createMailboxRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const firstCategory = await createCategory({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       const secondCategory = await createCategory({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       const firstTag = await createTag({ accessToken: owner.accessToken });
       const secondTag = await createTag({ accessToken: owner.accessToken });
@@ -560,8 +560,8 @@ describe('Core tickets endpoints', () => {
           subject: 'Patch me',
           contactId: String(contact._id),
           categoryId: firstCategory.body.category._id,
-          tagIds: [firstTag.body.tag._id],
-        },
+          tagIds: [firstTag.body.tag._id]
+        }
       });
 
       expect(createResponse.status).toBe(200);
@@ -577,7 +577,7 @@ describe('Core tickets endpoints', () => {
           priority: TICKET_PRIORITY.URGENT,
           categoryId: secondCategory.body.category._id,
           tagIds: [secondTag.body.tag._id],
-          mailboxId: String(secondMailbox._id),
+          mailboxId: String(secondMailbox._id)
         });
 
       expect(updateResponse.status).toBe(200);
@@ -593,8 +593,8 @@ describe('Core tickets endpoints', () => {
       expect(updateResponse.body.ticket.tags).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            _id: secondTag.body.tag._id,
-          }),
+            _id: secondTag.body.tag._id
+          })
         ])
       );
       expect(updateResponse.body.ticket.conversation.mailboxId).toBe(
@@ -603,7 +603,7 @@ describe('Core tickets endpoints', () => {
 
       const [updatedTicket, updatedConversation] = await Promise.all([
         Ticket.findById(createResponse.body.ticket._id).lean(),
-        Conversation.findById(createResponse.body.ticket.conversationId).lean(),
+        Conversation.findById(createResponse.body.ticket.conversationId).lean()
       ]);
 
       expect(String(updatedTicket.mailboxId)).toBe(String(secondMailbox._id));
@@ -619,31 +619,31 @@ describe('Core tickets endpoints', () => {
       const owner = await createVerifiedUser();
       const viewer = await createWorkspaceScopedTokenForRole({
         owner,
-        roleKey: WORKSPACE_ROLES.VIEWER,
+        roleKey: WORKSPACE_ROLES.VIEWER
       });
       const otherOwner = await createVerifiedUser();
       const organization = await createOrganizationRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const otherOrganization = await createOrganizationRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
         workspaceId: owner.workspaceId,
-        organizationId: organization._id,
+        organizationId: organization._id
       });
       const otherWorkspaceContact = await createContactRecord({
-        workspaceId: otherOwner.workspaceId,
+        workspaceId: otherOwner.workspaceId
       });
       const inactiveMailbox = await createMailboxRecord({
         workspaceId: owner.workspaceId,
-        isActive: false,
+        isActive: false
       });
       const inactiveCategory = await createCategory({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
       const inactiveTag = await createTag({
-        accessToken: owner.accessToken,
+        accessToken: owner.accessToken
       });
 
       await request(app)
@@ -661,8 +661,8 @@ describe('Core tickets endpoints', () => {
         accessToken: viewer.accessToken,
         body: {
           subject: 'Viewer cannot create',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(viewerCreate.status).toBe(403);
       expect(viewerCreate.body.messageKey).toBe('errors.auth.forbiddenRole');
@@ -671,8 +671,8 @@ describe('Core tickets endpoints', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Owner ticket',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(created.status).toBe(200);
 
@@ -692,8 +692,8 @@ describe('Core tickets endpoints', () => {
         accessToken: owner.accessToken,
         body: {
           subject: 'Cross workspace contact',
-          contactId: String(otherWorkspaceContact._id),
-        },
+          contactId: String(otherWorkspaceContact._id)
+        }
       });
       expect(foreignCreate.status).toBe(404);
       expect(foreignCreate.body.messageKey).toBe(
@@ -705,7 +705,7 @@ describe('Core tickets endpoints', () => {
         mailboxId: (await getDefaultMailbox(otherOwner.workspaceId))._id,
         number: await TicketCounter.allocateNextNumber(otherOwner.workspaceId),
         subject: 'Other workspace ticket',
-        contactId: otherWorkspaceContact._id,
+        contactId: otherWorkspaceContact._id
       });
 
       const foreignDetail = await request(app)
@@ -719,8 +719,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Inactive mailbox',
           mailboxId: String(inactiveMailbox._id),
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
       expect(inactiveMailboxCreate.status).toBe(404);
       expect(inactiveMailboxCreate.body.messageKey).toBe(
@@ -732,8 +732,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Inactive category',
           contactId: String(contact._id),
-          categoryId: inactiveCategory.body.category._id,
-        },
+          categoryId: inactiveCategory.body.category._id
+        }
       });
       expect(inactiveCategoryCreate.status).toBe(404);
       expect(inactiveCategoryCreate.body.messageKey).toBe(
@@ -744,7 +744,7 @@ describe('Core tickets endpoints', () => {
         .patch(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
-          tagIds: [inactiveTag.body.tag._id],
+          tagIds: [inactiveTag.body.tag._id]
         });
       expect(inactiveTagPatch.status).toBe(404);
       expect(inactiveTagPatch.body.messageKey).toBe(
@@ -756,8 +756,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Duplicate tags',
           contactId: String(contact._id),
-          tagIds: [inactiveTag.body.tag._id, inactiveTag.body.tag._id],
-        },
+          tagIds: [inactiveTag.body.tag._id, inactiveTag.body.tag._id]
+        }
       });
       expectValidationError(
         duplicateTags,
@@ -770,8 +770,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Mismatched organization',
           contactId: String(contact._id),
-          organizationId: String(otherOrganization._id),
-        },
+          organizationId: String(otherOrganization._id)
+        }
       });
       expectValidationError(
         mismatchOrganization,
@@ -784,8 +784,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Invalid assignee',
           contactId: String(contact._id),
-          assigneeId: viewer.userId,
-        },
+          assigneeId: viewer.userId
+        }
       });
       expect(invalidAssignee.status).toBe(404);
       expect(invalidAssignee.body.messageKey).toBe(
@@ -799,9 +799,9 @@ describe('Core tickets endpoints', () => {
           contactId: String(contact._id),
           initialMessage: {
             type: 'public_reply',
-            bodyText: 'not allowed here',
-          },
-        },
+            bodyText: 'not allowed here'
+          }
+        }
       });
       expectValidationError(
         invalidInitialType,
@@ -814,8 +814,8 @@ describe('Core tickets endpoints', () => {
         body: {
           subject: 'Unknown create field',
           contactId: String(contact._id),
-          status: TICKET_STATUS.CLOSED,
-        },
+          status: TICKET_STATUS.CLOSED
+        }
       });
       expectValidationError(
         unknownCreateField,
@@ -831,9 +831,9 @@ describe('Core tickets endpoints', () => {
           initialMessage: {
             type: TICKET_MESSAGE_TYPE.INTERNAL_NOTE,
             bodyText: 'valid body',
-            direction: 'inbound',
-          },
-        },
+            direction: 'inbound'
+          }
+        }
       });
       expectValidationError(
         unknownInitialMessageField,
@@ -851,10 +851,10 @@ describe('Core tickets endpoints', () => {
             bodyText: 'text',
             attachmentFileIds: [
               '507f1f77bcf86cd799439011',
-              '507f1f77bcf86cd799439011',
-            ],
-          },
-        },
+              '507f1f77bcf86cd799439011'
+            ]
+          }
+        }
       });
       expectValidationError(
         duplicateInitialAttachments,
@@ -867,7 +867,7 @@ describe('Core tickets endpoints', () => {
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
           subject: 'Rename',
-          status: TICKET_STATUS.CLOSED,
+          status: TICKET_STATUS.CLOSED
         });
       expectValidationError(
         unknownFieldPatch,
@@ -914,10 +914,10 @@ describe('Core tickets endpoints', () => {
     async () => {
       const owner = await createVerifiedUser();
       const mailbox = await createMailboxRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const created = await createTicketRequest({
@@ -927,9 +927,9 @@ describe('Core tickets endpoints', () => {
           contactId: String(contact._id),
           initialMessage: {
             type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
-            bodyText: 'Customer says hello',
-          },
-        },
+            bodyText: 'Customer says hello'
+          }
+        }
       });
 
       expect(created.status).toBe(200);
@@ -941,7 +941,7 @@ describe('Core tickets endpoints', () => {
         .patch(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
-          mailboxId: String(mailbox._id),
+          mailboxId: String(mailbox._id)
         });
 
       expect(updateResponse.status).toBe(409);
@@ -950,7 +950,7 @@ describe('Core tickets endpoints', () => {
       );
       expect(updateResponse.body.message).toBe(
         t('errors.ticket.mailboxChangeNotAllowed', 'en', {
-          messageCount: 1,
+          messageCount: 1
         })
       );
     }
@@ -961,34 +961,36 @@ describe('Core tickets endpoints', () => {
     async () => {
       const owner = await createVerifiedUser();
       const secondMailbox = await createMailboxRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
       const contact = await createContactRecord({
-        workspaceId: owner.workspaceId,
+        workspaceId: owner.workspaceId
       });
 
       const created = await createTicketRequest({
         accessToken: owner.accessToken,
         body: {
           subject: 'Conversation invariant guard',
-          contactId: String(contact._id),
-        },
+          contactId: String(contact._id)
+        }
       });
 
       expect(created.status).toBe(200);
 
-      const ticketBefore = await Ticket.findById(created.body.ticket._id).lean();
+      const ticketBefore = await Ticket.findById(
+        created.body.ticket._id
+      ).lean();
       expect(ticketBefore?.conversationId).toBeTruthy();
 
       await Conversation.deleteOne({
-        _id: ticketBefore.conversationId,
+        _id: ticketBefore.conversationId
       });
 
       const updateResponse = await request(app)
         .patch(`/api/tickets/${created.body.ticket._id}`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
-          mailboxId: String(secondMailbox._id),
+          mailboxId: String(secondMailbox._id)
         });
 
       expect(updateResponse.status).toBe(500);
@@ -997,34 +999,39 @@ describe('Core tickets endpoints', () => {
       );
 
       const ticketAfter = await Ticket.findById(created.body.ticket._id).lean();
-      expect(String(ticketAfter.mailboxId)).toBe(String(ticketBefore.mailboxId));
+      expect(String(ticketAfter.mailboxId)).toBe(
+        String(ticketBefore.mailboxId)
+      );
     }
   );
 
-  maybeDbTest('ticket creation increments monthly billing usage without blocking creation', async () => {
-    const owner = await createVerifiedUser();
-    const contact = await createContactRecord({
-      workspaceId: owner.workspaceId,
-    });
+  maybeDbTest(
+    'ticket creation increments monthly billing usage without blocking creation',
+    async () => {
+      const owner = await createVerifiedUser();
+      const contact = await createContactRecord({
+        workspaceId: owner.workspaceId
+      });
 
-    const response = await createTicketRequest({
-      accessToken: owner.accessToken,
-      body: {
-        subject: 'Billing usage counter ticket',
-        contactId: String(contact._id),
-      },
-    });
+      const response = await createTicketRequest({
+        accessToken: owner.accessToken,
+        body: {
+          subject: 'Billing usage counter ticket',
+          contactId: String(contact._id)
+        }
+      });
 
-    expect(response.status).toBe(200);
-    expect(response.body.messageKey).toBe('success.ticket.created');
+      expect(response.status).toBe(200);
+      expect(response.body.messageKey).toBe('success.ticket.created');
 
-    const periodKey = new Date().toISOString().slice(0, 7);
-    const meter = await UsageMeter.findOne({
-      workspaceId: owner.workspaceId,
-      periodKey,
-    }).lean();
+      const periodKey = new Date().toISOString().slice(0, 7);
+      const meter = await UsageMeter.findOne({
+        workspaceId: owner.workspaceId,
+        periodKey
+      }).lean();
 
-    expect(meter).toBeTruthy();
-    expect(meter.ticketsCreated).toBe(1);
-  });
+      expect(meter).toBeTruthy();
+      expect(meter.ticketsCreated).toBe(1);
+    }
+  );
 });
