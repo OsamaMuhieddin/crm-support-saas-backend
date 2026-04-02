@@ -8,6 +8,7 @@ import {
 } from './billing-canonical.js';
 
 const gb = (value) => value * 1024 * 1024 * 1024;
+const mb = (value) => value * 1024 * 1024;
 
 export const BILLING_CATALOG_DEFAULT_PLAN_KEY = 'starter';
 
@@ -24,11 +25,11 @@ export const billingCatalogManifest = Object.freeze({
       currency: billingConfig.currency,
       sortOrder: 1,
       limits: {
-        [BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED]: 3,
+        [BILLING_PLAN_LIMIT_KEYS.SEATS_INCLUDED]: 1,
         [BILLING_PLAN_LIMIT_KEYS.MAILBOXES]: 1,
-        [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: gb(5),
-        [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 1000,
-        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 3000
+        [BILLING_PLAN_LIMIT_KEYS.STORAGE_BYTES]: mb(5),
+        [BILLING_PLAN_LIMIT_KEYS.UPLOADS_PER_MONTH]: 2,
+        [BILLING_PLAN_LIMIT_KEYS.TICKETS_PER_MONTH]: 3
       },
       features: {
         [BILLING_PLAN_FEATURE_KEYS.BILLING_ENABLED]: true,
@@ -118,7 +119,7 @@ export const billingCatalogManifest = Object.freeze({
       currency: billingConfig.currency,
       sortOrder: 2,
       effects: {
-        [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: gb(25)
+        [BILLING_ADDON_EFFECT_KEYS.STORAGE_BYTES]: mb(5)
       },
       providerMetadata: {
         stripe: {
