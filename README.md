@@ -324,6 +324,39 @@ FILES_DOWNLOAD_RATE_LIMIT_WINDOW_SECONDS=60
 FILES_DOWNLOAD_RATE_LIMIT_MAX=120
 ```
 
+## Backend Billing v1 Local Stripe Webhooks
+
+For local Billing v1 webhook testing, run the backend on the host machine and run Stripe CLI in Docker Compose.
+
+- Backend target forwarded by Stripe CLI: `http://host.docker.internal:5000/api/billing/webhooks/stripe`
+- This repo starts the backend locally with `npm run dev`, so Stripe CLI must forward back to the host, not to a Compose backend service.
+
+### Required env
+
+```env
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+```
+
+`docker-compose.stripe.yml` reuses `STRIPE_SECRET_KEY` from `.env` and passes it to the Stripe CLI container as `STRIPE_API_KEY`.
+
+### Start Stripe CLI in Docker
+
+```bash
+docker compose -f docker-compose.stripe.yml up -d stripe-cli
+docker compose -f docker-compose.stripe.yml logs -f stripe-cli
+```
+
+What to do next:
+
+1. Start the backend with `npm run dev`.
+2. Start the Stripe CLI service.
+3. Watch the `stripe-cli` logs and copy the generated `whsec_...` signing secret.
+4. Paste that value into `STRIPE_WEBHOOK_SECRET` in `.env`.
+5. Restart the backend so the new webhook secret is loaded.
+
+The `whsec_...` value is printed in the `stripe-cli` container logs after `stripe listen` starts successfully.
+
 ## Backend Mailboxes v1
 
 Mailbox v1 is now available as a workspace-scoped support queue abstraction:
