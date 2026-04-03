@@ -302,6 +302,259 @@ describe('Billing Stripe runtime', () => {
     expect(success.body.portalSession.url).toContain('billing.stripe.test');
   });
 
+  maybeDbTest('change-plan endpoint updates the Stripe base plan item and syncs local billing state', async () => {
+    const owner = await createVerifiedUser({
+      email: 'billing-runtime-change-plan-owner@example.com'
+    });
+
+    await request(app)
+      .get('/api/billing/summary')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+
+    const growthPlan = await Plan.findOne({ key: 'growth' }).lean();
+    expect(growthPlan).toBeTruthy();
+
+    await Subscription.updateOne(
+      { workspaceId: owner.workspaceId, deletedAt: null },
+      {
+        $set: {
+          planId: growthPlan._id,
+          planKey: growthPlan.key,
+          status: 'active',
+          stripeCustomerId: 'cus_change_plan_123',
+          stripeSubscriptionId: 'sub_change_plan_123',
+          addonItems: [
+            {
+              addonKey: 'extra_seat',
+              quantity: 1
+            }
+          ]
+        }
+      }
+    );
+
+    jest.spyOn(stripeBillingProvider, 'retrieveSubscription').mockResolvedValue({
+      id: 'sub_change_plan_123',
+      customer: 'cus_change_plan_123',
+      status: 'active',
+      current_period_start: 1735689600,
+      current_period_end: 1738368000,
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: 'si_plan_growth_123',
+            quantity: 1,
+            price: { id: process.env.STRIPE_PRICE_GROWTH_MONTHLY }
+          },
+          {
+            id: 'si_addon_seat_123',
+            quantity: 1,
+            price: { id: process.env.STRIPE_PRICE_EXTRA_SEAT_MONTHLY }
+          }
+        ]
+      },
+      metadata: {
+        workspaceId: owner.workspaceId
+      }
+    });
+    const updateSubscriptionSpy = jest
+      .spyOn(stripeBillingProvider, 'updateSubscription')
+      .mockResolvedValue({
+        id: 'sub_change_plan_123',
+        customer: 'cus_change_plan_123',
+        status: 'active',
+        current_period_start: 1735689600,
+        current_period_end: 1738368000,
+        cancel_at_period_end: false,
+        items: {
+          data: [
+            {
+              id: 'si_plan_growth_123',
+              quantity: 1,
+              price: { id: process.env.STRIPE_PRICE_BUSINESS_MONTHLY }
+            },
+            {
+              id: 'si_addon_seat_123',
+              quantity: 1,
+              price: { id: process.env.STRIPE_PRICE_EXTRA_SEAT_MONTHLY }
+            }
+          ]
+        },
+        metadata: {
+          workspaceId: owner.workspaceId
+        }
+      });
+
+    const response = await request(app)
+      .post('/api/billing/change-plan')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({
+        planKey: 'business'
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.messageKey).toBe('success.billing.planChanged');
+    expect(response.body.subscriptionUpdate.previousPlanKey).toBe('growth');
+    expect(response.body.subscriptionUpdate.currentPlanKey).toBe('business');
+    expect(updateSubscriptionSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscriptionId: 'sub_change_plan_123',
+        items: [
+          expect.objectContaining({
+            id: 'si_plan_growth_123',
+            price: process.env.STRIPE_PRICE_BUSINESS_MONTHLY,
+            quantity: 1
+          })
+        ]
+      })
+    );
+
+    const subscription = await Subscription.findOne({
+      workspaceId: owner.workspaceId,
+      deletedAt: null
+    }).lean();
+
+    expect(subscription.planKey).toBe('business');
+    expect(subscription.addonItems).toHaveLength(1);
+    expect(subscription.addonItems[0].addonKey).toBe('extra_seat');
+  });
+
+  maybeDbTest('update-addons endpoint patches add-on quantities, removes zero-quantity add-ons, and syncs local billing state', async () => {
+    const owner = await createVerifiedUser({
+      email: 'billing-runtime-update-addons-owner@example.com'
+    });
+
+    await request(app)
+      .get('/api/billing/summary')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+
+    const growthPlan = await Plan.findOne({ key: 'growth' }).lean();
+    expect(growthPlan).toBeTruthy();
+
+    await Subscription.updateOne(
+      { workspaceId: owner.workspaceId, deletedAt: null },
+      {
+        $set: {
+          planId: growthPlan._id,
+          planKey: growthPlan.key,
+          status: 'active',
+          stripeCustomerId: 'cus_update_addons_123',
+          stripeSubscriptionId: 'sub_update_addons_123',
+          addonItems: [
+            {
+              addonKey: 'extra_seat',
+              quantity: 1
+            }
+          ]
+        }
+      }
+    );
+
+    jest.spyOn(stripeBillingProvider, 'retrieveSubscription').mockResolvedValue({
+      id: 'sub_update_addons_123',
+      customer: 'cus_update_addons_123',
+      status: 'active',
+      current_period_start: 1735689600,
+      current_period_end: 1738368000,
+      cancel_at_period_end: false,
+      items: {
+        data: [
+          {
+            id: 'si_plan_growth_456',
+            quantity: 1,
+            price: { id: process.env.STRIPE_PRICE_GROWTH_MONTHLY }
+          },
+          {
+            id: 'si_addon_seat_456',
+            quantity: 1,
+            price: { id: process.env.STRIPE_PRICE_EXTRA_SEAT_MONTHLY }
+          }
+        ]
+      },
+      metadata: {
+        workspaceId: owner.workspaceId
+      }
+    });
+    const updateSubscriptionSpy = jest
+      .spyOn(stripeBillingProvider, 'updateSubscription')
+      .mockResolvedValue({
+        id: 'sub_update_addons_123',
+        customer: 'cus_update_addons_123',
+        status: 'active',
+        current_period_start: 1735689600,
+        current_period_end: 1738368000,
+        cancel_at_period_end: false,
+        items: {
+          data: [
+            {
+              id: 'si_plan_growth_456',
+              quantity: 1,
+              price: { id: process.env.STRIPE_PRICE_GROWTH_MONTHLY }
+            },
+            {
+              id: 'si_addon_storage_456',
+              quantity: 2,
+              price: { id: process.env.STRIPE_PRICE_EXTRA_STORAGE_MONTHLY }
+            }
+          ]
+        },
+        metadata: {
+          workspaceId: owner.workspaceId
+        }
+      });
+
+    const response = await request(app)
+      .post('/api/billing/update-addons')
+      .set('Authorization', `Bearer ${owner.accessToken}`)
+      .send({
+        addonItems: [
+          {
+            addonKey: 'extra_seat',
+            quantity: 0
+          },
+          {
+            addonKey: 'extra_storage',
+            quantity: 2
+          }
+        ]
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.messageKey).toBe('success.billing.addonsUpdated');
+    expect(response.body.subscriptionUpdate.addonItems).toEqual([
+      {
+        addonKey: 'extra_storage',
+        quantity: 2
+      }
+    ]);
+    expect(updateSubscriptionSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subscriptionId: 'sub_update_addons_123',
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'si_addon_seat_456',
+            deleted: true
+          }),
+          expect.objectContaining({
+            price: process.env.STRIPE_PRICE_EXTRA_STORAGE_MONTHLY,
+            quantity: 2
+          })
+        ])
+      })
+    );
+
+    const subscription = await Subscription.findOne({
+      workspaceId: owner.workspaceId,
+      deletedAt: null
+    }).lean();
+
+    expect(subscription.planKey).toBe('growth');
+    expect(subscription.addonItems).toHaveLength(1);
+    expect(subscription.addonItems[0].addonKey).toBe('extra_storage');
+    expect(subscription.addonItems[0].quantity).toBe(2);
+  });
+
   maybeDbTest('zero limits are enforceable while explicit null limits stay unlimited', async () => {
     const owner = await createVerifiedUser({
       email: 'billing-runtime-zero-limit-owner@example.com'

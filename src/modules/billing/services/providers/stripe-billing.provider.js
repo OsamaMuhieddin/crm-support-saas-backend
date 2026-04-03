@@ -50,137 +50,148 @@ export const ensureStripePriceId = (value) => {
 export const stripeBillingProvider = {
   getClient: () => getStripeClient(),
   createCustomer: async ({
-  email,
-  name,
-  workspaceId,
-  workspaceName,
-  existingCustomerId = null
-}) => {
-  const stripe = getStripeClient();
-  const metadata = {
-    workspaceId: String(workspaceId || '')
-  };
+    email,
+    name,
+    workspaceId,
+    workspaceName,
+    existingCustomerId = null
+  }) => {
+    const stripe = getStripeClient();
+    const metadata = {
+      workspaceId: String(workspaceId || '')
+    };
 
-  if (workspaceName) {
-    metadata.workspaceName = workspaceName;
-  }
+    if (workspaceName) {
+      metadata.workspaceName = workspaceName;
+    }
 
-  if (existingCustomerId) {
-    try {
-      return await stripe.customers.update(existingCustomerId, {
-        email: email || undefined,
-        name: name || workspaceName || undefined,
-        metadata
-      });
-    } catch (error) {
-      if (error?.statusCode !== 404) {
-        throw error;
+    if (existingCustomerId) {
+      try {
+        return await stripe.customers.update(existingCustomerId, {
+          email: email || undefined,
+          name: name || workspaceName || undefined,
+          metadata
+        });
+      } catch (error) {
+        if (error?.statusCode !== 404) {
+          throw error;
+        }
       }
     }
-  }
 
-  return stripe.customers.create({
-    email: email || undefined,
-    name: name || workspaceName || undefined,
-    metadata
-  });
-},
+    return stripe.customers.create({
+      email: email || undefined,
+      name: name || workspaceName || undefined,
+      metadata
+    });
+  },
   createCheckoutSession: async ({
-  customerId,
-  customerEmail,
-  workspaceId,
-  workspaceName,
-  lineItems,
-  successUrl,
-  cancelUrl,
-  trialEndsAt = null
+    customerId,
+    customerEmail,
+    workspaceId,
+    workspaceName,
+    lineItems,
+    successUrl,
+    cancelUrl,
+    trialEndsAt = null
   }) => {
-  const stripe = getStripeClient();
-  const subscriptionData = {
-    metadata: {
-      workspaceId: String(workspaceId || ''),
-      workspaceName: String(workspaceName || '')
+    const stripe = getStripeClient();
+    const subscriptionData = {
+      metadata: {
+        workspaceId: String(workspaceId || ''),
+        workspaceName: String(workspaceName || '')
+      }
+    };
+
+    if (trialEndsAt instanceof Date && trialEndsAt.getTime() > Date.now()) {
+      subscriptionData.trial_end = Math.floor(trialEndsAt.getTime() / 1000);
     }
-  };
 
-  if (trialEndsAt instanceof Date && trialEndsAt.getTime() > Date.now()) {
-    subscriptionData.trial_end = Math.floor(trialEndsAt.getTime() / 1000);
-  }
+    return stripe.checkout.sessions.create({
+      mode: 'subscription',
+      customer: customerId || undefined,
+      customer_email: customerId ? undefined : customerEmail || undefined,
+      client_reference_id: String(workspaceId || ''),
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+      line_items: lineItems,
+      metadata: {
+        workspaceId: String(workspaceId || ''),
+        workspaceName: String(workspaceName || '')
+      },
+      subscription_data: subscriptionData
+    });
+  },
+  createBillingPortalSession: async ({ customerId, returnUrl = null }) => {
+    const stripe = getStripeClient();
 
-  return stripe.checkout.sessions.create({
-    mode: 'subscription',
-    customer: customerId || undefined,
-    customer_email: customerId ? undefined : customerEmail || undefined,
-    client_reference_id: String(workspaceId || ''),
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    line_items: lineItems,
-    metadata: {
-      workspaceId: String(workspaceId || ''),
-      workspaceName: String(workspaceName || '')
-    },
-    subscription_data: subscriptionData
-  });
-},
-  createBillingPortalSession: async ({
-  customerId,
-  returnUrl = null
-}) => {
-  const stripe = getStripeClient();
+    return stripe.billingPortal.sessions.create({
+      customer: customerId,
+      return_url: returnUrl || undefined
+    });
+  },
+  updateSubscription: async ({
+    subscriptionId,
+    items,
+    prorationBehavior = 'always_invoice'
+  }) => {
+    if (!subscriptionId) {
+      throw createError('errors.billing.subscriptionNotFound', 404);
+    }
 
-  return stripe.billingPortal.sessions.create({
-    customer: customerId,
-    return_url: returnUrl || undefined
-  });
-},
-  verifyWebhookEvent: ({
-  payload,
-  signature
-}) => {
-  ensureStripeWebhookConfigured();
+    const stripe = getStripeClient();
 
-  if (!signature) {
-    throw createError('errors.billing.webhookSignatureInvalid', 400);
-  }
+    return stripe.subscriptions.update(subscriptionId, {
+      items,
+      proration_behavior: prorationBehavior,
+      expand: ['items.data.price']
+    });
+  },
+  verifyWebhookEvent: ({ payload, signature }) => {
+    ensureStripeWebhookConfigured();
 
-  const stripe = getStripeClient();
+    if (!signature) {
+      throw createError('errors.billing.webhookSignatureInvalid', 400);
+    }
 
-  try {
-    return stripe.webhooks.constructEvent(
-      payload,
-      signature,
-      billingConfig.stripe.webhookSecret
-    );
-  } catch (error) {
-    throw createError('errors.billing.webhookSignatureInvalid', 400);
-  }
-},
+    const stripe = getStripeClient();
+
+    try {
+      return stripe.webhooks.constructEvent(
+        payload,
+        signature,
+        billingConfig.stripe.webhookSecret
+      );
+    } catch (error) {
+      throw createError('errors.billing.webhookSignatureInvalid', 400);
+    }
+  },
   retrieveSubscription: async ({ subscriptionId }) => {
-  if (!subscriptionId) {
-    throw createError('errors.billing.subscriptionNotFound', 404);
-  }
+    if (!subscriptionId) {
+      throw createError('errors.billing.subscriptionNotFound', 404);
+    }
 
-  const stripe = getStripeClient();
+    const stripe = getStripeClient();
 
-  return stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ['items.data.price']
-  });
-},
+    return stripe.subscriptions.retrieve(subscriptionId, {
+      expand: ['items.data.price']
+    });
+  },
   listSubscriptionsForCustomer: async ({ customerId, limit = 10 }) => {
-  if (!customerId) {
-    return [];
+    if (!customerId) {
+      return [];
+    }
+
+    const stripe = getStripeClient();
+    const response = await stripe.subscriptions.list({
+      customer: customerId,
+      status: 'all',
+      limit,
+      expand: ['data.items.data.price']
+    });
+
+    return Array.isArray(response?.data) ? response.data : [];
   }
-
-  const stripe = getStripeClient();
-  const response = await stripe.subscriptions.list({
-    customer: customerId,
-    status: 'all',
-    limit,
-    expand: ['data.items.data.price']
-  });
-
-  return Array.isArray(response?.data) ? response.data : [];
-}
 };
 
 export const createStripeCustomer = async (input) =>
@@ -191,6 +202,9 @@ export const createStripeCheckoutSession = async (input) =>
 
 export const createStripeBillingPortalSession = async (input) =>
   stripeBillingProvider.createBillingPortalSession(input);
+
+export const updateStripeSubscription = async (input) =>
+  stripeBillingProvider.updateSubscription(input);
 
 export const verifyStripeWebhookEvent = (input) =>
   stripeBillingProvider.verifyWebhookEvent(input);

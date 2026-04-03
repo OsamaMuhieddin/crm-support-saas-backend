@@ -1,4 +1,5 @@
 import {
+  changeCurrentWorkspaceBillingPlan,
   createBillingCheckoutSession,
   createBillingPortalSession,
   getBillingCatalog,
@@ -6,6 +7,7 @@ import {
   getCurrentBillingSubscription,
   getCurrentBillingSummary,
   getCurrentBillingUsage,
+  updateCurrentWorkspaceBillingAddons
 } from '../services/billing.service.js';
 import { acceptStripeWebhookEvent } from '../services/billing-webhooks.service.js';
 
@@ -112,6 +114,38 @@ export const createBillingPortalSessionController = async (req, res, next) => {
     return res.json({
       messageKey: 'success.billing.portalSessionCreated',
       ...data,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const changeBillingPlanController = async (req, res, next) => {
+  try {
+    const data = await changeCurrentWorkspaceBillingPlan({
+      workspaceId: req.auth.workspaceId,
+      payload: req.body
+    });
+
+    return res.json({
+      messageKey: 'success.billing.planChanged',
+      ...data
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+export const updateBillingAddonsController = async (req, res, next) => {
+  try {
+    const data = await updateCurrentWorkspaceBillingAddons({
+      workspaceId: req.auth.workspaceId,
+      payload: req.body
+    });
+
+    return res.json({
+      messageKey: 'success.billing.addonsUpdated',
+      ...data
     });
   } catch (error) {
     return next(error);

@@ -1,5 +1,9 @@
 # CRM Support SaaS Backend API Reference
 
+Frontend handoff note:
+
+- For a frontend-friendly Billing v1 flow explanation, see [Billing v1 Frontend Flow Report](./billing-frontend-flow-report.md).
+
 ## 1) Overview
 
 ### Base URL
@@ -5433,12 +5437,117 @@ npm run mailboxes:backfill-default
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable | errors.billing.providerNotConfigured | errors.billing.providerPriceMissing`
 - Notes:
   - this route is intended for initial paid setup when the workspace does not already have a managed Stripe subscription.
-  - once a Stripe subscription exists, ongoing upgrades, downgrades, add-on changes, payment recovery, and cancellation-state changes are handled through the billing portal and then synced back by webhooks.
+  - once a Stripe subscription exists, ongoing plan and add-on changes are handled through the app billing actions below, while payment recovery and cancellation-state changes can still use the billing portal.
   - starting Checkout does not reset local usage counters.
+
+### POST `/api/billing/change-plan`
+
+- Purpose: change the current base billing plan for an already managed Stripe subscription.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+  - workspace must already have a managed Stripe subscription
+- Request body:
+
+```json
+{
+  "planKey": "business"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.billing.planChanged",
+  "message": "Billing plan updated successfully.",
+  "subscriptionUpdate": {
+    "workspaceId": "65f0f1b7f8e4e5f3c2d1a987",
+    "provider": "stripe",
+    "previousPlanKey": "growth",
+    "requestedPlanKey": "business",
+    "currentPlanKey": "business",
+    "status": "active",
+    "stripeSubscriptionId": "sub_123"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.billing.planNotFound`
+  - `409` `errors.billing.managedSubscriptionRequired`
+  - `422` `errors.validation.failed`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable | errors.billing.providerNotConfigured | errors.billing.providerPriceMissing | errors.billing.providerSyncFailed`
+- Notes:
+  - this action updates the Stripe base plan item and then re-syncs local billing state from Stripe.
+  - the frontend should refetch billing summary after success instead of assuming all local state is already final.
+
+### POST `/api/billing/update-addons`
+
+- Purpose: add, remove, or resize supported billing add-ons on an already managed Stripe subscription.
+- Requirements:
+  - valid bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+  - workspace must already have a managed Stripe subscription
+- Request body:
+
+```json
+{
+  "addonItems": [
+    {
+      "addonKey": "extra_seat",
+      "quantity": 0
+    },
+    {
+      "addonKey": "extra_storage",
+      "quantity": 2
+    }
+  ]
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.billing.addonsUpdated",
+  "message": "Billing add-ons updated successfully.",
+  "subscriptionUpdate": {
+    "workspaceId": "65f0f1b7f8e4e5f3c2d1a987",
+    "provider": "stripe",
+    "status": "active",
+    "stripeSubscriptionId": "sub_123",
+    "addonItems": [
+      {
+        "addonKey": "extra_storage",
+        "quantity": 2
+      }
+    ]
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
+  - `404` `errors.billing.addonNotFound`
+  - `409` `errors.billing.managedSubscriptionRequired`
+  - `422` `errors.validation.failed`
+  - `503` `errors.billing.disabled | errors.billing.catalogUnavailable | errors.billing.providerNotConfigured | errors.billing.providerPriceMissing | errors.billing.providerSyncFailed`
+- Notes:
+  - quantity `0` removes the add-on from the Stripe subscription.
+  - quantity `> 0` adds or updates that add-on item.
+  - the frontend should refetch billing summary after success instead of assuming all local state is already final.
 
 ### POST `/api/billing/portal-session`
 
-- Purpose: create a Stripe Billing Portal session for the active workspace.
+- Purpose: create a Stripe Billing Portal session for payment method management, payment recovery, cancellation, and other Stripe-hosted actions for the active workspace.
 - Requirements:
   - valid bearer access token
   - active user
@@ -5472,6 +5581,9 @@ npm run mailboxes:backfill-default
   - `409` `errors.billing.portalUnavailable`
   - `422` `errors.validation.failed`
   - `503` `errors.billing.disabled | errors.billing.providerNotConfigured`
+- Notes:
+  - the portal should be treated as the hosted payment and account-management surface.
+  - Billing v1 uses app-managed plan and add-on updates through `POST /api/billing/change-plan` and `POST /api/billing/update-addons`.
 
 ### POST `/api/billing/webhooks/stripe`
 

@@ -28,7 +28,8 @@ import {
   createStripeCustomer,
   ensureStripePriceId,
   listStripeSubscriptionsForCustomer,
-  retrieveStripeSubscription
+  retrieveStripeSubscription,
+  updateStripeSubscription
 } from './providers/stripe-billing.provider.js';
 import {
   buildStripeLifecyclePatch,
@@ -251,6 +252,9 @@ const createProviderSyncFailedError = (message) => {
   return error;
 };
 
+const createManagedSubscriptionRequiredError = () =>
+  createError('errors.billing.managedSubscriptionRequired', 409);
+
 const MANAGED_PORTAL_ELIGIBLE_STATUSES = new Set([
   BILLING_SUBSCRIPTION_STATUS.TRIALING,
   BILLING_SUBSCRIPTION_STATUS.ACTIVE,
@@ -265,6 +269,91 @@ const hasManagedPortalEligibility = ({ subscription }) =>
       normalizeMetadataValue(subscription?.stripeSubscriptionId) &&
       MANAGED_PORTAL_ELIGIBLE_STATUSES.has(subscription?.status)
   );
+
+const normalizeAddonQuantityPatchItems = (items = []) => {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items
+    .map((item) => ({
+      addonKey: normalizeMetadataValue(item?.addonKey)?.toLowerCase() || null,
+      quantity: Math.max(0, Math.trunc(Number(item?.quantity || 0)))
+    }))
+    .filter((item) => item.addonKey);
+};
+
+const resolveCurrentManagedStripeSubscriptionOrThrow = async ({
+  workspaceId
+}) => {
+  const foundation = await ensureWorkspaceBillingFoundation({ workspaceId });
+  const stripeSubscriptionId = normalizeMetadataValue(
+    foundation.subscription?.stripeSubscriptionId
+  );
+
+  if (!stripeSubscriptionId) {
+    throw createManagedSubscriptionRequiredError();
+  }
+
+  const remoteSubscription = await retrieveStripeSubscription({
+    subscriptionId: stripeSubscriptionId
+  });
+
+  return {
+    foundation,
+    remoteSubscription,
+    stripeSubscriptionId
+  };
+};
+
+const findStripePlanItem = async (stripeSubscription) => {
+  const items = Array.isArray(stripeSubscription?.items?.data)
+    ? stripeSubscription.items.data
+    : [];
+
+  for (const item of items) {
+    const priceId = normalizeMetadataValue(item?.price?.id);
+    if (!priceId) {
+      continue;
+    }
+
+    const plan = await findPlanByStripePriceId({ priceId });
+    if (plan) {
+      return {
+        item,
+        plan
+      };
+    }
+  }
+
+  return null;
+};
+
+const findStripeAddonItemsByKey = async (stripeSubscription) => {
+  const items = Array.isArray(stripeSubscription?.items?.data)
+    ? stripeSubscription.items.data
+    : [];
+  const byAddonKey = new Map();
+
+  for (const item of items) {
+    const priceId = normalizeMetadataValue(item?.price?.id);
+    if (!priceId) {
+      continue;
+    }
+
+    const addon = await findAddonByStripePriceId({ priceId });
+    if (!addon?.key) {
+      continue;
+    }
+
+    byAddonKey.set(addon.key, {
+      item,
+      addon
+    });
+  }
+
+  return byAddonKey;
+};
 
 const loadRemoteStripeSubscription = async ({
   stripeSubscriptionId,
@@ -480,6 +569,155 @@ export const createWorkspacePortalSession = async ({
   });
 
   return buildPortalResponse(session);
+};
+
+export const changeWorkspaceBillingPlan = async ({
+  workspaceId,
+  planKey
+}) => {
+  await syncBillingCatalog();
+
+  const targetPlan = await findActivePlanByKeyOrThrow({ planKey });
+  const {
+    foundation,
+    remoteSubscription,
+    stripeSubscriptionId
+  } = await resolveCurrentManagedStripeSubscriptionOrThrow({ workspaceId });
+
+  const currentPlanItem = await findStripePlanItem(remoteSubscription);
+  if (!currentPlanItem?.item?.id) {
+    throw createProviderSyncFailedError(
+      `Unable to resolve the current Stripe plan item for workspace ${workspaceId}.`
+    );
+  }
+
+  const updatedStripeSubscription = await updateStripeSubscription({
+    subscriptionId: stripeSubscriptionId,
+    items: [
+      {
+        id: currentPlanItem.item.id,
+        price: ensureStripePriceId(targetPlan.providerMetadata?.stripe?.priceId),
+        quantity: 1
+      }
+    ],
+    prorationBehavior: 'always_invoice'
+  });
+
+  const synced = await syncWorkspaceSubscriptionFromStripe({
+    workspaceId,
+    stripeSubscriptionId,
+    stripeSubscription: updatedStripeSubscription
+  });
+
+  return {
+    subscriptionUpdate: {
+      workspaceId: String(workspaceId),
+      provider: billingConfig.provider,
+      previousPlanKey: foundation.subscription?.planKey || null,
+      requestedPlanKey: targetPlan.key,
+      currentPlanKey: synced.subscription.planKey,
+      status: synced.subscription.status,
+      stripeSubscriptionId: synced.subscription.stripeSubscriptionId || null
+    }
+  };
+};
+
+export const updateWorkspaceBillingAddons = async ({
+  workspaceId,
+  addonItems = []
+}) => {
+  await syncBillingCatalog();
+
+  const normalizedItems = normalizeAddonQuantityPatchItems(addonItems);
+  const positiveSelections = normalizedItems.filter((item) => item.quantity > 0);
+  const resolvedSelections = await resolveActiveAddonSelectionsOrThrow(
+    positiveSelections
+  );
+  const resolvedSelectionsByKey = new Map(
+    resolvedSelections.map((entry) => [entry.addon.key, entry])
+  );
+  const {
+    remoteSubscription,
+    stripeSubscriptionId
+  } = await resolveCurrentManagedStripeSubscriptionOrThrow({ workspaceId });
+  const currentAddonItemsByKey = await findStripeAddonItemsByKey(remoteSubscription);
+  const subscriptionItemUpdates = [];
+
+  for (const item of normalizedItems) {
+    const existingAddonItem = currentAddonItemsByKey.get(item.addonKey) || null;
+    const resolvedSelection = resolvedSelectionsByKey.get(item.addonKey) || null;
+
+    if (item.quantity <= 0) {
+      if (existingAddonItem?.item?.id) {
+        subscriptionItemUpdates.push({
+          id: existingAddonItem.item.id,
+          deleted: true
+        });
+      }
+      continue;
+    }
+
+    if (existingAddonItem?.item?.id) {
+      subscriptionItemUpdates.push({
+        id: existingAddonItem.item.id,
+        quantity: item.quantity
+      });
+      continue;
+    }
+
+    subscriptionItemUpdates.push({
+      price: ensureStripePriceId(
+        resolvedSelection?.addon?.providerMetadata?.stripe?.priceId
+      ),
+      quantity: item.quantity
+    });
+  }
+
+  if (subscriptionItemUpdates.length === 0) {
+    const synced = await syncWorkspaceSubscriptionFromStripe({
+      workspaceId,
+      stripeSubscriptionId,
+      stripeSubscription: remoteSubscription
+    });
+
+    return {
+      subscriptionUpdate: {
+        workspaceId: String(workspaceId),
+        provider: billingConfig.provider,
+        status: synced.subscription.status,
+        stripeSubscriptionId: synced.subscription.stripeSubscriptionId || null,
+        addonItems: synced.addons.map(({ addon, quantity }) => ({
+          addonKey: addon.key,
+          quantity
+        }))
+      }
+    };
+  }
+
+  const updatedStripeSubscription = await updateStripeSubscription({
+    subscriptionId: stripeSubscriptionId,
+    items: subscriptionItemUpdates,
+    prorationBehavior: 'always_invoice'
+  });
+
+  const synced = await syncWorkspaceSubscriptionFromStripe({
+    workspaceId,
+    stripeSubscriptionId,
+    stripeSubscription: updatedStripeSubscription
+  });
+
+  return {
+    subscriptionUpdate: {
+      workspaceId: String(workspaceId),
+      provider: billingConfig.provider,
+      status: synced.subscription.status,
+      stripeSubscriptionId: synced.subscription.stripeSubscriptionId || null,
+      addonItems: synced.addons.map(({ addon, quantity }) => ({
+        addonKey: addon.key,
+        quantity
+      }))
+    }
+  };
 };
 
 export const syncWorkspaceSubscriptionFromStripe = async ({

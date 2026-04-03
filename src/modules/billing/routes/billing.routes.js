@@ -6,6 +6,7 @@ import requireAuth from '../../../shared/middlewares/requireAuth.js';
 import requireWorkspaceRole from '../../../shared/middlewares/requireWorkspaceRole.js';
 import validate from '../../../shared/middlewares/validate.js';
 import {
+  changeBillingPlanController,
   createBillingCheckoutSessionController,
   createBillingPortalSessionController,
   getBillingCatalogController,
@@ -13,12 +14,15 @@ import {
   getBillingSubscriptionController,
   getBillingSummaryController,
   getBillingUsageController,
-  stripeWebhookController
+  stripeWebhookController,
+  updateBillingAddonsController
 } from '../controllers/billing.controller.js';
 import {
+  billingAddonUpdateValidator,
   billingCatalogValidator,
   billingCheckoutSessionValidator,
   billingEntitlementsValidator,
+  billingPlanChangeValidator,
   billingPortalSessionValidator,
   billingSubscriptionValidator,
   billingSummaryValidator,
@@ -59,6 +63,16 @@ router.post(
   '/portal-session',
   validate(billingPortalSessionValidator),
   createBillingPortalSessionController
+);
+router.post(
+  '/change-plan',
+  validate(billingPlanChangeValidator),
+  changeBillingPlanController
+);
+router.post(
+  '/update-addons',
+  validate(billingAddonUpdateValidator),
+  updateBillingAddonsController
 );
 
 export default router;

@@ -4,6 +4,8 @@ import { buildValidationError } from '../../../shared/middlewares/validate.js';
 
 const CHECKOUT_ALLOWED_FIELDS = ['planKey', 'addonItems', 'successUrl', 'cancelUrl'];
 const PORTAL_ALLOWED_FIELDS = ['returnUrl'];
+const PLAN_CHANGE_ALLOWED_FIELDS = ['planKey'];
+const ADDON_UPDATE_ALLOWED_FIELDS = ['addonItems'];
 
 const buildAllowedBodyValidation = (allowedFields) => (req) => {
   const requestBody = req.body || {};
@@ -118,6 +120,34 @@ export const billingPortalSessionValidator = [
       }
     }),
   buildAllowedBodyValidation(PORTAL_ALLOWED_FIELDS)
+];
+
+export const billingPlanChangeValidator = [
+  body('planKey')
+    .isString()
+    .withMessage('errors.validation.invalid')
+    .trim()
+    .isLength({ min: 1, max: 120 })
+    .withMessage('errors.validation.lengthRange'),
+  buildAllowedBodyValidation(PLAN_CHANGE_ALLOWED_FIELDS)
+];
+
+export const billingAddonUpdateValidator = [
+  body('addonItems')
+    .isArray({ min: 1, max: 20 })
+    .withMessage('errors.validation.invalid'),
+  body('addonItems.*.addonKey')
+    .isString()
+    .withMessage('errors.validation.invalid')
+    .trim()
+    .isLength({ min: 1, max: 120 })
+    .withMessage('errors.validation.lengthRange'),
+  body('addonItems.*.quantity')
+    .isInt({ min: 0, max: 1000 })
+    .withMessage('errors.validation.invalidNumber')
+    .toInt(),
+  validateUniqueAddonKeys,
+  buildAllowedBodyValidation(ADDON_UPDATE_ALLOWED_FIELDS)
 ];
 
 export const billingStripeWebhookValidator = [];

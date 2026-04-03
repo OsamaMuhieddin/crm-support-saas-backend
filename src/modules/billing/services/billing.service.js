@@ -10,8 +10,10 @@ import {
   recomputeWorkspaceEntitlement
 } from './billing-foundation.service.js';
 import {
+  changeWorkspaceBillingPlan,
   createWorkspaceCheckoutSession,
-  createWorkspacePortalSession
+  createWorkspacePortalSession,
+  updateWorkspaceBillingAddons
 } from './billing-sync.service.js';
 
 const normalizeObjectId = (value) => String(value || '');
@@ -132,4 +134,22 @@ export const createBillingPortalSession = async ({
   createWorkspacePortalSession({
     workspaceId,
     returnUrl: payload?.returnUrl
+  });
+
+export const changeCurrentWorkspaceBillingPlan = async ({
+  workspaceId,
+  payload
+}) =>
+  changeWorkspaceBillingPlan({
+    workspaceId,
+    planKey: payload?.planKey
+  });
+
+export const updateCurrentWorkspaceBillingAddons = async ({
+  workspaceId,
+  payload
+}) =>
+  updateWorkspaceBillingAddons({
+    workspaceId,
+    addonItems: payload?.addonItems || []
   });

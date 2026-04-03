@@ -37,6 +37,8 @@
     "billing": {
       "checkoutSessionCreated": "تم إنشاء جلسة الدفع بنجاح.",
       "portalSessionCreated": "تم إنشاء جلسة بوابة الفوترة بنجاح.",
+      "planChanged": "تم تحديث خطة الفوترة بنجاح.",
+      "addonsUpdated": "تم تحديث الإضافات الخاصة بالفوترة بنجاح.",
       "webhookAccepted": "تم قبول حدث الفوترة بنجاح."
     },
     "sla": {
@@ -188,6 +190,7 @@
       "checkoutAlreadyManagedInPortal": "توجد لهذه المساحة اشتراك مُدار بالفعل. استخدم بوابة الفوترة بدلًا من ذلك.",
       "portalUnavailable": "بوابة الفوترة غير متاحة لهذه المساحة بعد.",
       "subscriptionNotFound": "لم يتم العثور على اشتراك الفوترة.",
+      "managedSubscriptionRequired": "يلزم وجود اشتراك فوترة مُدار لإتمام هذا الإجراء.",
       "providerSyncFailed": "فشلت مزامنة موفر الفوترة.",
       "seatLimitExceeded": "تم الوصول إلى حد المقاعد لهذه المساحة.",
       "mailboxLimitExceeded": "تم الوصول إلى حد صناديق البريد النشطة لهذه المساحة.",

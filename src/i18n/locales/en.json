@@ -37,6 +37,8 @@
     "billing": {
       "checkoutSessionCreated": "Checkout session created successfully.",
       "portalSessionCreated": "Billing portal session created successfully.",
+      "planChanged": "Billing plan updated successfully.",
+      "addonsUpdated": "Billing add-ons updated successfully.",
       "webhookAccepted": "Billing webhook accepted successfully."
     },
     "sla": {
@@ -188,6 +190,7 @@
       "checkoutAlreadyManagedInPortal": "This workspace already has a managed subscription. Use the billing portal instead.",
       "portalUnavailable": "Billing portal is not available for this workspace yet.",
       "subscriptionNotFound": "Billing subscription was not found.",
+      "managedSubscriptionRequired": "A managed billing subscription is required for this action.",
       "providerSyncFailed": "Billing provider sync failed.",
       "seatLimitExceeded": "Seat limit reached for this workspace.",
       "mailboxLimitExceeded": "Active mailbox limit reached for this workspace.",
