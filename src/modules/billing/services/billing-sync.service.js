@@ -591,6 +591,26 @@ export const changeWorkspaceBillingPlan = async ({
     );
   }
 
+  if (currentPlanItem.plan?.key === targetPlan.key) {
+    const synced = await syncWorkspaceSubscriptionFromStripe({
+      workspaceId,
+      stripeSubscriptionId,
+      stripeSubscription: remoteSubscription
+    });
+
+    return {
+      subscriptionUpdate: {
+        workspaceId: String(workspaceId),
+        provider: billingConfig.provider,
+        previousPlanKey: foundation.subscription?.planKey || null,
+        requestedPlanKey: targetPlan.key,
+        currentPlanKey: synced.subscription.planKey,
+        status: synced.subscription.status,
+        stripeSubscriptionId: synced.subscription.stripeSubscriptionId || null
+      }
+    };
+  }
+
   const updatedStripeSubscription = await updateStripeSubscription({
     subscriptionId: stripeSubscriptionId,
     items: [
@@ -658,6 +678,10 @@ export const updateWorkspaceBillingAddons = async ({
     }
 
     if (existingAddonItem?.item?.id) {
+      if (Number(existingAddonItem.item.quantity || 0) === item.quantity) {
+        continue;
+      }
+
       subscriptionItemUpdates.push({
         id: existingAddonItem.item.id,
         quantity: item.quantity

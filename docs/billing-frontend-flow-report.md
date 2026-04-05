@@ -94,6 +94,7 @@ Important:
 
 - The frontend should treat the response as accepted change intent, then refetch summary because Stripe webhook sync finalizes local truth.
 - Base-plan switching is not handled by changing plan quantity.
+- If the user chooses the already-active plan, the request still succeeds and is treated as a no-op.
 
 ### 4. Add or remove extra seats / storage inside the app
 
@@ -112,6 +113,7 @@ Important:
 
 - The frontend should send the desired quantity for the add-ons the user changed.
 - Quantity `0` is how the app removes `extra_seat` or `extra_storage`.
+- If the submitted add-on quantities already match the managed subscription, the request still succeeds and is treated as a no-op.
 
 ### 5. Open Billing Portal when the user needs payment or cancellation management
 

@@ -5484,6 +5484,7 @@ npm run mailboxes:backfill-default
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable | errors.billing.providerNotConfigured | errors.billing.providerPriceMissing | errors.billing.providerSyncFailed`
 - Notes:
   - this action updates the Stripe base plan item and then re-syncs local billing state from Stripe.
+  - if the requested plan already matches the current managed plan, the route still returns success and behaves as a no-op without sending a Stripe update mutation.
   - the frontend should refetch billing summary after success instead of assuming all local state is already final.
 
 ### POST `/api/billing/update-addons`
@@ -5543,6 +5544,7 @@ npm run mailboxes:backfill-default
 - Notes:
   - quantity `0` removes the add-on from the Stripe subscription.
   - quantity `> 0` adds or updates that add-on item.
+  - if the requested add-on quantities already match the managed Stripe subscription, the route still returns success and behaves as a no-op without sending a Stripe update mutation.
   - the frontend should refetch billing summary after success instead of assuming all local state is already final.
 
 ### POST `/api/billing/portal-session`
