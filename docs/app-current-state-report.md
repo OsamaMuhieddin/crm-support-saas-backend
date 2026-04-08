@@ -1,6 +1,6 @@
 # CRM Support SaaS Backend - Current State Report
 
-Generated on: 2026-03-22  
+Generated on: 2026-04-08  
 Repository: `crm-support-saas-backend`
 
 ## 1) Report Purpose
@@ -33,6 +33,11 @@ Implemented business pillars:
 - Ticket conversation and message timeline reads/writes with file attachments linked to messages and tickets.
 - Ticket assignment, lifecycle actions, and internal participant management.
 - Ticket categories and tags dictionary management inside workspace boundaries.
+- Workspace-scoped reporting endpoints for overview, tickets, SLA, and team analytics.
+- Platform-admin authentication/session runtime with isolated platform tokens and sessions.
+- Cross-workspace platform admin inspection and explicit suspend/reactivate/extend-trial actions.
+- Platform analytics/reporting for overview, metrics, and billing visibility.
+- Minimal self-profile update for authenticated users (`profile.name`, `profile.avatar`).
 
 Partially implemented business pillars:
 
@@ -46,7 +51,7 @@ Planned business pillars with data models but no live API flows yet:
 - Billing enforcement across invites, mailboxes, files, tickets, and SLA capability.
 - Automations execution.
 - Notifications delivery workflows.
-- Platform admin runtime workflows.
+- Deeper platform support/monitoring workflows beyond the current admin auth, analytics, and cross-workspace management surface.
 
 ### 2.2 Personas and Roles (Implemented)
 
@@ -200,9 +205,9 @@ Production-ready business slices:
 Foundation-only slices:
 
 - Users API stub.
-- Inbox/Admin routes mounted but empty.
+- Inbox/Integrations routes mounted but empty.
 - SLA v1 next-response/jobs/reporting/holiday/cycle-history additions beyond the active runtime surface.
-- Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, Stripe webhook intake, and lifecycle sync foundations; automations/notifications/platform remain model-only.
+- Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, Stripe webhook intake, and lifecycle sync foundations; automations/notifications remain model-only.
 
 ## 3) Technical Side
 
@@ -550,25 +555,25 @@ Any request under those paths currently falls through to 404.
 
 ### 3.5 Module Implementation Status
 
-| Module          | Router Mounted | Runtime API Behavior                                                                                   | Service/Model State                                                                                                                                                                                  |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `health`        | Yes            | Implemented                                                                                            | Simple health service                                                                                                                                                                                |
-| `auth`          | Yes            | Implemented                                                                                            | Full OTP/JWT/session lifecycle                                                                                                                                                                       |
-| `workspaces`    | Yes            | Implemented                                                                                            | Membership resolution, switch, invite lifecycle                                                                                                                                                      |
-| `files`         | Yes            | Implemented                                                                                            | Upload/list/get/download/delete + storage abstraction                                                                                                                                                |
-| `mailboxes`     | Yes            | Implemented                                                                                            | CRUD-like v1 + default invariants + backfill                                                                                                                                                         |
-| `users`         | Yes            | Stub (`GET /users`)                                                                                    | Model implemented, service placeholder                                                                                                                                                               |
-| `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                            | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows |
-| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                  |
-| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                              | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests        |
-| `inbox`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                                                          |
-| `integrations`  | Yes            | Empty router                                                                                           | Models implemented, API not implemented                                                                                                                                                              |
-| `admin`         | Yes            | Empty router                                                                                           | Placeholder                                                                                                                                                                                          |
-| `automations`   | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
+| Module          | Router Mounted | Runtime API Behavior                                                                                                                               | Service/Model State                                                                                                                                                                                                            |
+| --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `health`        | Yes            | Implemented                                                                                                                                        | Simple health service                                                                                                                                                                                                          |
+| `auth`          | Yes            | Implemented                                                                                                                                        | Full OTP/JWT/session lifecycle                                                                                                                                                                                                 |
+| `workspaces`    | Yes            | Implemented                                                                                                                                        | Membership resolution, switch, invite lifecycle                                                                                                                                                                                |
+| `files`         | Yes            | Implemented                                                                                                                                        | Upload/list/get/download/delete + storage abstraction                                                                                                                                                                          |
+| `mailboxes`     | Yes            | Implemented                                                                                                                                        | CRUD-like v1 + default invariants + backfill                                                                                                                                                                                   |
+| `users`         | Yes            | Stub (`GET /users`)                                                                                                                                | Model implemented, service placeholder                                                                                                                                                                                         |
+| `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                                                                        | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows                           |
+| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries                                             | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                                            |
+| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                                                                          | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests                                  |
+| `inbox`         | Yes            | Empty router                                                                                                                                       | Placeholder                                                                                                                                                                                                                    |
+| `integrations`  | Yes            | Empty router                                                                                                                                       | Models implemented, API not implemented                                                                                                                                                                                        |
+| `admin`         | Yes            | Empty router                                                                                                                                       | Placeholder                                                                                                                                                                                                                    |
+| `automations`   | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
 | `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, billing webhook inbox persistence, and worker-backed lifecycle sync |
-| `notifications` | No             | No API                                                                                                 | Model implemented only                                                                                                                                                                               |
-| `platform`      | No             | No API                                                                                                 | Models implemented only                                                                                                                                                                              |
-| `roles`         | No             | No API                                                                                                 | No schema content yet                                                                                                                                                                                |
+| `notifications` | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
+| `platform`      | No             | No API                                                                                                                                             | Models implemented only                                                                                                                                                                                                        |
+| `roles`         | No             | No API                                                                                                                                             | No schema content yet                                                                                                                                                                                                          |
 
 ### 3.6 Database Design (Mongoose)
 
@@ -641,14 +646,14 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.9 Billing Domain Collections
 
-| Model          | Purpose                         | Key Fields                                                                                                            | Important Indexes/Constraints                                                      |
-| -------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `Plan`         | Fixed plan catalog              | `key`, `name`, `price`, `currency`, `limits`, `features`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata` | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                 |
-| `Addon`        | Fixed add-on catalog            | `key`, `name`, `type`, `price`, `currency`, `effects`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata`    | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                 |
-| `Subscription` | Workspace subscription state    | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `provider`, Stripe ids, trial/grace/period fields       | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId`; unique partial index on `stripeSubscriptionId` |
-| `Entitlement`  | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `usage`, `computedAt`, `sourceSnapshot`                                         | Unique partial `workspaceId` when not deleted                                      |
-| `UsageMeter`   | Monthly usage counters          | `workspaceId`, `periodKey`, `ticketsCreated`, `uploadsCount`                                                          | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`)              |
-| `BillingWebhookEvent` | Billing webhook inbox    | `workspaceId`, `provider`, `eventId`, `eventType`, `status`, `receivedAt`, `processedAt`, `enqueuedAt`, `processingJobId`, `payloadHash`, `payload`, `normalizedPayload`, `lastError`, `lastEnqueueError` | Unique (`provider`,`eventId`); indexes on status/time, provider/eventType, and workspace/time |
+| Model                 | Purpose                         | Key Fields                                                                                                                                                                                                | Important Indexes/Constraints                                                                                                      |
+| --------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `Plan`                | Fixed plan catalog              | `key`, `name`, `price`, `currency`, `limits`, `features`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata`                                                                                   | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                                                                 |
+| `Addon`               | Fixed add-on catalog            | `key`, `name`, `type`, `price`, `currency`, `effects`, `isActive`, `sortOrder`, `catalogVersion`, `providerMetadata`                                                                                      | Unique `key`; index (`isActive`,`sortOrder`,`key`)                                                                                 |
+| `Subscription`        | Workspace subscription state    | `workspaceId`, `planId`, `planKey`, `addonItems`, `status`, `provider`, Stripe ids, trial/grace/period fields                                                                                             | Unique partial `workspaceId` when not deleted; partial index on `stripeCustomerId`; unique partial index on `stripeSubscriptionId` |
+| `Entitlement`         | Computed feature/limit snapshot | `workspaceId`, `features`, `limits`, `usage`, `computedAt`, `sourceSnapshot`                                                                                                                              | Unique partial `workspaceId` when not deleted                                                                                      |
+| `UsageMeter`          | Monthly usage counters          | `workspaceId`, `periodKey`, `ticketsCreated`, `uploadsCount`                                                                                                                                              | Unique (`workspaceId`,`periodKey`); index (`workspaceId`,`updatedAt`)                                                              |
+| `BillingWebhookEvent` | Billing webhook inbox           | `workspaceId`, `provider`, `eventId`, `eventType`, `status`, `receivedAt`, `processedAt`, `enqueuedAt`, `processingJobId`, `payloadHash`, `payload`, `normalizedPayload`, `lastError`, `lastEnqueueError` | Unique (`provider`,`eventId`); indexes on status/time, provider/eventType, and workspace/time                                      |
 
 #### 3.6.10 Automations, Notifications, Platform Collections
 
@@ -822,31 +827,31 @@ Not fully covered by runtime tests:
 - `realtime` now exposes an authenticated bootstrap endpoint, socket auth/room foundations, ticket/message/participant live business event publishing, and ephemeral ticket presence/typing/soft-claim coordination for the internal workspace app.
 - Ticket create with `initialMessage` now publishes `ticket.created` plus the same `message.created` and `conversation.updated` live events used by later message writes.
 - Viewer members remain allowed to send advisory collaboration signals on readable tickets in the current internal-only phase.
-- Mounted route groups `inbox`, `integrations`, and `admin` are empty.
+- Mounted route groups `inbox` and `integrations` are still empty; `admin` and `reports` now expose live runtime APIs.
 - Several domains currently ship schema/model groundwork without exposed APIs.
 - Background jobs now use BullMQ foundations on top of the shared Redis config path, with dedicated billing workers for webhook follow-up processing plus lifecycle and repair queue seams.
 - Billing catalog seeding/sync is implemented; broader demo seed data is still not implemented.
 
 ### 3.13 Defined Enums and Constants (Current)
 
-| Constant Group                | Values                                                                   |
-| ----------------------------- | ------------------------------------------------------------------------ |
-| `WORKSPACE_ROLES`             | `owner`, `admin`, `agent`, `viewer`                                      |
-| `WORKSPACE_STATUS`            | `active`, `trial`, `suspended`                                           |
-| `MEMBER_STATUS`               | `active`, `suspended`, `removed`                                         |
-| `INVITE_STATUS`               | `pending`, `accepted`, `revoked`, `expired`                              |
-| `OTP_PURPOSE`                 | `verifyEmail`, `login`, `resetPassword`, `changeEmail`                   |
-| `MAILBOX_TYPE`                | `email`, `chat`, `form` (API validators currently allow only `email`)    |
-| `FILE_PROVIDER`               | `minio`, `s3`, `local`                                                   |
-| `TICKET_STATUS`               | `new`, `open`, `pending`, `waiting_on_customer`, `solved`, `closed`      |
-| `TICKET_PRIORITY`             | `low`, `normal`, `high`, `urgent`                                        |
-| `TICKET_CHANNEL`              | `manual`, `email`, `widget`, `api`, `system`                             |
-| `MESSAGE_DIRECTION`           | `inbound`, `outbound`                                                    |
-| `TICKET_MESSAGE_TYPE`         | `customer_message`, `public_reply`, `internal_note`, `system_event`      |
-| `NOTIFICATION_TYPE`           | `ticket_assigned`, `ticket_mention`, `ticket_reply`, `system`, `billing` |
+| Constant Group                | Values                                                                           |
+| ----------------------------- | -------------------------------------------------------------------------------- |
+| `WORKSPACE_ROLES`             | `owner`, `admin`, `agent`, `viewer`                                              |
+| `WORKSPACE_STATUS`            | `active`, `trial`, `suspended`                                                   |
+| `MEMBER_STATUS`               | `active`, `suspended`, `removed`                                                 |
+| `INVITE_STATUS`               | `pending`, `accepted`, `revoked`, `expired`                                      |
+| `OTP_PURPOSE`                 | `verifyEmail`, `login`, `resetPassword`, `changeEmail`                           |
+| `MAILBOX_TYPE`                | `email`, `chat`, `form` (API validators currently allow only `email`)            |
+| `FILE_PROVIDER`               | `minio`, `s3`, `local`                                                           |
+| `TICKET_STATUS`               | `new`, `open`, `pending`, `waiting_on_customer`, `solved`, `closed`              |
+| `TICKET_PRIORITY`             | `low`, `normal`, `high`, `urgent`                                                |
+| `TICKET_CHANNEL`              | `manual`, `email`, `widget`, `api`, `system`                                     |
+| `MESSAGE_DIRECTION`           | `inbound`, `outbound`                                                            |
+| `TICKET_MESSAGE_TYPE`         | `customer_message`, `public_reply`, `internal_note`, `system_event`              |
+| `NOTIFICATION_TYPE`           | `ticket_assigned`, `ticket_mention`, `ticket_reply`, `system`, `billing`         |
 | `BILLING_SUBSCRIPTION_STATUS` | `trialing`, `active`, `past_due`, `canceled`, `incomplete`, `incomplete_expired` |
-| `BILLING_ADDON_TYPE`          | `seat`, `usage`, `feature`                                               |
-| `PLATFORM_ROLES`              | `super_admin`, `platform_admin`, `platform_support`                      |
+| `BILLING_ADDON_TYPE`          | `seat`, `usage`, `feature`                                                       |
+| `PLATFORM_ROLES`              | `super_admin`, `platform_admin`, `platform_support`                              |
 
 ## 4) Complete Endpoint Checklist (Current)
 
@@ -862,6 +867,7 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/auth/forgot-password`
 - `POST /api/auth/reset-password`
 - `GET /api/auth/me`
+- `PATCH /api/auth/profile`
 - `POST /api/auth/logout`
 - `POST /api/auth/logout-all`
 - `POST /api/auth/change-password`
@@ -982,11 +988,33 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/billing/portal-session`
 - `POST /api/billing/webhooks/stripe`
 
+### Reports
+
+- `GET /api/reports/overview`
+- `GET /api/reports/tickets`
+- `GET /api/reports/sla`
+- `GET /api/reports/team`
+
+### Platform Admin
+
+- `POST /api/admin/auth/login`
+- `POST /api/admin/auth/refresh`
+- `GET /api/admin/auth/me`
+- `POST /api/admin/auth/logout`
+- `POST /api/admin/auth/logout-all`
+- `GET /api/admin/overview`
+- `GET /api/admin/metrics`
+- `GET /api/admin/billing-overview`
+- `GET /api/admin/workspaces`
+- `GET /api/admin/workspaces/:id`
+- `POST /api/admin/workspaces/:id/suspend`
+- `POST /api/admin/workspaces/:id/reactivate`
+- `POST /api/admin/workspaces/:id/extend-trial`
+
 ### Mounted Empty Router Prefixes
 
 - `/api/inbox`
 - `/api/integrations`
-- `/api/admin`
 
 ## 5) Final Current-State Summary
 
@@ -1000,6 +1028,8 @@ Today's backend is strongest in:
 - Mailboxes v1 with robust default-state consistency logic.
 - SLA v1 active surface with business-hours/policy management, workspace default and mailbox override assignment, ticket snapshot/runtime behavior, and lightweight summary support.
 - Tickets core records with workspace numbering, reference validation, and dictionary-backed categorization.
-- Billing v1 read-only workspace foundation with fixed catalog sync, subscription bootstrap, and entitlement/usage summary reads.
+- Billing v1 runtime with fixed catalog sync, subscription bootstrap, entitlement/usage summary reads, checkout/portal flows, and provider-backed webhook sync.
+- Workspace reporting v1 for operational dashboard, ticket, SLA, and team views.
+- Platform-admin auth, cross-workspace management, and platform analytics/reporting v1.
 
-The codebase also contains substantial forward-looking data modeling for deeper SLA runtime behavior, billing, automations, integrations, notifications, and platform admin domains, with runtime APIs to be incrementally added on top.
+The codebase also contains substantial forward-looking data modeling for deeper SLA runtime behavior, billing, automations, integrations, notifications, and broader platform support domains, with runtime APIs to be incrementally added on top.

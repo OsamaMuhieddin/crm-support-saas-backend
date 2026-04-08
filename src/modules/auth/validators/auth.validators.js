@@ -1,5 +1,6 @@
 import { body } from 'express-validator';
 import { OTP_PURPOSE_VALUES } from '../../../constants/otp-purpose.js';
+import { buildAllowedBodyValidation } from '../../../shared/validators/body-validation.js';
 
 const emailRule = body('email')
   .isString()
@@ -33,7 +34,7 @@ export const signupValidator = [
     .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 1, max: 160 })
-    .withMessage('errors.validation.lengthRange')
+    .withMessage('errors.validation.lengthRange'),
 ];
 
 export const resendOtpValidator = [
@@ -42,7 +43,7 @@ export const resendOtpValidator = [
     .isString()
     .withMessage('errors.validation.invalid')
     .isIn(OTP_PURPOSE_VALUES)
-    .withMessage('errors.validation.invalidEnum')
+    .withMessage('errors.validation.invalidEnum'),
 ];
 
 export const verifyEmailValidator = [
@@ -54,7 +55,7 @@ export const verifyEmailValidator = [
     .withMessage('errors.validation.invalid')
     .trim()
     .isLength({ min: 10, max: 512 })
-    .withMessage('errors.validation.lengthRange')
+    .withMessage('errors.validation.lengthRange'),
 ];
 
 export const loginValidator = [emailRule, passwordRule('password')];
@@ -65,7 +66,7 @@ export const refreshValidator = [
     .withMessage('errors.validation.invalid')
     .trim()
     .notEmpty()
-    .withMessage('errors.validation.required')
+    .withMessage('errors.validation.required'),
 ];
 
 export const forgotPasswordValidator = [emailRule];
@@ -73,7 +74,7 @@ export const forgotPasswordValidator = [emailRule];
 export const resetPasswordValidator = [
   emailRule,
   otpCodeRule,
-  passwordRule('newPassword')
+  passwordRule('newPassword'),
 ];
 
 export const changePasswordValidator = [
@@ -85,5 +86,52 @@ export const changePasswordValidator = [
     }
 
     return true;
-  })
+  }),
+];
+
+export const updateProfileValidator = [
+  body('name')
+    .optional()
+    .customSanitizer((value) =>
+      value === null || value === undefined ? value : String(value).trim()
+    )
+    .custom((value) => {
+      if (value === null) {
+        return true;
+      }
+
+      if (typeof value !== 'string') {
+        throw new Error('errors.validation.invalid');
+      }
+
+      if (value.length < 1 || value.length > 160) {
+        throw new Error('errors.validation.lengthRange');
+      }
+
+      return true;
+    }),
+  body('avatar')
+    .optional()
+    .customSanitizer((value) =>
+      value === null || value === undefined ? value : String(value).trim()
+    )
+    .custom((value) => {
+      if (value === null) {
+        return true;
+      }
+
+      if (typeof value !== 'string') {
+        throw new Error('errors.validation.invalid');
+      }
+
+      if (value.length > 2048) {
+        throw new Error('errors.validation.maxLength');
+      }
+
+      return true;
+    }),
+  buildAllowedBodyValidation({
+    allowedFields: ['name', 'avatar'],
+    requireAtLeastOne: true,
+  }),
 ];

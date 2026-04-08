@@ -2,6 +2,8 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import app from '../src/app.js';
 import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
+import { Plan } from '../src/modules/billing/models/plan.model.js';
+import { Subscription } from '../src/modules/billing/models/subscription.model.js';
 import { Contact } from '../src/modules/customers/models/contact.model.js';
 import { Organization } from '../src/modules/customers/models/organization.model.js';
 import { WorkspaceMember } from '../src/modules/workspaces/models/workspace-member.model.js';
@@ -80,7 +82,24 @@ const createInviteWithToken = async ({
   };
 };
 
+const ensureWorkspaceCanInviteMembers = async (workspaceId) => {
+  const businessPlan = await Plan.findOne({ key: 'business' }).select('_id key').lean();
+
+  await Subscription.updateOne(
+    { workspaceId, deletedAt: null },
+    {
+      $set: {
+        planId: businessPlan?._id || undefined,
+        planKey: 'business',
+        status: 'active'
+      }
+    }
+  );
+};
+
 const createWorkspaceScopedTokenForRole = async ({ owner, roleKey }) => {
+  await ensureWorkspaceCanInviteMembers(owner.workspaceId);
+
   const member = await createVerifiedUser({
     email: nextEmail(`contacts-${roleKey}`)
   });

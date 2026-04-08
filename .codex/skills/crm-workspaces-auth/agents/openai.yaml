@@ -1,4 +1,4 @@
 interface:
-  display_name: "CRM Workspaces Auth"
-  short_description: "Workspace and auth rules for repo"
-  default_prompt: "Use $crm-workspaces-auth to work on workspace context, memberships, invites, sessions, or auth flows in this repository."
+  display_name: 'CRM Workspaces Auth'
+  short_description: 'Workspace and auth rules for repo'
+  default_prompt: 'Use $crm-workspaces-auth to work on workspace context, memberships, invites, sessions, or auth flows in this repository.'

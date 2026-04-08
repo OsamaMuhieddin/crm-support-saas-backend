@@ -9,10 +9,14 @@ import { OTP_PURPOSE } from '../src/constants/otp-purpose.js';
 import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
 import {
   captureFallbackEmail,
-  extractOtpCodeFromLogs
+  extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
 
-const signupAndCaptureOtp = async ({ email, password = 'Password123!', name }) => {
+const signupAndCaptureOtp = async ({
+  email,
+  password = 'Password123!',
+  name,
+}) => {
   const { response, logs } = await captureFallbackEmail(() =>
     request(app).post('/api/auth/signup').send({ email, password, name })
   );
@@ -29,12 +33,12 @@ const verifyEmailWithCode = async ({ email, code, inviteToken }) =>
 const createVerifiedUser = async ({
   email,
   password = 'Password123!',
-  name = 'Test User'
+  name = 'Test User',
 }) => {
   const { response: signupResponse, code } = await signupAndCaptureOtp({
     email,
     password,
-    name
+    name,
   });
 
   expect(signupResponse.status).toBe(200);
@@ -47,7 +51,7 @@ const createVerifiedUser = async ({
     verifyResponse,
     accessToken: verifyResponse.body.tokens.accessToken,
     refreshToken: verifyResponse.body.tokens.refreshToken,
-    workspaceId: verifyResponse.body.user.defaultWorkspaceId
+    workspaceId: verifyResponse.body.user.defaultWorkspaceId,
   };
 };
 
@@ -73,7 +77,7 @@ describe('Auth + OTP flows', () => {
 
     const { response, code } = await signupAndCaptureOtp({
       email,
-      password: 'Password123!'
+      password: 'Password123!',
     });
 
     expect(response.status).toBe(200);
@@ -85,69 +89,81 @@ describe('Auth + OTP flows', () => {
     expect(otp.purpose).toBe(OTP_PURPOSE.VERIFY_EMAIL);
   });
 
-  maybeDbTest('signup for existing unverified user returns success and reissues OTP', async () => {
-    const email = 'existing-unverified@example.com';
+  maybeDbTest(
+    'signup for existing unverified user returns success and reissues OTP',
+    async () => {
+      const email = 'existing-unverified@example.com';
 
-    const firstSignup = await signupAndCaptureOtp({
-      email,
-      password: 'Password123!'
-    });
+      const firstSignup = await signupAndCaptureOtp({
+        email,
+        password: 'Password123!',
+      });
 
-    expect(firstSignup.response.status).toBe(200);
+      expect(firstSignup.response.status).toBe(200);
 
-    await OtpCode.updateMany(
-      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
-      {
-        $set: {
-          lastSentAt: new Date(Date.now() - 60 * 1000)
+      await OtpCode.updateMany(
+        { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
+        {
+          $set: {
+            lastSentAt: new Date(Date.now() - 60 * 1000),
+          },
         }
-      }
-    );
+      );
 
-    const secondSignup = await signupAndCaptureOtp({
-      email,
-      password: 'Password123!'
-    });
+      const secondSignup = await signupAndCaptureOtp({
+        email,
+        password: 'Password123!',
+      });
 
-    expect(secondSignup.response.status).toBe(200);
-    expect(secondSignup.response.body.messageKey).toBe('success.auth.otpSent');
+      expect(secondSignup.response.status).toBe(200);
+      expect(secondSignup.response.body.messageKey).toBe(
+        'success.auth.otpSent'
+      );
 
-    const otpCount = await OtpCode.countDocuments({
-      emailNormalized: email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
-    });
+      const otpCount = await OtpCode.countDocuments({
+        emailNormalized: email,
+        purpose: OTP_PURPOSE.VERIFY_EMAIL,
+      });
 
-    expect(otpCount).toBe(2);
-  });
+      expect(otpCount).toBe(2);
+    }
+  );
 
-  maybeDbTest('verify-email creates workspace + membership + tokens', async () => {
-    const email = 'verify-flow@example.com';
-    const password = 'Password123!';
+  maybeDbTest(
+    'verify-email creates workspace + membership + tokens',
+    async () => {
+      const email = 'verify-flow@example.com';
+      const password = 'Password123!';
 
-    const { code } = await signupAndCaptureOtp({ email, password, name: 'Owner User' });
+      const { code } = await signupAndCaptureOtp({
+        email,
+        password,
+        name: 'Owner User',
+      });
 
-    const response = await verifyEmailWithCode({ email, code });
+      const response = await verifyEmailWithCode({ email, code });
 
-    expect(response.status).toBe(200);
-    expect(response.body.messageKey).toBe('success.auth.verified');
-    expect(response.body.tokens.accessToken).toBeTruthy();
-    expect(response.body.tokens.refreshToken).toBeTruthy();
+      expect(response.status).toBe(200);
+      expect(response.body.messageKey).toBe('success.auth.verified');
+      expect(response.body.tokens.accessToken).toBeTruthy();
+      expect(response.body.tokens.refreshToken).toBeTruthy();
 
-    const user = await User.findOne({ emailNormalized: email });
-    expect(user.isEmailVerified).toBe(true);
-    expect(user.defaultWorkspaceId).toBeTruthy();
+      const user = await User.findOne({ emailNormalized: email });
+      expect(user.isEmailVerified).toBe(true);
+      expect(user.defaultWorkspaceId).toBeTruthy();
 
-    const workspace = await Workspace.findById(user.defaultWorkspaceId);
-    expect(workspace).toBeTruthy();
+      const workspace = await Workspace.findById(user.defaultWorkspaceId);
+      expect(workspace).toBeTruthy();
 
-    const member = await WorkspaceMember.findOne({
-      workspaceId: workspace._id,
-      userId: user._id
-    });
+      const member = await WorkspaceMember.findOne({
+        workspaceId: workspace._id,
+        userId: user._id,
+      });
 
-    expect(member).toBeTruthy();
-    expect(member.roleKey).toBe(WORKSPACE_ROLES.OWNER);
-  });
+      expect(member).toBeTruthy();
+      expect(member.roleKey).toBe(WORKSPACE_ROLES.OWNER);
+    }
+  );
 
   maybeDbTest('login is blocked until email is verified', async () => {
     const email = 'unverified-login@example.com';
@@ -175,7 +191,9 @@ describe('Auth + OTP flows', () => {
     expect(refreshResponse.status).toBe(200);
     expect(refreshResponse.body.messageKey).toBe('success.auth.refreshed');
     expect(refreshResponse.body.tokens.refreshToken).toBeTruthy();
-    expect(refreshResponse.body.tokens.refreshToken).not.toBe(verified.refreshToken);
+    expect(refreshResponse.body.tokens.refreshToken).not.toBe(
+      verified.refreshToken
+    );
 
     const oldTokenReuse = await request(app)
       .post('/api/auth/refresh')
@@ -206,46 +224,58 @@ describe('Auth + OTP flows', () => {
     expect(meResponse.body.messageKey).toBe('errors.auth.sessionRevoked');
   });
 
-  maybeDbTest('reset-password updates password and revokes sessions', async () => {
-    const email = 'reset-user@example.com';
-    const oldPassword = 'Password123!';
-    const newPassword = 'NewPassword456!';
+  maybeDbTest(
+    'reset-password updates password and revokes sessions',
+    async () => {
+      const email = 'reset-user@example.com';
+      const oldPassword = 'Password123!';
+      const newPassword = 'NewPassword456!';
 
-    const verified = await createVerifiedUser({ email, password: oldPassword });
+      const verified = await createVerifiedUser({
+        email,
+        password: oldPassword,
+      });
 
-    const forgotResult = await captureFallbackEmail(() =>
-      request(app).post('/api/auth/forgot-password').send({ email })
-    );
+      const forgotResult = await captureFallbackEmail(() =>
+        request(app).post('/api/auth/forgot-password').send({ email })
+      );
 
-    expect(forgotResult.response.status).toBe(200);
-    expect(forgotResult.response.body.messageKey).toBe('success.auth.resetOtpSent');
+      expect(forgotResult.response.status).toBe(200);
+      expect(forgotResult.response.body.messageKey).toBe(
+        'success.auth.resetOtpSent'
+      );
 
-    const resetCode = extractOtpCodeFromLogs(forgotResult.logs);
-    expect(resetCode).toBeTruthy();
+      const resetCode = extractOtpCodeFromLogs(forgotResult.logs);
+      expect(resetCode).toBeTruthy();
 
-    const resetResponse = await request(app).post('/api/auth/reset-password').send({
-      email,
-      code: resetCode,
-      newPassword
-    });
+      const resetResponse = await request(app)
+        .post('/api/auth/reset-password')
+        .send({
+          email,
+          code: resetCode,
+          newPassword,
+        });
 
-    expect(resetResponse.status).toBe(200);
-    expect(resetResponse.body.messageKey).toBe('success.auth.passwordReset');
+      expect(resetResponse.status).toBe(200);
+      expect(resetResponse.body.messageKey).toBe('success.auth.passwordReset');
 
-    const refreshAfterReset = await request(app)
-      .post('/api/auth/refresh')
-      .send({ refreshToken: verified.refreshToken });
+      const refreshAfterReset = await request(app)
+        .post('/api/auth/refresh')
+        .send({ refreshToken: verified.refreshToken });
 
-    expect(refreshAfterReset.status).toBe(401);
-    expect(refreshAfterReset.body.messageKey).toBe('errors.auth.sessionRevoked');
+      expect(refreshAfterReset.status).toBe(401);
+      expect(refreshAfterReset.body.messageKey).toBe(
+        'errors.auth.sessionRevoked'
+      );
 
-    const loginNewPassword = await request(app)
-      .post('/api/auth/login')
-      .send({ email, password: newPassword });
+      const loginNewPassword = await request(app)
+        .post('/api/auth/login')
+        .send({ email, password: newPassword });
 
-    expect(loginNewPassword.status).toBe(200);
-    expect(loginNewPassword.body.messageKey).toBe('success.auth.loggedIn');
-  });
+      expect(loginNewPassword.status).toBe(200);
+      expect(loginNewPassword.body.messageKey).toBe('success.auth.loggedIn');
+    }
+  );
 
   maybeDbTest(
     'reset-password rejects same password and consumes OTP code',
@@ -272,7 +302,7 @@ describe('Auth + OTP flows', () => {
         .send({
           email,
           code: resetCode,
-          newPassword: password
+          newPassword: password,
         });
 
       expect(samePasswordResponse.status).toBe(422);
@@ -283,8 +313,8 @@ describe('Auth + OTP flows', () => {
         expect.arrayContaining([
           expect.objectContaining({
             field: 'newPassword',
-            messageKey: 'errors.auth.passwordMustDiffer'
-          })
+            messageKey: 'errors.auth.passwordMustDiffer',
+          }),
         ])
       );
 
@@ -293,7 +323,7 @@ describe('Auth + OTP flows', () => {
         .send({
           email,
           code: resetCode,
-          newPassword: 'AnotherPassword456!'
+          newPassword: 'AnotherPassword456!',
         });
 
       expect(reusedCodeResponse.status).toBe(422);
@@ -304,8 +334,8 @@ describe('Auth + OTP flows', () => {
         expect.arrayContaining([
           expect.objectContaining({
             field: 'code',
-            messageKey: 'errors.otp.invalid'
-          })
+            messageKey: 'errors.otp.invalid',
+          }),
         ])
       );
     }
@@ -316,7 +346,7 @@ describe('Auth + OTP flows', () => {
 
     const signupResult = await signupAndCaptureOtp({
       email,
-      password: 'Password123!'
+      password: 'Password123!',
     });
     expect(signupResult.response.status).toBe(200);
 
@@ -324,69 +354,72 @@ describe('Auth + OTP flows', () => {
       { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
       {
         $set: {
-          lastSentAt: new Date(Date.now() - 60 * 1000)
-        }
+          lastSentAt: new Date(Date.now() - 60 * 1000),
+        },
       }
     );
 
     const first = await request(app).post('/api/auth/resend-otp').send({
       email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
+      purpose: OTP_PURPOSE.VERIFY_EMAIL,
     });
 
     expect(first.status).toBe(200);
 
     const second = await request(app).post('/api/auth/resend-otp').send({
       email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
+      purpose: OTP_PURPOSE.VERIFY_EMAIL,
     });
 
     expect(second.status).toBe(429);
     expect(second.body.messageKey).toBe('errors.otp.resendTooSoon');
   });
 
-  maybeDbTest('resend-otp exceeding window limit returns rateLimited', async () => {
-    const email = 'otp-window@example.com';
+  maybeDbTest(
+    'resend-otp exceeding window limit returns rateLimited',
+    async () => {
+      const email = 'otp-window@example.com';
 
-    const signupResult = await signupAndCaptureOtp({
-      email,
-      password: 'Password123!'
-    });
-    expect(signupResult.response.status).toBe(200);
+      const signupResult = await signupAndCaptureOtp({
+        email,
+        password: 'Password123!',
+      });
+      expect(signupResult.response.status).toBe(200);
 
-    await OtpCode.updateMany(
-      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
-      {
-        $set: {
-          lastSentAt: new Date(Date.now() - 60 * 1000)
+      await OtpCode.updateMany(
+        { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
+        {
+          $set: {
+            lastSentAt: new Date(Date.now() - 60 * 1000),
+          },
         }
-      }
-    );
+      );
 
-    const first = await request(app).post('/api/auth/resend-otp').send({
-      email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
-    });
+      const first = await request(app).post('/api/auth/resend-otp').send({
+        email,
+        purpose: OTP_PURPOSE.VERIFY_EMAIL,
+      });
 
-    expect(first.status).toBe(200);
+      expect(first.status).toBe(200);
 
-    await OtpCode.updateMany(
-      { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
-      {
-        $set: {
-          lastSentAt: new Date(Date.now() - 60 * 1000)
+      await OtpCode.updateMany(
+        { emailNormalized: email, purpose: OTP_PURPOSE.VERIFY_EMAIL },
+        {
+          $set: {
+            lastSentAt: new Date(Date.now() - 60 * 1000),
+          },
         }
-      }
-    );
+      );
 
-    const second = await request(app).post('/api/auth/resend-otp').send({
-      email,
-      purpose: OTP_PURPOSE.VERIFY_EMAIL
-    });
+      const second = await request(app).post('/api/auth/resend-otp').send({
+        email,
+        purpose: OTP_PURPOSE.VERIFY_EMAIL,
+      });
 
-    expect(second.status).toBe(429);
-    expect(second.body.messageKey).toBe('errors.otp.rateLimited');
-  });
+      expect(second.status).toBe(429);
+      expect(second.body.messageKey).toBe('errors.otp.rateLimited');
+    }
+  );
 
   maybeDbTest('logout-all revokes all sessions', async () => {
     const email = 'logout-all@example.com';
@@ -410,7 +443,7 @@ describe('Auth + OTP flows', () => {
     const user = await User.findOne({ emailNormalized: email });
     const activeSessions = await Session.countDocuments({
       userId: user._id,
-      revokedAt: null
+      revokedAt: null,
     });
     expect(activeSessions).toBe(0);
 
@@ -460,14 +493,73 @@ describe('Auth + OTP flows', () => {
         'errors.auth.sessionRevoked'
       );
 
-      const loginWithNewPassword = await request(app).post('/api/auth/login').send({
-        email,
-        password: newPassword,
-      });
+      const loginWithNewPassword = await request(app)
+        .post('/api/auth/login')
+        .send({
+          email,
+          password: newPassword,
+        });
 
       expect(loginWithNewPassword.status).toBe(200);
       expect(loginWithNewPassword.body.messageKey).toBe(
         'success.auth.loggedIn'
+      );
+    }
+  );
+
+  maybeDbTest(
+    'profile update only allows safe self profile fields',
+    async () => {
+      const email = 'profile-update@example.com';
+      const password = 'Password123!';
+
+      const verified = await createVerifiedUser({
+        email,
+        password,
+      });
+
+      const updateResponse = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${verified.accessToken}`)
+        .send({
+          name: 'Updated Name',
+          avatar: 'https://cdn.example.com/avatar.png',
+        });
+
+      expect(updateResponse.status).toBe(200);
+      expect(updateResponse.body.messageKey).toBe(
+        'success.auth.profileUpdated'
+      );
+      expect(updateResponse.body.user.profile.name).toBe('Updated Name');
+      expect(updateResponse.body.user.profile.avatar).toBe(
+        'https://cdn.example.com/avatar.png'
+      );
+
+      const storedUser = await User.findOne({ emailNormalized: email });
+
+      expect(storedUser.profile.name).toBe('Updated Name');
+      expect(storedUser.profile.avatar).toBe(
+        'https://cdn.example.com/avatar.png'
+      );
+
+      const unknownFieldResponse = await request(app)
+        .patch('/api/auth/profile')
+        .set('Authorization', `Bearer ${verified.accessToken}`)
+        .send({
+          unknownField: 'not-allowed',
+        });
+
+      expect(unknownFieldResponse.status).toBe(422);
+      expect(unknownFieldResponse.body.messageKey).toBe(
+        'errors.validation.failed'
+      );
+      expect(unknownFieldResponse.body.errors).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            field: 'unknownField',
+            messageKey: 'errors.validation.unknownField',
+          }),
+        ])
       );
     }
   );

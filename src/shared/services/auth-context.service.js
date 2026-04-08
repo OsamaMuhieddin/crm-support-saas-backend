@@ -1,9 +1,11 @@
 import jwt from 'jsonwebtoken';
 import { authConfig } from '../../config/auth.config.js';
 import { MEMBER_STATUS } from '../../constants/member-status.js';
+import { WORKSPACE_STATUS } from '../../constants/workspace-status.js';
 import { Session } from '../../modules/users/models/session.model.js';
 import { User } from '../../modules/users/models/user.model.js';
 import { WorkspaceMember } from '../../modules/workspaces/models/workspace-member.model.js';
+import { Workspace } from '../../modules/workspaces/models/workspace.model.js';
 import { createError } from '../errors/createError.js';
 
 const bearerPrefix = 'Bearer ';
@@ -137,6 +139,21 @@ export const loadActiveMemberContext = async ({ workspaceId, userId }) => {
 
   if (!member) {
     throw createError('errors.auth.forbiddenTenant', 403);
+  }
+
+  const workspace = await Workspace.findOne({
+    _id: workspaceId,
+    deletedAt: null,
+  })
+    .select('_id status')
+    .lean();
+
+  if (!workspace) {
+    throw createError('errors.workspace.notFound', 404);
+  }
+
+  if (workspace.status === WORKSPACE_STATUS.SUSPENDED) {
+    throw createError('errors.workspace.suspended', 403);
   }
 
   return {

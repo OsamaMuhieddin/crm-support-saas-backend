@@ -8,6 +8,7 @@ import { MEMBER_STATUS } from '../../../constants/member-status.js';
 import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
 import { INVITE_STATUS } from '../../../constants/invite-status.js';
 import { OTP_PURPOSE } from '../../../constants/otp-purpose.js';
+import { WORKSPACE_STATUS } from '../../../constants/workspace-status.js';
 import { createError } from '../../../shared/errors/createError.js';
 import { buildValidationError } from '../../../shared/middlewares/validate.js';
 import { normalizeEmail } from '../../../shared/utils/normalize.js';
@@ -120,6 +121,12 @@ const findWorkspaceById = async (workspaceId) =>
     .select('_id name slug status ownerUserId')
     .lean();
 
+const isWorkspaceOperational = (workspace) =>
+  Boolean(
+    workspace &&
+      workspace.status !== WORKSPACE_STATUS.SUSPENDED
+  );
+
 const findActiveMemberForWorkspace = async ({ userId, workspaceId }) =>
   WorkspaceMember.findOne({
     workspaceId,
@@ -141,7 +148,7 @@ const findActiveContextForWorkspace = async ({ userId, workspaceId }) => {
   }
 
   const workspace = await findWorkspaceById(workspaceId);
-  if (!workspace) {
+  if (!isWorkspaceOperational(workspace)) {
     return null;
   }
 
@@ -226,9 +233,17 @@ const resolveActiveWorkspaceContext = async ({
     }
   }
 
-  const activeMemberships = await listAllActiveMembershipContexts({ userId });
-  if (activeMemberships.length > 0) {
-    return activeMemberships[0];
+  const allMemberships = await listAllActiveMembershipContexts({ userId });
+  const operationalMemberships = allMemberships.filter((membership) =>
+    isWorkspaceOperational(membership.workspace)
+  );
+
+  if (operationalMemberships.length > 0) {
+    return operationalMemberships[0];
+  }
+
+  if (allMemberships.length > 0) {
+    throw createError('errors.workspace.suspended', 403);
   }
 
   throw createError('errors.auth.forbiddenTenant', 403);
@@ -489,6 +504,10 @@ export const switchWorkspaceForSession = async ({
   const workspace = await findWorkspaceById(workspaceId);
   if (!workspace) {
     throw createError('errors.workspace.notFound', 404);
+  }
+
+  if (workspace.status === WORKSPACE_STATUS.SUSPENDED) {
+    throw createError('errors.workspace.suspended', 403);
   }
 
   const member = await WorkspaceMember.findOne({

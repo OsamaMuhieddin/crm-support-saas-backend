@@ -1,4 +1,4 @@
 interface:
-  display_name: "CRM Tickets"
-  short_description: "Ticket workflow rules for the repo"
-  default_prompt: "Use $crm-tickets to work on ticket flows, assignment, lifecycle, or message behavior in this repository."
+  display_name: 'CRM Tickets'
+  short_description: 'Ticket workflow rules for the repo'
+  default_prompt: 'Use $crm-tickets to work on ticket flows, assignment, lifecycle, or message behavior in this repository.'

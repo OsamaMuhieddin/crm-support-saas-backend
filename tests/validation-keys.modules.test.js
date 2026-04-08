@@ -16,12 +16,15 @@ const extractValidationKeys = (content) =>
 
 const validatorFiles = [
   '../src/modules/workspaces/validators/workspaces.validators.js',
+  '../src/modules/auth/validators/auth.validators.js',
+  '../src/modules/admin/validators/admin-auth.validators.js',
   '../src/modules/customers/validators/contacts.validators.js',
   '../src/modules/customers/validators/contact-identities.validators.js',
   '../src/modules/customers/validators/organizations.validators.js',
   '../src/modules/mailboxes/validators/mailboxes.validators.js',
   '../src/modules/sla/validators/sla.validators.js',
   '../src/modules/files/validators/files.validators.js',
+  '../src/modules/reports/validators/reports.validators.js',
   '../src/modules/tickets/validators/ticket-categories.validators.js',
   '../src/modules/tickets/validators/ticket-tags.validators.js',
   '../src/modules/tickets/validators/tickets.validators.js',

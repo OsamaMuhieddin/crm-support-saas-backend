@@ -431,3 +431,34 @@ export const changePassword = async ({
 
   return {};
 };
+
+export const updateProfile = async ({ userId, payload }) => {
+  const user = await User.findOne({
+    _id: userId,
+    deletedAt: null,
+  });
+
+  if (!user) {
+    throw createError('errors.auth.invalidToken', 401);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'name')) {
+    user.profile = {
+      ...user.profile,
+      name: payload.name,
+    };
+  }
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'avatar')) {
+    user.profile = {
+      ...user.profile,
+      avatar: payload.avatar,
+    };
+  }
+
+  await user.save();
+
+  return {
+    user: buildSafeUser(user),
+  };
+};

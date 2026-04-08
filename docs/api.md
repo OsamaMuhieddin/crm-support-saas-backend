@@ -183,6 +183,14 @@ After changing the manifest locally, rerun:
   - role is `owner` or `admin`
   - `:workspaceId` must match token workspace (`wid`)
 
+Platform admin auth model:
+
+- Platform admin auth is separate from normal workspace-user auth.
+- Platform access tokens are platform-scoped and do not embed workspace context by default.
+- Platform refresh tokens rotate against `PlatformSession`, not normal user `Session`.
+- Platform admin routes under `/api/admin/*` require platform auth and platform role guards.
+- Revenue-sensitive platform analytics currently use stricter role checks than general platform overview access.
+
 ## 4) Quick Start Flows
 
 The flows in this section are product-wide entry points. Billing keeps its own quick-start block immediately before the billing endpoint reference so checkout, portal, and webhook-driven sync stay documented next to the billing APIs.
@@ -312,6 +320,36 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 6. Subscribe explicitly to the current workspace room with `workspace.subscribe`.
 7. Subscribe explicitly to a readable ticket room with `ticket.subscribe` when the UI opens that ticket.
 8. Treat MongoDB-backed REST reads as the source of truth; realtime is a live-collaboration transport, not a replacement for canonical reads.
+
+### Flow K: Platform Admin Login -> Overview -> Workspace Action
+
+1. Platform admin logs in with `POST /api/admin/auth/login`.
+2. Frontend stores platform `accessToken` and `refreshToken` separately from normal workspace-user tokens.
+3. Frontend hydrates current platform identity with `GET /api/admin/auth/me`.
+4. Frontend loads platform dashboard data from:
+   - `GET /api/admin/overview`
+   - `GET /api/admin/metrics`
+   - `GET /api/admin/billing-overview` (`super_admin` only)
+5. Frontend can inspect tenants with `GET /api/admin/workspaces` and `GET /api/admin/workspaces/:id`.
+6. Rare support/governance actions use explicit endpoints:
+   - `POST /api/admin/workspaces/:id/suspend`
+   - `POST /api/admin/workspaces/:id/reactivate`
+   - `POST /api/admin/workspaces/:id/extend-trial`
+
+### Flow L: Workspace Reports v1
+
+1. Authenticated workspace members call:
+   - `GET /api/reports/overview`
+   - `GET /api/reports/tickets`
+   - `GET /api/reports/sla`
+2. Reporting filters are workspace-scoped from session context, never from a client-supplied `workspaceId`.
+3. Shared report filters support:
+   - `from`
+   - `to`
+   - `groupBy=day|week|month`
+   - optional `mailboxId`, `assigneeId`, `priority`, `categoryId`, `tagId`
+4. `GET /api/reports/team` is management-facing and restricted to `owner|admin`.
+5. Report payloads are grouped FE-friendly summaries/series/breakdowns, not raw DB dumps.
 
 ## Realtime / Live Collaboration
 
@@ -5647,3 +5685,329 @@ npm run mailboxes:backfill-default
   - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
 - Notes:
   - the operation is idempotent.
+
+## 16) Reporting and Platform Admin Endpoints Reference
+
+### PATCH `/api/auth/profile`
+
+- Purpose: update the authenticated user's own minimal profile fields.
+- Requirements:
+  - valid workspace-user bearer access token
+  - active user session
+- Request body:
+
+```json
+{
+  "name": "Updated Name",
+  "avatar": "https://cdn.example.com/avatar.png"
+}
+```
+
+- Allowed fields:
+  - `name`
+  - `avatar`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.auth.profileUpdated",
+  "message": "Profile updated successfully.",
+  "user": {
+    "_id": "65f1...",
+    "email": "user@example.com",
+    "profile": {
+      "name": "Updated Name",
+      "avatar": "https://cdn.example.com/avatar.png"
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `422` `errors.validation.failed`
+- Notes:
+  - unknown fields are rejected
+  - this route does not change email or password
+
+### GET `/api/reports/overview`
+
+- Purpose: return the current workspace dashboard overview with grouped KPI, status, priority, mailbox, SLA, and compact usage sections.
+- Requirements:
+  - valid workspace-user bearer access token
+  - active user
+  - active membership in the current workspace
+- Supported query:
+  - `from`, `to`
+  - `groupBy=day|week|month`
+  - optional `mailboxId`, `assigneeId`, `priority`, `categoryId`, `tagId`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "report": "overview",
+  "filters": {
+    "from": "2026-03-01T00:00:00.000Z",
+    "to": "2026-03-31T23:59:59.999Z",
+    "groupBy": "day"
+  },
+  "summary": {},
+  "breakdowns": {},
+  "sla": {},
+  "usage": {},
+  "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.workspace.suspended`
+  - `422` `errors.validation.failed`
+
+### GET `/api/reports/tickets`
+
+- Purpose: return workspace ticket reporting with grouped volume series plus operational breakdowns.
+- Requirements:
+  - same as `GET /api/reports/overview`
+- Supported query:
+  - same shared report filter contract as `GET /api/reports/overview`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "report": "tickets",
+  "filters": {},
+  "summary": {},
+  "series": {
+    "volume": []
+  },
+  "breakdowns": {},
+  "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.workspace.suspended`
+  - `422` `errors.validation.failed`
+
+### GET `/api/reports/sla`
+
+- Purpose: return workspace SLA reporting with compliance overview, current status counts, and compact breakdowns/trends.
+- Requirements:
+  - same as `GET /api/reports/overview`
+- Supported query:
+  - same shared report filter contract as `GET /api/reports/overview`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "report": "sla",
+  "filters": {},
+  "overview": {},
+  "series": {},
+  "breakdowns": {},
+  "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.workspace.suspended`
+  - `422` `errors.validation.failed`
+
+### GET `/api/reports/team`
+
+- Purpose: return management-facing assignee/team reporting for the current workspace.
+- Requirements:
+  - valid workspace-user bearer access token
+  - active user
+  - active membership in the current workspace
+  - role must be `owner|admin`
+- Supported query:
+  - same shared report filter contract as `GET /api/reports/overview`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "report": "team",
+  "visibility": "owner_admin",
+  "filters": {},
+  "summary": {},
+  "workload": [],
+  "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken`
+  - `403` `errors.auth.forbiddenRole | errors.workspace.suspended`
+  - `422` `errors.validation.failed`
+
+### Platform Admin Auth
+
+#### POST `/api/admin/auth/login`
+
+- Purpose: authenticate a platform admin and create an isolated platform session.
+- Requirements:
+  - public endpoint
+- Request body:
+
+```json
+{
+  "email": "admin@example.com",
+  "password": "Password123!"
+}
+```
+
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.adminAuth.loggedIn",
+  "message": "Platform admin logged in successfully.",
+  "platformAdmin": {},
+  "tokens": {
+    "accessToken": "jwt",
+    "refreshToken": "jwt"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidCredentials`
+  - `403` `errors.platformAuth.adminSuspended`
+
+#### POST `/api/admin/auth/refresh`
+
+- Purpose: rotate a platform refresh token and issue fresh platform tokens.
+- Requirements:
+  - public endpoint
+- Request body:
+
+```json
+{
+  "refreshToken": "jwt"
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+
+#### GET `/api/admin/auth/me`
+
+- Purpose: return the current platform admin identity and active platform session summary.
+- Requirements:
+  - valid platform-admin bearer access token
+
+#### POST `/api/admin/auth/logout`
+
+- Purpose: revoke the current platform session only.
+- Requirements:
+  - valid platform-admin bearer access token
+
+#### POST `/api/admin/auth/logout-all`
+
+- Purpose: revoke all sessions for the authenticated platform admin.
+- Requirements:
+  - valid platform-admin bearer access token
+
+### GET `/api/admin/overview`
+
+- Purpose: return grouped platform-wide overview analytics from live current-state aggregation.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin|platform_admin`
+- Notes:
+  - revenue-sensitive fields are omitted for non-`super_admin` callers
+
+### GET `/api/admin/metrics`
+
+- Purpose: return platform historical trend series using `PlatformMetricDaily` when data exists.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin|platform_admin`
+- Supported query:
+  - `from`, `to`
+  - `groupBy=day|week|month`
+- Notes:
+  - sparse historical data is returned honestly as partial series; the API does not invent missing trend values
+
+### GET `/api/admin/billing-overview`
+
+- Purpose: return grouped platform billing visibility across subscriptions, plans, usage pressure, and current MRR.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin`
+
+### GET `/api/admin/workspaces`
+
+- Purpose: return a compact cross-workspace inspection list for platform admins.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin|platform_admin|platform_support`
+- Supported query:
+  - `q` or `search`
+  - `status`
+  - `billingStatus`
+  - `planKey`
+  - `trialing`
+  - `page`, `limit`, `sort`
+
+### GET `/api/admin/workspaces/:id`
+
+- Purpose: return grouped inspection details for one workspace.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin|platform_admin|platform_support`
+
+### POST `/api/admin/workspaces/:id/suspend`
+
+- Purpose: perform the rare explicit platform-only workspace suspension action.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin`
+- Notes:
+  - idempotent
+  - does not cancel, downgrade, or reset billing state
+  - blocks normal workspace runtime access while keeping the workspace inspectable to platform admins
+
+### POST `/api/admin/workspaces/:id/reactivate`
+
+- Purpose: reverse platform suspension and restore normal workspace runtime access.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin`
+- Notes:
+  - idempotent
+  - does not modify plan, usage, or billing lifecycle state
+
+### POST `/api/admin/workspaces/:id/extend-trial`
+
+- Purpose: perform a bounded trial extension support action through the billing foundation.
+- Requirements:
+  - valid platform-admin bearer access token
+  - role must be `super_admin`
+- Request body:
+
+```json
+{
+  "days": 5
+}
+```
+
+- Common errors:
+  - `409` `errors.billing.trialExtensionNotAllowed`
+  - `422` `errors.validation.failed`
+- Notes:
+  - `days` must be a positive integer
+  - the current implementation caps extensions at `30` days
+  - the action does not reset usage or recreate billing foundations

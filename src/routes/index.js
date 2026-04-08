@@ -14,12 +14,13 @@ import filesRouter from '../modules/files/index.js';
 import mailboxesRouter from '../modules/mailboxes/index.js';
 import realtimeRouter from '../modules/realtime/index.js';
 import billingRouter from '../modules/billing/index.js';
+import reportsRouter from '../modules/reports/index.js';
 
 const router = Router();
 
 router.use('/health', healthRouter);
 
-// CRM foundation modules (routers only for now)
+// Mounted CRM runtime modules
 router.use('/workspaces', workspacesRouter);
 router.use('/users', usersRouter);
 router.use('/customers', customersRouter);
@@ -33,5 +34,6 @@ router.use('/files', filesRouter);
 router.use('/mailboxes', mailboxesRouter);
 router.use('/realtime', realtimeRouter);
 router.use('/billing', billingRouter);
+router.use('/reports', reportsRouter);
 
 export default router;

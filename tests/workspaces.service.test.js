@@ -21,6 +21,7 @@ const createQuery = (value) => {
 };
 
 describe('workspaces.service createWorkspaceInvite', () => {
+  const workspaceId = '507f1f77bcf86cd799439011';
   const originalFrontendBaseUrl = authConfig.frontendBaseUrl;
   const originalAppBaseUrl = authConfig.appBaseUrl;
 
@@ -37,7 +38,7 @@ describe('workspaces.service createWorkspaceInvite', () => {
 
   test('invite email link uses FRONTEND_BASE_URL', async () => {
     jest.spyOn(Workspace, 'findOne').mockReturnValue(
-      createQuery({ name: 'Acme Workspace' })
+      createQuery({ _id: workspaceId, name: 'Acme Workspace' })
     );
     jest.spyOn(User, 'findOne').mockReturnValue(createQuery(null));
 
@@ -60,7 +61,7 @@ describe('workspaces.service createWorkspaceInvite', () => {
     });
 
     await createWorkspaceInvite({
-      workspaceId: 'workspace-1',
+      workspaceId,
       email: 'invitee@example.com',
       roleKey: 'agent',
       invitedByUserId: 'owner-1',

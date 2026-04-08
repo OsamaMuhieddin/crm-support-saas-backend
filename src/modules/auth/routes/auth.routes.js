@@ -13,7 +13,8 @@ import {
   resendOtpController,
   resetPasswordController,
   signupController,
-  verifyEmailController
+  updateProfileController,
+  verifyEmailController,
 } from '../controllers/auth.controller.js';
 import {
   changePasswordValidator,
@@ -23,14 +24,19 @@ import {
   resendOtpValidator,
   resetPasswordValidator,
   signupValidator,
-  verifyEmailValidator
+  updateProfileValidator,
+  verifyEmailValidator,
 } from '../validators/auth.validators.js';
 
 const router = Router();
 
 router.post('/signup', validate(signupValidator), signupController);
 router.post('/resend-otp', validate(resendOtpValidator), resendOtpController);
-router.post('/verify-email', validate(verifyEmailValidator), verifyEmailController);
+router.post(
+  '/verify-email',
+  validate(verifyEmailValidator),
+  verifyEmailController
+);
 router.post('/login', validate(loginValidator), loginController);
 router.post('/refresh', validate(refreshValidator), refreshController);
 router.post(
@@ -38,9 +44,20 @@ router.post(
   validate(forgotPasswordValidator),
   forgotPasswordController
 );
-router.post('/reset-password', validate(resetPasswordValidator), resetPasswordController);
+router.post(
+  '/reset-password',
+  validate(resetPasswordValidator),
+  resetPasswordController
+);
 
 router.get('/me', requireAuth, requireActiveUser, meController);
+router.patch(
+  '/profile',
+  requireAuth,
+  requireActiveUser,
+  validate(updateProfileValidator),
+  updateProfileController
+);
 router.post('/logout', requireAuth, requireActiveUser, logoutController);
 router.post('/logout-all', requireAuth, requireActiveUser, logoutAllController);
 router.post(
