@@ -363,6 +363,20 @@ describe('Reports module', () => {
       ])
     );
 
+    const invalidDate = await request(app)
+      .get('/api/reports/tickets?from=not-a-date&to=2026-03-01')
+      .set('Authorization', `Bearer ${owner.accessToken}`);
+
+    expect(invalidDate.status).toBe(422);
+    expect(invalidDate.body.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          field: 'from',
+          messageKey: 'errors.validation.invalidDate',
+        }),
+      ])
+    );
+
     const oversizedDateRange = await request(app)
       .get('/api/reports/overview?from=2024-01-01&to=2026-03-01')
       .set('Authorization', `Bearer ${owner.accessToken}`);
@@ -610,13 +624,17 @@ describe('Reports module', () => {
       .set('Authorization', `Bearer ${owner.accessToken}`);
 
     expect(ownerResponse.status).toBe(200);
+    expect(ownerResponse.body.messageKey).toBe('success.ok');
     expect(ownerResponse.body.report).toBe('team');
     expect(ownerResponse.body.visibility).toBe('owner_admin');
     expect(ownerResponse.body.summary).toEqual(
       expect.objectContaining({
         assigneeCount: 2,
-        assignedActiveLoad: 2,
+        totalAssignedTicketsInRange: 2,
+        assignedActiveLoad: 1,
         unassignedActiveLoad: 0,
+        currentAssignedActiveLoad: 2,
+        currentUnassignedActiveLoad: 0,
         solvedTicketsInRange: 1,
         closedTicketsInRange: 0,
       })
@@ -625,10 +643,16 @@ describe('Reports module', () => {
       expect.arrayContaining([
         expect.objectContaining({
           assignee: expect.objectContaining({ label: 'Agent User' }),
-          totalAssignedTickets: 2,
-          activeAssignedLoad: 2,
+          totalAssignedTickets: 1,
+          activeAssignedLoad: 1,
+          currentActiveAssignedLoad: 2,
           solvedTicketsInRange: 0,
           statusCounts: expect.objectContaining({
+            open: 1,
+            pending: 0,
+            waitingOnCustomer: 0,
+          }),
+          currentStatusCounts: expect.objectContaining({
             open: 1,
             pending: 0,
             waitingOnCustomer: 1,
@@ -638,6 +662,7 @@ describe('Reports module', () => {
           assignee: expect.objectContaining({ label: 'Owner User' }),
           totalAssignedTickets: 1,
           activeAssignedLoad: 0,
+          currentActiveAssignedLoad: 0,
           solvedTicketsInRange: 1,
         }),
       ])

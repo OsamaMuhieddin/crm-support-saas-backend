@@ -14,12 +14,13 @@ import { WorkspaceInvite } from '../../workspaces/models/workspace-invite.model.
 import { WorkspaceMember } from '../../workspaces/models/workspace-member.model.js';
 import { normalizeObjectId, toObjectIdIfValid } from '../../../shared/utils/object-id.js';
 import {
+  buildClosedTicketMatch,
+  buildCreatedTicketMatch,
+  buildSolvedTicketMatch,
   buildTicketScopeMatch,
   buildTimeBuckets,
   formatBucketKey,
-  isClosedInRange,
   isDateInRange,
-  isSolvedInRange,
   normalizeReportFilters,
   serializeReportFilters,
 } from '../utils/report-filters.js';
@@ -278,10 +279,34 @@ const buildTagBreakdown = (tickets, tagMap) => {
   }));
 };
 
-const getTicketDateProjection = async ({ workspaceId, filters }) =>
-  Ticket.find(buildTicketScopeMatch({ workspaceId, filters }))
+const getReportTickets = async (match) =>
+  Ticket.find(match)
     .select(REPORT_TICKET_SELECT)
     .lean();
+
+const getScopedTickets = ({ workspaceId, filters }) =>
+  getReportTickets(buildTicketScopeMatch({ workspaceId, filters }));
+
+const getCreatedRangeTickets = ({ workspaceId, filters }) =>
+  getReportTickets(buildCreatedTicketMatch({ workspaceId, filters }));
+
+const getSolvedRangeTickets = ({ workspaceId, filters }) =>
+  getReportTickets(buildSolvedTicketMatch({ workspaceId, filters }));
+
+const getClosedRangeTickets = ({ workspaceId, filters }) =>
+  getReportTickets(buildClosedTicketMatch({ workspaceId, filters }));
+
+const mergeTicketsById = (...ticketGroups) => {
+  const byId = new Map();
+
+  for (const tickets of ticketGroups) {
+    for (const ticket of tickets || []) {
+      byId.set(normalizeObjectId(ticket._id), ticket);
+    }
+  }
+
+  return [...byId.values()];
+};
 
 const buildSlaSummary = (tickets) => {
   const firstResponseStatusCounts = createCounterRecord(SLA_FIRST_RESPONSE_STATUSES);
@@ -389,10 +414,13 @@ export const getWorkspaceReportsOverview = async ({
   query = {},
 }) => {
   const filters = normalizeReportFilters(query);
-  const scopeTickets = await getTicketDateProjection({ workspaceId, filters });
-  const rangeTickets = scopeTickets.filter((ticket) =>
-    isDateInRange(ticket.createdAt, filters)
-  );
+  const [scopeTickets, rangeTickets, solvedRangeTickets, closedRangeTickets] =
+    await Promise.all([
+      getScopedTickets({ workspaceId, filters }),
+      getCreatedRangeTickets({ workspaceId, filters }),
+      getSolvedRangeTickets({ workspaceId, filters }),
+      getClosedRangeTickets({ workspaceId, filters }),
+    ]);
   const { mailboxMap } = await getTicketLabelMaps({
     workspaceId,
     tickets: rangeTickets,
@@ -410,8 +438,8 @@ export const getWorkspaceReportsOverview = async ({
     summary: {
       totalTicketsInRange: rangeTickets.length,
       backlogTickets: scopeTickets.filter((ticket) => OPENISH_STATUSES.has(ticket.status)).length,
-      solvedTicketsInRange: scopeTickets.filter((ticket) => isSolvedInRange(ticket, filters)).length,
-      closedTicketsInRange: scopeTickets.filter((ticket) => isClosedInRange(ticket, filters)).length,
+      solvedTicketsInRange: solvedRangeTickets.length,
+      closedTicketsInRange: closedRangeTickets.length,
     },
     breakdowns: {
       status: buildStatusBreakdown(rangeTickets),
@@ -434,10 +462,11 @@ export const getWorkspaceTicketsReport = async ({
   query = {},
 }) => {
   const filters = normalizeReportFilters(query);
-  const scopeTickets = await getTicketDateProjection({ workspaceId, filters });
-  const rangeTickets = scopeTickets.filter((ticket) =>
-    isDateInRange(ticket.createdAt, filters)
-  );
+  const [rangeTickets, solvedRangeTickets, closedRangeTickets] = await Promise.all([
+    getCreatedRangeTickets({ workspaceId, filters }),
+    getSolvedRangeTickets({ workspaceId, filters }),
+    getClosedRangeTickets({ workspaceId, filters }),
+  ]);
   const { mailboxMap, categoryMap, assigneeMap, tagMap } = await getTicketLabelMaps({
     workspaceId,
     tickets: rangeTickets,
@@ -449,7 +478,7 @@ export const getWorkspaceTicketsReport = async ({
     closed: 0,
   }));
 
-  for (const ticket of scopeTickets) {
+  for (const ticket of rangeTickets) {
     applyDateToSeries({
       seriesIndex,
       date: ticket.createdAt,
@@ -458,17 +487,25 @@ export const getWorkspaceTicketsReport = async ({
         bucket.created += 1;
       },
     });
+  }
+
+  for (const ticket of solvedRangeTickets) {
     applyDateToSeries({
       seriesIndex,
-      date: ticket?.sla?.resolvedAt || (ticket.status === TICKET_STATUS.SOLVED ? ticket.statusChangedAt : null),
+      date:
+        ticket?.sla?.resolvedAt ||
+        (ticket.status === TICKET_STATUS.SOLVED ? ticket.statusChangedAt : null),
       filters,
       apply: (bucket) => {
         bucket.solved += 1;
       },
     });
+  }
+
+  for (const ticket of closedRangeTickets) {
     applyDateToSeries({
       seriesIndex,
-      date: ticket.status === TICKET_STATUS.CLOSED ? ticket.closedAt : null,
+      date: ticket.closedAt,
       filters,
       apply: (bucket) => {
         bucket.closed += 1;
@@ -485,8 +522,8 @@ export const getWorkspaceTicketsReport = async ({
     }),
     summary: {
       createdTicketsInRange: rangeTickets.length,
-      solvedTicketsInRange: scopeTickets.filter((ticket) => isSolvedInRange(ticket, filters)).length,
-      closedTicketsInRange: scopeTickets.filter((ticket) => isClosedInRange(ticket, filters)).length,
+      solvedTicketsInRange: solvedRangeTickets.length,
+      closedTicketsInRange: closedRangeTickets.length,
     },
     series: {
       volume: finalizeSeries(seriesIndex),
@@ -523,10 +560,7 @@ export const getWorkspaceSlaReport = async ({
   query = {},
 }) => {
   const filters = normalizeReportFilters(query);
-  const scopeTickets = await getTicketDateProjection({ workspaceId, filters });
-  const rangeTickets = scopeTickets.filter((ticket) =>
-    isDateInRange(ticket.createdAt, filters)
-  );
+  const rangeTickets = await getCreatedRangeTickets({ workspaceId, filters });
   const { mailboxMap } = await getTicketLabelMaps({
     workspaceId,
     tickets: rangeTickets,
@@ -643,48 +677,103 @@ export const getWorkspaceTeamReport = async ({
   query = {},
 }) => {
   const filters = normalizeReportFilters(query);
-  const scopeTickets = await getTicketDateProjection({ workspaceId, filters });
-  const assigneeTickets = scopeTickets.filter((ticket) => ticket.assigneeId);
+  const [scopeTickets, rangeTickets, solvedRangeTickets, closedRangeTickets] =
+    await Promise.all([
+      getScopedTickets({ workspaceId, filters }),
+      getCreatedRangeTickets({ workspaceId, filters }),
+      getSolvedRangeTickets({ workspaceId, filters }),
+      getClosedRangeTickets({ workspaceId, filters }),
+    ]);
+  const assigneeTickets = mergeTicketsById(
+    scopeTickets.filter((ticket) => ticket.assigneeId),
+    rangeTickets.filter((ticket) => ticket.assigneeId),
+    solvedRangeTickets.filter((ticket) => ticket.assigneeId),
+    closedRangeTickets.filter((ticket) => ticket.assigneeId)
+  );
   const { assigneeMap } = await getTicketLabelMaps({
     workspaceId,
     tickets: assigneeTickets,
   });
-  const groupedByAssignee = new Map();
+  const currentTicketsByAssignee = new Map();
+  const rangeTicketsByAssignee = new Map();
+  const solvedRangeCountByAssignee = {};
+  const closedRangeCountByAssignee = {};
 
-  for (const ticket of assigneeTickets) {
+  for (const ticket of scopeTickets.filter((item) => item.assigneeId)) {
     const assigneeId = normalizeObjectId(ticket.assigneeId);
 
-    if (!groupedByAssignee.has(assigneeId)) {
-      groupedByAssignee.set(assigneeId, []);
+    if (!currentTicketsByAssignee.has(assigneeId)) {
+      currentTicketsByAssignee.set(assigneeId, []);
     }
 
-    groupedByAssignee.get(assigneeId).push(ticket);
+    currentTicketsByAssignee.get(assigneeId).push(ticket);
   }
 
-  const workload = [...groupedByAssignee.entries()]
-    .map(([assigneeId, tickets]) => {
-      const activeAssignedLoad = tickets.filter((ticket) =>
+  for (const ticket of rangeTickets.filter((item) => item.assigneeId)) {
+    const assigneeId = normalizeObjectId(ticket.assigneeId);
+
+    if (!rangeTicketsByAssignee.has(assigneeId)) {
+      rangeTicketsByAssignee.set(assigneeId, []);
+    }
+
+    rangeTicketsByAssignee.get(assigneeId).push(ticket);
+  }
+
+  for (const ticket of solvedRangeTickets.filter((item) => item.assigneeId)) {
+    const assigneeId = normalizeObjectId(ticket.assigneeId);
+    incrementRecord(solvedRangeCountByAssignee, assigneeId);
+  }
+
+  for (const ticket of closedRangeTickets.filter((item) => item.assigneeId)) {
+    const assigneeId = normalizeObjectId(ticket.assigneeId);
+    incrementRecord(closedRangeCountByAssignee, assigneeId);
+  }
+
+  const assigneeIds = new Set([
+    ...currentTicketsByAssignee.keys(),
+    ...rangeTicketsByAssignee.keys(),
+    ...Object.keys(solvedRangeCountByAssignee),
+    ...Object.keys(closedRangeCountByAssignee),
+  ]);
+
+  const workload = [...assigneeIds]
+    .map((assigneeId) => {
+      const currentTickets = currentTicketsByAssignee.get(assigneeId) || [];
+      const inRangeTickets = rangeTicketsByAssignee.get(assigneeId) || [];
+      const activeAssignedLoad = inRangeTickets.filter((ticket) =>
+        OPENISH_STATUSES.has(ticket.status)
+      ).length;
+      const currentActiveAssignedLoad = currentTickets.filter((ticket) =>
         OPENISH_STATUSES.has(ticket.status)
       ).length;
       const statusCounts = {
-        open: tickets.filter((ticket) => ticket.status === TICKET_STATUS.OPEN).length,
-        pending: tickets.filter((ticket) => ticket.status === TICKET_STATUS.PENDING).length,
-        waitingOnCustomer: tickets.filter(
+        open: inRangeTickets.filter((ticket) => ticket.status === TICKET_STATUS.OPEN).length,
+        pending: inRangeTickets.filter((ticket) => ticket.status === TICKET_STATUS.PENDING).length,
+        waitingOnCustomer: inRangeTickets.filter(
           (ticket) => ticket.status === TICKET_STATUS.WAITING_ON_CUSTOMER
         ).length,
       };
-      const slaSummary = buildSlaSummary(tickets);
+      const currentStatusCounts = {
+        open: currentTickets.filter((ticket) => ticket.status === TICKET_STATUS.OPEN).length,
+        pending: currentTickets.filter((ticket) => ticket.status === TICKET_STATUS.PENDING).length,
+        waitingOnCustomer: currentTickets.filter(
+          (ticket) => ticket.status === TICKET_STATUS.WAITING_ON_CUSTOMER
+        ).length,
+      };
+      const slaSummary = buildSlaSummary(inRangeTickets);
 
       return {
         assignee: {
           id: assigneeId,
           label: assigneeMap.get(assigneeId) || 'Unknown',
         },
-        totalAssignedTickets: tickets.length,
+        totalAssignedTickets: inRangeTickets.length,
         activeAssignedLoad,
-        solvedTicketsInRange: tickets.filter((ticket) => isSolvedInRange(ticket, filters)).length,
-        closedTicketsInRange: tickets.filter((ticket) => isClosedInRange(ticket, filters)).length,
+        currentActiveAssignedLoad,
+        solvedTicketsInRange: solvedRangeCountByAssignee[assigneeId] || 0,
+        closedTicketsInRange: closedRangeCountByAssignee[assigneeId] || 0,
         statusCounts,
+        currentStatusCounts,
         sla: {
           applicableTickets: slaSummary.applicableTickets,
           breachedTickets: slaSummary.breachedTickets,
@@ -693,14 +782,21 @@ export const getWorkspaceTeamReport = async ({
       };
     })
     .sort((left, right) => {
-      if (right.activeAssignedLoad !== left.activeAssignedLoad) {
-        return right.activeAssignedLoad - left.activeAssignedLoad;
+      if (right.currentActiveAssignedLoad !== left.currentActiveAssignedLoad) {
+        return right.currentActiveAssignedLoad - left.currentActiveAssignedLoad;
+      }
+
+      if (right.totalAssignedTickets !== left.totalAssignedTickets) {
+        return right.totalAssignedTickets - left.totalAssignedTickets;
       }
 
       return left.assignee.label.localeCompare(right.assignee.label);
     });
 
-  const unassignedActiveLoad = scopeTickets.filter(
+  const unassignedActiveLoad = rangeTickets.filter(
+    (ticket) => !ticket.assigneeId && OPENISH_STATUSES.has(ticket.status)
+  ).length;
+  const currentUnassignedActiveLoad = scopeTickets.filter(
     (ticket) => !ticket.assigneeId && OPENISH_STATUSES.has(ticket.status)
   ).length;
 
@@ -713,11 +809,20 @@ export const getWorkspaceTeamReport = async ({
     }),
     summary: {
       assigneeCount: workload.length,
+      totalAssignedTicketsInRange: workload.reduce(
+        (total, item) => total + item.totalAssignedTickets,
+        0
+      ),
       assignedActiveLoad: workload.reduce(
         (total, item) => total + item.activeAssignedLoad,
         0
       ),
       unassignedActiveLoad,
+      currentAssignedActiveLoad: workload.reduce(
+        (total, item) => total + item.currentActiveAssignedLoad,
+        0
+      ),
+      currentUnassignedActiveLoad,
       solvedTicketsInRange: workload.reduce(
         (total, item) => total + item.solvedTicketsInRange,
         0

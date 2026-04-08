@@ -13,7 +13,10 @@ export const getReportsOverviewController = async (req, res, next) => {
       query: req.query,
     });
 
-    return res.json(data);
+    return res.json({
+      messageKey: 'success.ok',
+      ...data,
+    });
   } catch (error) {
     return next(error);
   }
@@ -27,7 +30,10 @@ export const getReportsTicketsController = async (req, res, next) => {
       query: req.query,
     });
 
-    return res.json(data);
+    return res.json({
+      messageKey: 'success.ok',
+      ...data,
+    });
   } catch (error) {
     return next(error);
   }
@@ -41,7 +47,10 @@ export const getReportsSlaController = async (req, res, next) => {
       query: req.query,
     });
 
-    return res.json(data);
+    return res.json({
+      messageKey: 'success.ok',
+      ...data,
+    });
   } catch (error) {
     return next(error);
   }
@@ -55,7 +64,10 @@ export const getReportsTeamController = async (req, res, next) => {
       query: req.query,
     });
 
-    return res.json(data);
+    return res.json({
+      messageKey: 'success.ok',
+      ...data,
+    });
   } catch (error) {
     return next(error);
   }

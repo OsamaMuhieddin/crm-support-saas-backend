@@ -480,6 +480,12 @@ describe('Admin workspace management', () => {
           planKey: 'starter',
           trialEndsAt: new Date('2026-04-20T00:00:00.000Z'),
           currentPeriodEnd: new Date('2026-04-20T00:00:00.000Z'),
+          graceStartsAt: new Date('2026-04-10T00:00:00.000Z'),
+          graceEndsAt: new Date('2026-04-12T00:00:00.000Z'),
+          pastDueAt: new Date('2026-04-10T00:00:00.000Z'),
+          partialBlockStartsAt: new Date('2026-04-13T00:00:00.000Z'),
+          canceledAt: new Date('2026-04-14T00:00:00.000Z'),
+          cancelAtPeriodEnd: true,
         },
       }
     );
@@ -512,6 +518,26 @@ describe('Admin workspace management', () => {
     );
     expect(extendResponse.body.trialExtension.currentPeriodEnd).toBe(
       '2026-04-25T00:00:00.000Z'
+    );
+
+    const subscriptionAfterExtension = await Subscription.findOne({
+      workspaceId: owner.workspaceId,
+      deletedAt: null,
+    })
+      .select(
+        'trialEndsAt currentPeriodEnd graceStartsAt graceEndsAt pastDueAt partialBlockStartsAt canceledAt cancelAtPeriodEnd'
+      )
+      .lean();
+
+    expect(subscriptionAfterExtension).toEqual(
+      expect.objectContaining({
+        graceStartsAt: null,
+        graceEndsAt: null,
+        pastDueAt: null,
+        partialBlockStartsAt: null,
+        canceledAt: null,
+        cancelAtPeriodEnd: false,
+      })
     );
 
     await Subscription.updateOne(

@@ -706,6 +706,12 @@ export const extendAdminWorkspaceTrial = async ({ workspaceId, days }) => {
   nextTrialEnd.setUTCDate(nextTrialEnd.getUTCDate() + daysToExtend);
 
   subscription.trialEndsAt = nextTrialEnd;
+  subscription.graceStartsAt = null;
+  subscription.graceEndsAt = null;
+  subscription.pastDueAt = null;
+  subscription.partialBlockStartsAt = null;
+  subscription.canceledAt = null;
+  subscription.cancelAtPeriodEnd = false;
 
   if (
     !subscription.currentPeriodEnd ||

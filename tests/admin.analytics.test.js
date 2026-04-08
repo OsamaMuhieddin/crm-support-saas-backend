@@ -510,7 +510,7 @@ describe('Admin analytics', () => {
             trialing: 1,
             pastDue: 1,
             inGracePeriod: 1,
-            partialBlockActive: 1,
+            partialBlockActive: 0,
             cancelAtPeriodEnd: 1,
             providerManaged: 2,
           }),

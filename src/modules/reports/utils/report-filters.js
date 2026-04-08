@@ -147,6 +147,35 @@ export const buildTicketScopeMatch = ({ workspaceId, filters }) => {
   return match;
 };
 
+const buildDateRangeMatch = (field, filters) => ({
+  [field]: {
+    $gte: filters.from,
+    $lte: filters.to,
+  },
+});
+
+export const buildCreatedTicketMatch = ({ workspaceId, filters }) => ({
+  ...buildTicketScopeMatch({ workspaceId, filters }),
+  ...buildDateRangeMatch('createdAt', filters),
+});
+
+export const buildSolvedTicketMatch = ({ workspaceId, filters }) => ({
+  ...buildTicketScopeMatch({ workspaceId, filters }),
+  $or: [
+    buildDateRangeMatch('sla.resolvedAt', filters),
+    {
+      status: 'solved',
+      ...buildDateRangeMatch('statusChangedAt', filters),
+    },
+  ],
+});
+
+export const buildClosedTicketMatch = ({ workspaceId, filters }) => ({
+  ...buildTicketScopeMatch({ workspaceId, filters }),
+  status: 'closed',
+  ...buildDateRangeMatch('closedAt', filters),
+});
+
 export const isDateInRange = (value, filters) => {
   const date = toDateOrNull(value);
 

@@ -3,10 +3,9 @@ import { TICKET_PRIORITY_VALUES } from '../../../constants/ticket-priority.js';
 import { buildValidationError } from '../../../shared/middlewares/validate.js';
 import {
   buildAllowedReportsQueryValidation,
+  MAX_REPORT_RANGE_DAYS,
   REPORT_GROUP_BY_VALUES,
 } from '../utils/report-filters.js';
-
-const MAX_REPORT_RANGE_DAYS = 366;
 
 const reportsDateRangeValidation = (req) => {
   const fromValue = req.query?.from;
@@ -18,28 +17,27 @@ const reportsDateRangeValidation = (req) => {
 
   const fromDate = new Date(fromValue);
   const toDate = new Date(toValue);
-
-  if (
-    Number.isNaN(fromDate.getTime()) ||
-    Number.isNaN(toDate.getTime()) ||
-    fromDate <= toDate
-  ) {
-    const rangeInDays =
-      Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)) +
-      1;
-
-    if (rangeInDays > MAX_REPORT_RANGE_DAYS) {
-      return [
-        buildValidationError('from', 'errors.validation.invalidDateRange'),
-      ];
-    }
-
-    return [];
-  }
-
-  return [
+  const invalidRangeError = [
     buildValidationError('from', 'errors.validation.invalidDateRange'),
   ];
+
+  if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
+    return invalidRangeError;
+  }
+
+  if (fromDate > toDate) {
+    return invalidRangeError;
+  }
+
+  const rangeInDays =
+    Math.floor((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)) +
+    1;
+
+  if (rangeInDays > MAX_REPORT_RANGE_DAYS) {
+    return invalidRangeError;
+  }
+
+  return [];
 };
 
 const baseReportsValidator = [

@@ -352,8 +352,10 @@ const buildSubscriptionStatusDistribution = (counts) =>
     count,
   }));
 
-const getBillingLifecycleSummary = (subscriptions) =>
-  subscriptions.reduce(
+const getBillingLifecycleSummary = (subscriptions) => {
+  const now = Date.now();
+
+  return subscriptions.reduce(
     (summary, subscription) => ({
       trialing: summary.trialing + (subscription.status === BILLING_SUBSCRIPTION_STATUS.TRIALING ? 1 : 0),
       pastDue: summary.pastDue + (subscription.status === BILLING_SUBSCRIPTION_STATUS.PAST_DUE ? 1 : 0),
@@ -368,11 +370,15 @@ const getBillingLifecycleSummary = (subscriptions) =>
         summary.inGracePeriod +
         (subscription.status === BILLING_SUBSCRIPTION_STATUS.PAST_DUE &&
         subscription.graceEndsAt &&
-        new Date(subscription.graceEndsAt).getTime() >= Date.now()
+        new Date(subscription.graceEndsAt).getTime() >= now
           ? 1
           : 0),
       partialBlockActive:
-        summary.partialBlockActive + (subscription.partialBlockStartsAt ? 1 : 0),
+        summary.partialBlockActive +
+        (subscription.partialBlockStartsAt &&
+        new Date(subscription.partialBlockStartsAt).getTime() <= now
+          ? 1
+          : 0),
       cancelAtPeriodEnd:
         summary.cancelAtPeriodEnd + (subscription.cancelAtPeriodEnd ? 1 : 0),
       providerManaged:
@@ -391,6 +397,7 @@ const getBillingLifecycleSummary = (subscriptions) =>
       providerManaged: 0,
     }
   );
+};
 
 const loadBillingSubscriptions = async () =>
   Subscription.find({
