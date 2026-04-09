@@ -5706,6 +5706,9 @@ npm run mailboxes:backfill-default
 - Allowed fields:
   - `name`
   - `avatar`
+- Request notes:
+  - `avatar` is a string reference, not a multipart upload field on this route
+  - when the client wants MinIO-backed avatar storage, upload the file through `POST /api/files` first and then store the returned file `url` or chosen file reference string in `avatar`
 - Success `200`:
 
 ```json
