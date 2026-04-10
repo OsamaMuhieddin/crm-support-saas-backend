@@ -159,6 +159,31 @@ const getWorkspaceUsageMap = async (workspaceIds = []) => {
   });
 };
 
+const getWorkspaceEntitlementSummaryMap = async (workspaceIds = []) => {
+  if (!workspaceIds.length) {
+    return new Map();
+  }
+
+  const entitlements = await Entitlement.find({
+    workspaceId: { $in: workspaceIds },
+    deletedAt: null,
+  })
+    .select('workspaceId features.slaEnabled')
+    .lean();
+
+  return new Map(
+    entitlements.map((entitlement) => [
+      normalizeObjectId(entitlement.workspaceId),
+      {
+        slaEnabled:
+          typeof entitlement?.features?.slaEnabled === 'boolean'
+            ? entitlement.features.slaEnabled
+            : null,
+      },
+    ])
+  );
+};
+
 const buildOwnerView = (owner) => {
   if (!owner?._id) {
     return null;
@@ -190,7 +215,7 @@ const buildSubscriptionView = (subscription) => {
   };
 };
 
-const buildListWorkspaceRow = ({ workspace, usage }) => ({
+const buildListWorkspaceRow = ({ workspace, usage, entitlementSummary }) => ({
   _id: normalizeObjectId(workspace._id),
   name: workspace.name,
   slug: workspace.slug,
@@ -202,6 +227,9 @@ const buildListWorkspaceRow = ({ workspace, usage }) => ({
     seatsUsed: 0,
     activeMailboxes: 0,
     storageBytes: 0,
+  },
+  entitlementSummary: entitlementSummary || {
+    slaEnabled: null,
   },
 });
 
@@ -400,7 +428,11 @@ export const listAdminWorkspaces = async ({ query = {} }) => {
   const rows = result?.items || [];
   const total = Number(result?.metadata?.[0]?.total || 0);
   const workspaceIds = rows.map((row) => row._id);
-  const usageByWorkspaceId = await getWorkspaceUsageMap(workspaceIds);
+  const [usageByWorkspaceId, entitlementSummaryByWorkspaceId] =
+    await Promise.all([
+      getWorkspaceUsageMap(workspaceIds),
+      getWorkspaceEntitlementSummaryMap(workspaceIds),
+    ]);
 
   return {
     ...buildPagination({
@@ -413,6 +445,9 @@ export const listAdminWorkspaces = async ({ query = {} }) => {
       buildListWorkspaceRow({
         workspace: row,
         usage: usageByWorkspaceId.get(normalizeObjectId(row._id)),
+        entitlementSummary: entitlementSummaryByWorkspaceId.get(
+          normalizeObjectId(row._id)
+        ),
       })
     ),
   };

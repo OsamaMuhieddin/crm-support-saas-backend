@@ -5764,6 +5764,25 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Example response highlights:
+
+```json
+{
+  "summary": {
+    "totalTicketsInRange": 14,
+    "backlogTickets": 5,
+    "solvedTicketsInRange": 6,
+    "closedTicketsInRange": 3
+  },
+  "breakdowns": {
+    "status": [
+      { "key": "open", "label": "open", "count": 4 },
+      { "key": "solved", "label": "solved", "count": 6 }
+    ]
+  }
+}
+```
+
 - Common errors:
   - `401` `errors.auth.invalidToken`
   - `403` `errors.workspace.suspended`
@@ -5790,6 +5809,28 @@ npm run mailboxes:backfill-default
   },
   "breakdowns": {},
   "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Example response highlights:
+
+```json
+{
+  "summary": {
+    "createdTicketsInRange": 14,
+    "solvedTicketsInRange": 6,
+    "closedTicketsInRange": 3
+  },
+  "series": {
+    "volume": [
+      {
+        "key": "2026-03-01",
+        "created": 2,
+        "solved": 1,
+        "closed": 0
+      }
+    ]
+  }
 }
 ```
 
@@ -5820,6 +5861,30 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Example response highlights:
+
+```json
+{
+  "overview": {
+    "applicableTickets": 10,
+    "breachedTickets": 2,
+    "nonBreachedTickets": 8,
+    "complianceRate": 80
+  },
+  "series": {
+    "compliance": [
+      {
+        "key": "2026-03-01",
+        "ticketCount": 3,
+        "applicableTickets": 3,
+        "breachedTickets": 1,
+        "complianceRate": 66.67
+      }
+    ]
+  }
+}
+```
+
 - Common errors:
   - `401` `errors.auth.invalidToken`
   - `403` `errors.workspace.suspended`
@@ -5847,6 +5912,30 @@ npm run mailboxes:backfill-default
   "summary": {},
   "workload": [],
   "generatedAt": "2026-04-08T00:00:00.000Z"
+}
+```
+
+- Example response highlights:
+
+```json
+{
+  "summary": {
+    "assigneeCount": 2,
+    "totalAssignedTicketsInRange": 9,
+    "assignedActiveLoad": 4,
+    "currentAssignedActiveLoad": 6
+  },
+  "workload": [
+    {
+      "assignee": {
+        "id": "65f1...",
+        "label": "Agent User"
+      },
+      "totalAssignedTickets": 4,
+      "activeAssignedLoad": 2,
+      "currentActiveAssignedLoad": 3
+    }
+  ]
 }
 ```
 
@@ -5930,6 +6019,7 @@ npm run mailboxes:backfill-default
   - valid platform-admin bearer access token
   - role must be `super_admin|platform_admin`
 - Notes:
+  - frontend should use this endpoint for current KPI cards and other live platform snapshot sections
   - revenue-sensitive fields are omitted for non-`super_admin` callers
 
 ### GET `/api/admin/metrics`
@@ -5942,6 +6032,7 @@ npm run mailboxes:backfill-default
   - `from`, `to`
   - `groupBy=day|week|month`
 - Notes:
+  - frontend should use this endpoint for historical charts and trend visualizations rather than current KPI cards
   - sparse historical data is returned honestly as partial series; the API does not invent missing trend values
 
 ### GET `/api/admin/billing-overview`
@@ -5964,6 +6055,9 @@ npm run mailboxes:backfill-default
   - `planKey`
   - `trialing`
   - `page`, `limit`, `sort`
+- Notes:
+  - the list stays intentionally compact; deeper billing, entitlement, usage, and ticket inspection belongs to `GET /api/admin/workspaces/:id`
+  - each row includes a lightweight entitlement summary with `entitlementSummary.slaEnabled` when available
 
 ### GET `/api/admin/workspaces/:id`
 
@@ -5992,6 +6086,7 @@ npm run mailboxes:backfill-default
 - Notes:
   - idempotent
   - does not modify plan, usage, or billing lifecycle state
+  - when restoring from suspension, the workspace returns to `trial` if its subscription is still `trialing`; otherwise it returns to `active`
 
 ### POST `/api/admin/workspaces/:id/extend-trial`
 

@@ -8,6 +8,7 @@ import {
   extractOtpCodeFromLogs,
 } from './helpers/email-capture.js';
 import { Subscription } from '../src/modules/billing/models/subscription.model.js';
+import { Entitlement } from '../src/modules/billing/models/entitlement.model.js';
 import { Workspace } from '../src/modules/workspaces/models/workspace.model.js';
 import { User } from '../src/modules/users/models/user.model.js';
 import { WorkspaceMember } from '../src/modules/workspaces/models/workspace-member.model.js';
@@ -182,16 +183,28 @@ const seedWorkspaceInspectionData = async ({
     },
   ]);
 
-  await Subscription.updateOne(
+    await Subscription.updateOne(
+      { workspaceId: workspace._id, deletedAt: null },
+      {
+        $set: {
+          status: 'trialing',
+          planKey: 'starter',
+          trialEndsAt: new Date('2026-04-20T00:00:00.000Z'),
+          currentPeriodEnd: new Date('2026-04-20T00:00:00.000Z'),
+        },
+      }
+    );
+
+  await Entitlement.updateOne(
     { workspaceId: workspace._id, deletedAt: null },
     {
       $set: {
-        status: 'trialing',
-        planKey: 'starter',
-        trialEndsAt: new Date('2026-04-20T00:00:00.000Z'),
-        currentPeriodEnd: new Date('2026-04-20T00:00:00.000Z'),
+        features: {
+          slaEnabled: true,
+        },
       },
-    }
+    },
+    { upsert: true }
   );
 };
 
@@ -309,6 +322,9 @@ describe('Admin workspace management', () => {
           seatsUsed: 3,
           activeMailboxes: 2,
           storageBytes: 0,
+        }),
+        entitlementSummary: expect.objectContaining({
+          slaEnabled: true,
         }),
       })
     );
