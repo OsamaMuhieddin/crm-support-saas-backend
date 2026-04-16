@@ -348,18 +348,36 @@ The flows in this section are product-wide entry points. Billing keeps its own q
    - `to`
    - `groupBy=day|week|month`
    - optional `mailboxId`, `assigneeId`, `priority`, `categoryId`, `tagId`
-4. `GET /api/reports/team` is management-facing and restricted to `owner|admin`.
-5. Report payloads are grouped FE-friendly summaries/series/breakdowns, not raw DB dumps.
+
+### Flow M: Widget Management, Public Messaging, Recovery, and Realtime
+
+1. Owner/Admin creates a widget with `POST /api/widgets`.
+2. Every widget must reference one explicit active same-workspace mailbox; widget config does not auto-fan-out across all active mailboxes.
+3. Use `GET /api/widgets` for paginated list/search/filter reads and `GET /api/widgets/options` for lightweight selector data.
+4. Use `GET /api/widgets/:id` for internal detail reads and `PATCH /api/widgets/:id` for partial config edits.
+5. Use `POST /api/widgets/:id/activate` and `POST /api/widgets/:id/deactivate` for explicit operational state changes.
+6. Public widget clients call `GET /api/widgets/public/:publicKey/bootstrap` to fetch only safe bootstrap config plus safe realtime connection metadata.
+7. Public widget clients create or resume an opaque browser session through `POST /api/widgets/public/:publicKey/session`.
+8. Public widget clients send first and follow-up customer messages through `POST /api/widgets/public/:publicKey/messages`.
+9. Verified recovery starts with `POST /api/widgets/public/:publicKey/recovery/request`, verifies through `POST /api/widgets/public/:publicKey/recovery/verify`, then explicitly chooses `continue` or `start-new`.
+10. First widget messages resolve or create a CRM contact, create a normal internal ticket with `channel=widget`, and write a normal `customer_message`; follow-up messages append to the current eligible session ticket.
+11. Verified recovery is widget-scoped, email-OTP-based, and issues a fresh widget session token after `continue` or `start-new`.
+12. Public widget sockets authenticate with `wgs_*` widget session tokens only, subscribe through `widget.subscribe`, and are scoped to the server-verified current widget session.
+13. Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
+14. Public multi-conversation browsing, attachments, typing/presence, and SSE remain intentionally deferred.
 
 ## Realtime / Live Collaboration
 
 ### Purpose and scope
 
-- Realtime in this phase is only for the internal authenticated workspace app.
+- Realtime in this phase serves both:
+  - the internal authenticated workspace app
+  - the public widget client for one server-verified widget session
 - MongoDB + REST remain the source of truth for data and business invariants.
 - This phase includes:
   - transport/auth/room foundations
   - live ticket/message/participant business events published from the existing service layer
+  - widget public message/conversation live events published from the same canonical write flows
   - lightweight realtime-only user notices for directly affected internal users
   - ephemeral ticket presence states for internal collaborators
   - ephemeral typing indicators for ticket replies and internal notes
@@ -367,44 +385,62 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Intentionally deferred:
   - hard locks or exclusive edit enforcement
   - collaborative shared drafts
-  - customer/public widget realtime
-  - public SDK contracts
+  - widget typing/presence
+  - SSE
   - webhook delivery
   - BullMQ/jobs/workers for realtime
   - offline replay or backlog recovery
 
 ### Auth model for sockets
 
-- Socket auth uses the same access token model as protected HTTP routes.
-- Required access-token rules:
+- Internal staff sockets use the same access token model as protected HTTP routes.
+- Required internal access-token rules:
   - valid signature
   - valid issuer and audience
   - `typ = access`
   - `ver = 1`
   - required claims: `sub`, `sid`, `wid`, `r`
-- Backing session rules:
+- Internal backing session rules:
   - session must exist
   - session must not be revoked
   - session must not be expired
   - session `workspaceId` must still equal token `wid`
-- User and membership rules:
+- Internal user and membership rules:
   - user must be active
   - membership in token workspace must be active
+- Public widget sockets use the widget session model, not staff auth:
+  - preferred handshake field: `auth.widgetSessionToken`
+  - accepted token prefix: `wgs_*`
+  - `wgr_*` recovery tokens are rejected as normal realtime auth
+  - the widget session must still resolve to an active widget whose linked mailbox is still active
+  - room scope is derived server-side from the resolved widget session and current ticket binding; client-supplied widget/ticket ids are not trusted
 - Frontend implication:
-  - after `POST /api/workspaces/switch`, the old access token is behaviorally invalid for both HTTP and socket connections
-  - the backend also disconnects existing sockets from that session so the client can reconnect with the new access token cleanly
-  - logout/logout-all/change-password/reset-password also disconnect sockets tied to revoked sessions on a best-effort basis
+  - after `POST /api/workspaces/switch`, the old internal access token is behaviorally invalid for both HTTP and socket connections
+  - the backend also disconnects existing internal sockets from that session so the client can reconnect with the new access token cleanly
+  - logout/logout-all/change-password/reset-password also disconnect sockets tied to revoked internal sessions on a best-effort basis
+  - stale widget sessions fail safely during socket connect or on the next subscribed action refresh
 
 ### Connection model
 
 - Socket transport: Socket.IO
 - Default path: `/socket.io`
-- Token transport:
+- Internal token transport:
   - preferred: `auth.token` in the Socket.IO client options
   - supported: `Authorization: Bearer <accessToken>` handshake header
-- Realtime bootstrap endpoint:
+- Internal realtime bootstrap endpoint:
   - `GET /api/realtime/bootstrap`
   - purpose: return a small authenticated summary so FE can initialize connection settings, feature flags, and collaboration TTL guidance without hardcoding assumptions
+- Public widget realtime bootstrap contract:
+  - returned inline from `GET /api/widgets/public/:publicKey/bootstrap`
+  - repeated in `POST /api/widgets/public/:publicKey/session`
+  - repeated in `POST /api/widgets/public/:publicKey/messages`
+  - current auth metadata:
+    - `auth.mode = widget_session`
+    - `auth.field = widgetSessionToken`
+    - `auth.tokenPrefix = wgs_`
+  - current client actions:
+    - `widget.subscribe`
+    - `widget.unsubscribe`
 
 ### Rooms
 
@@ -417,6 +453,9 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Ticket room:
   - `ticket:{ticketId}`
   - joined only through explicit `ticket.subscribe`
+- Widget-session room:
+  - `widget-session:{widgetSessionId}`
+  - joined only through explicit `widget.subscribe` after server-side widget-session verification
 
 ### Ack contract
 
@@ -447,6 +486,32 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 }
 ```
 
+- Widget subscribe ack example:
+
+```json
+{
+  "ok": true,
+  "code": "realtime.widget.subscribed",
+  "messageKey": "success.ok",
+  "data": {
+    "scope": "widget",
+    "widgetPublicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+    "snapshot": {
+      "session": {
+        "token": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77"
+      },
+      "conversation": {
+        "state": "active",
+        "ticketStatus": "waiting_on_customer"
+      },
+      "realtime": {
+        "subscribeEvent": "widget.subscribe"
+      }
+    }
+  }
+}
+```
+
 ### Event envelope contract
 
 ```json
@@ -460,6 +525,33 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     "ticket": {
       "_id": "65f0...",
       "status": "open"
+    }
+  }
+}
+```
+
+- Public widget events use the same envelope shape, but `workspaceId` and `actorUserId` are intentionally `null` so widget clients do not receive internal workspace or staff identifiers.
+
+- Example `widget.message.created` payload:
+
+```json
+{
+  "event": "widget.message.created",
+  "eventId": "4fcd7a49-7b84-4c62-9d74-0df0d4cb7f51",
+  "occurredAt": "2026-03-25T10:15:30.000Z",
+  "workspaceId": null,
+  "actorUserId": null,
+  "data": {
+    "message": {
+      "_id": "65f3...",
+      "type": "public_reply",
+      "sender": "agent",
+      "bodyText": "Reply body"
+    },
+    "conversation": {
+      "state": "active",
+      "ticketStatus": "waiting_on_customer",
+      "messageCount": 2
     }
   }
 }
@@ -481,10 +573,13 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `conversation.updated`
   - `ticket.participant_changed`
   - `user.notice`
+  - `widget.message.created`
+  - `widget.conversation.updated`
 - Typical room targeting:
   - `workspace:{workspaceId}` for ticket list/dashboard relevant updates
   - `ticket:{ticketId}` for ticket detail, conversation, and participant updates
   - `user:{userId}` for lightweight personal notices such as `ticket_assigned`, `ticket_unassigned`, `ticket_participant_added`, and `ticket_participant_removed`
+  - `widget-session:{widgetSessionId}` for the current public widget conversation only
 - Current trigger mapping:
   - `POST /api/tickets` -> `ticket.created`
   - `POST /api/tickets` with `initialMessage` -> `ticket.created`, then `message.created`, then `conversation.updated`
@@ -497,6 +592,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `POST /api/tickets/:id/reopen` -> `ticket.reopened`
   - `POST /api/tickets/:id/messages` -> `message.created` and `conversation.updated`
   - `POST /api/tickets/:id/participants` and `DELETE /api/tickets/:id/participants/:userId` -> `ticket.participant_changed`
+  - widget-bound customer or agent public message writes -> `widget.message.created`, then `widget.conversation.updated`
+  - widget-bound ticket status/lifecycle changes that affect the current public conversation summary -> `widget.conversation.updated`
 - Example `message.created` payload:
 
 ```json
@@ -2764,6 +2861,675 @@ npm run mailboxes:backfill-default
 - Rerun safety:
   - safe to run multiple times (idempotent)
   - does not create duplicate default mailboxes when rerun
+
+## Widget Endpoints Reference
+
+### Auth model & authorization model
+
+- Internal widget endpoints are protected and require Authorization header.
+- Internal widget endpoints are session-context endpoints scoped to token workspace (`wid` / `session.workspaceId`).
+- Public widget endpoints are intentionally unauthenticated:
+  - `GET /api/widgets/public/:publicKey/bootstrap`
+  - `POST /api/widgets/public/:publicKey/session`
+  - `POST /api/widgets/public/:publicKey/messages`
+  - `POST /api/widgets/public/:publicKey/recovery/request`
+  - `POST /api/widgets/public/:publicKey/recovery/verify`
+  - `POST /api/widgets/public/:publicKey/recovery/continue`
+  - `POST /api/widgets/public/:publicKey/recovery/start-new`
+- Role rules for internal endpoints:
+  - `owner|admin`: create, update, activate, deactivate, read.
+  - `agent|viewer`: read-only (`GET /api/widgets`, `GET /api/widgets/options`, `GET /api/widgets/:id`).
+- Inactive visibility rules:
+  - `owner|admin` can request inactive widgets through `includeInactive=true` or `isActive=false`.
+  - `agent|viewer` can read active widgets only.
+  - inactive widget detail resolves as `404 errors.widget.notFound` for `agent|viewer`.
+- Current implementation covers:
+  - widget config persistence
+  - internal management APIs
+  - public safe bootstrap read
+  - public widget browser-session continuity
+  - public first/follow-up customer messages
+  - public verified recovery request/verify/continue/start-new flow
+  - public session-scoped realtime bootstrap/auth/subscription contract
+  - CRM mapping into normal contacts, tickets, and ticket messages
+- Still intentionally postponed:
+  - public multi-conversation browsing/history
+  - attachments
+  - typing/presence
+  - SSE
+
+### Widget invariants
+
+- Each widget references one explicit mailbox through `mailboxId`.
+- `mailboxId` must resolve to an active same-workspace mailbox on create, update, and re-activate.
+- Widgets use a dedicated public `publicKey`; clients must not depend on internal `_id` for public bootstrap.
+- Public widget sessions use an opaque browser-held token; the backend stores only `publicSessionKeyHash`.
+- Verified recovery uses widget-scoped email OTP plus a short-lived opaque `recoveryToken`; the lost browser session token is never the recovery authority.
+- Public bootstrap and public session/message responses do not expose `workspaceId`, `mailboxId`, or internal management metadata.
+- Public bootstrap, session-init, and message action responses include safe realtime metadata for the widget client.
+- If a widget session has no current eligible non-closed ticket, the next customer message creates a new widget ticket; otherwise it appends to the current ticket.
+- Recovery `continue` creates a fresh widget session token that points back to the latest eligible recoverable widget ticket for that widget + verified identity.
+- Recovery `start-new` creates a fresh verified widget session without reusing the prior ticket; the next message creates a new widget ticket under the normal session message rule.
+- Recovery replacement invalidates superseded widget sessions and clears their stored browser token hashes, so stale `wgs_*` tokens fail safely on later HTTP or realtime use.
+- Recoverable ticket states are `new|open|pending|waiting_on_customer`, plus `solved` inside the configured solved recovery window; `closed` is not recoverable.
+- When email is available, contact resolution checks normalized contact identities first, then direct contact email, before creating a new contact.
+- Widget action endpoints return compact action payloads, not full detail objects.
+- Public widget socket auth accepts only `wgs_*` widget session tokens; `wgr_*` recovery tokens are rejected for normal realtime auth.
+
+### Widget public realtime contract
+
+- Public widget clients use the shared Socket.IO runtime, not a separate widget-only websocket server.
+- Current bootstrap metadata fields:
+  - `realtime.enabled`
+  - `realtime.socketPath`
+  - `realtime.transports`
+  - `realtime.auth.mode = widget_session`
+  - `realtime.auth.field = widgetSessionToken`
+  - `realtime.auth.tokenPrefix = wgs_`
+  - `realtime.subscribeEvent = widget.subscribe`
+  - `realtime.unsubscribeEvent = widget.unsubscribe`
+- Subscribe behavior:
+  - connect with the current `wgs_*` token
+  - emit `widget.subscribe`
+  - the ack returns a fresh public snapshot with `session`, `conversation`, and `realtime`
+  - the server joins the socket only to the verified `widget-session:{id}` room
+- Reconnect and invalidation behavior:
+  - stale/replaced widget sessions fail with the same auth-style rejection used for other invalid widget-session auth
+  - widget deactivation best-effort disconnects already-connected widget sockets; reactivation allows still-valid non-replaced sessions to reconnect
+  - HTTP session/message endpoints remain the resync and correctness fallback after reconnect
+- Current public widget events:
+  - `widget.message.created`
+  - `widget.conversation.updated`
+- Payload rules:
+  - only safe public message/conversation fields are exposed
+  - internal workspace ids and actor user ids are intentionally omitted from widget event semantics
+
+### GET `/api/widgets`
+
+- Purpose: list workspace widgets with pagination, safe partial search, filters, and sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `page` optional (`>=1`, default `1`)
+  - `limit` optional (`1..100`, default `20`)
+  - `q` optional (partial search over `name` or `publicKey`)
+  - `search` optional alias for `q`
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+  - `sort` optional allowlist: `name|-name|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "widgets": [
+    {
+      "_id": "6611...",
+      "workspaceId": "65aa...",
+      "mailboxId": "65f2...",
+      "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+      "name": "Main Support Widget",
+      "branding": {
+        "displayName": "Support Team",
+        "accentColor": "#1453ff",
+        "launcherLabel": null,
+        "welcomeTitle": "How can we help?",
+        "welcomeMessage": null
+      },
+      "behavior": {
+        "defaultLocale": "en",
+        "collectName": true,
+        "collectEmail": false
+      },
+      "mailbox": {
+        "_id": "65f2...",
+        "name": "Support",
+        "isActive": true
+      },
+      "isActive": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant` (for unauthorized inactive-visibility requests)
+- Notes:
+  - Active widgets are returned by default.
+  - Search input is escaped before regex construction.
+
+### GET `/api/widgets/options`
+
+- Purpose: lightweight widget options endpoint for selectors/dropdowns.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Request query:
+  - `q` optional
+  - `search` optional alias for `q`
+  - `limit` optional (`1..50`, default `20`)
+  - `isActive` optional boolean
+  - `includeInactive` optional boolean
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "options": [
+    {
+      "_id": "6611...",
+      "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+      "name": "Main Support Widget",
+      "isActive": true
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenTenant`
+
+### GET `/api/widgets/:id`
+
+- Purpose: fetch one widget in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "widget": {
+    "_id": "6611...",
+    "workspaceId": "65aa...",
+    "mailboxId": "65f2...",
+    "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+    "name": "Main Support Widget",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+- Anti-enumeration note:
+  - Cross-workspace widget ids resolve as `404 errors.widget.notFound`.
+  - Inactive widgets are hidden from `agent|viewer` and resolve as `404`.
+
+### POST `/api/widgets`
+
+- Purpose: create a widget configuration in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+
+```json
+{
+  "name": "Main Support Widget",
+  "mailboxId": "65f2...",
+  "branding": {
+    "displayName": "Support Team",
+    "accentColor": "#1453ff",
+    "welcomeTitle": "How can we help?"
+  },
+  "behavior": {
+    "defaultLocale": "en",
+    "collectName": true,
+    "collectEmail": false
+  }
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.created",
+  "message": "Widget created successfully.",
+  "widget": {
+    "_id": "6611...",
+    "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+    "name": "Main Support Widget",
+    "mailboxId": "65f2...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.mailbox.notFound`
+  - `409` `errors.widget.publicKeyConflict`
+- Notes:
+  - `mailboxId` must reference an active mailbox in the same workspace.
+  - `publicKey` is generated server-side and is safe to expose publicly.
+
+### PATCH `/api/widgets/:id`
+
+- Purpose: update widget metadata and safe client config (not activate/deactivate).
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Request body:
+  - allowed fields only: `name`, `mailboxId`, `branding`, `behavior`
+  - nested `branding` fields: `displayName`, `accentColor`, `launcherLabel`, `welcomeTitle`, `welcomeMessage`
+  - nested `behavior` fields: `defaultLocale`, `collectName`, `collectEmail`
+  - unknown top-level or nested fields are rejected with `422 errors.validation.failed`
+  - sending no effective updatable fields returns field key `errors.validation.bodyRequiresAtLeastOneField`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.updated",
+  "message": "Widget updated successfully.",
+  "widget": {
+    "_id": "6611...",
+    "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+    "name": "Main Support Widget",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.widget.notFound | errors.mailbox.notFound`
+- Notes:
+  - Nested `branding` and `behavior` edits are partial and preserve unspecified sibling fields.
+
+### POST `/api/widgets/:id/activate`
+
+- Purpose: activate widget.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.activated",
+  "message": "Widget activated successfully.",
+  "widget": {
+    "_id": "6611...",
+    "isActive": true
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.widget.notFound | errors.mailbox.notFound`
+- Notes:
+  - Reactivation re-checks that the linked mailbox is still active in the same workspace.
+
+### POST `/api/widgets/:id/deactivate`
+
+- Purpose: deactivate widget operationally without deleting configuration history.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
+  - role must be `owner|admin`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.deactivated",
+  "message": "Widget deactivated successfully.",
+  "widget": {
+    "_id": "6611...",
+    "isActive": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.widget.notFound`
+- Notes:
+  - Action response stays compact and does not return the full widget detail view.
+
+### GET `/api/widgets/public/:publicKey/bootstrap`
+
+- Purpose: return safe widget bootstrap config for public widget clients.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "widget": {
+    "publicKey": "wgt_9f5f7d6d4e8a0c1b2d3e4f5061728394",
+    "name": "Main Support Widget",
+    "locale": "en",
+    "branding": {
+      "displayName": "Support Team",
+      "accentColor": "#1453ff",
+      "launcherLabel": null,
+      "welcomeTitle": "How can we help?",
+      "welcomeMessage": null
+    },
+    "behavior": {
+      "collectName": true,
+      "collectEmail": false
+    },
+    "capabilities": {
+      "messaging": true,
+      "verifiedRecovery": true,
+      "realtime": true
+    }
+  },
+  "realtime": {
+    "enabled": true,
+    "socketPath": "/socket.io",
+    "transports": ["websocket", "polling"],
+    "auth": {
+      "mode": "widget_session",
+      "field": "widgetSessionToken",
+      "tokenPrefix": "wgs_"
+    },
+    "subscribeEvent": "widget.subscribe",
+    "unsubscribeEvent": "widget.unsubscribe",
+    "events": ["widget.message.created", "widget.conversation.updated"]
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+- Anti-enumeration note:
+  - Missing widgets, inactive widgets, and mailbox-broken widgets all resolve as the same `404 errors.widget.notFound`.
+
+### POST `/api/widgets/public/:publicKey/session`
+
+- Purpose: initialize a new browser session or resume an existing widget session safely.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Request body:
+
+```json
+{
+  "sessionToken": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.sessionInitialized",
+  "message": "Widget session initialized successfully.",
+  "session": {
+    "token": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77",
+    "recoveryVerified": false,
+    "createdAt": "2026-04-11T10:00:00.000Z",
+    "updatedAt": "2026-04-11T10:00:00.000Z"
+  },
+  "conversation": {
+    "state": "idle",
+    "ticketStatus": null,
+    "lastMessageAt": null,
+    "messageCount": 0,
+    "publicMessageCount": 0,
+    "messages": []
+  },
+  "realtime": {
+    "enabled": true,
+    "socketPath": "/socket.io",
+    "transports": ["websocket", "polling"],
+    "auth": {
+      "mode": "widget_session",
+      "field": "widgetSessionToken",
+      "tokenPrefix": "wgs_"
+    },
+    "subscribeEvent": "widget.subscribe",
+    "unsubscribeEvent": "widget.unsubscribe",
+    "events": ["widget.message.created", "widget.conversation.updated"]
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+- Anti-enumeration note:
+  - Missing widgets, inactive widgets, and mailbox-broken widgets all resolve as the same `404 errors.widget.notFound`.
+  - A stale or unknown `sessionToken` on this init route starts a fresh widget session instead of leaking whether the old token existed.
+- Notes:
+  - `behavior.collectName` and `behavior.collectEmail` are UI hints for the frontend, not backend-required public message fields.
+  - The returned `realtime` block is safe bootstrap metadata only; the client still needs the returned `session.token` to authenticate the socket.
+
+### POST `/api/widgets/public/:publicKey/messages`
+
+- Purpose: send the first or next public customer message for the current widget browser session.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+  - `sessionToken` must come from `POST /api/widgets/public/:publicKey/session`
+- Request body:
+
+```json
+{
+  "sessionToken": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77",
+  "name": "Jane Visitor",
+  "email": "jane.visitor@example.com",
+  "message": "Need help with billing."
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.messageCreated",
+  "message": "Widget message sent successfully.",
+  "session": {
+    "token": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77",
+    "recoveryVerified": false,
+    "createdAt": "2026-04-11T10:00:00.000Z",
+    "updatedAt": "2026-04-11T10:01:00.000Z"
+  },
+  "message": {
+    "_id": "6612...",
+    "type": "customer_message",
+    "direction": "inbound",
+    "sender": "customer",
+    "bodyText": "Need help with billing.",
+    "createdAt": "2026-04-11T10:01:00.000Z"
+  },
+  "conversation": {
+    "state": "active",
+    "ticketStatus": "open",
+    "lastMessageAt": "2026-04-11T10:01:00.000Z",
+    "messageCount": 1,
+    "publicMessageCount": 0
+  },
+  "realtime": {
+    "enabled": true,
+    "socketPath": "/socket.io",
+    "transports": ["websocket", "polling"],
+    "auth": {
+      "mode": "widget_session",
+      "field": "widgetSessionToken",
+      "tokenPrefix": "wgs_"
+    },
+    "subscribeEvent": "widget.subscribe",
+    "unsubscribeEvent": "widget.unsubscribe",
+    "events": ["widget.message.created", "widget.conversation.updated"]
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+  - `404` `errors.widget.sessionNotFound`
+- Anti-enumeration note:
+  - Missing widgets, inactive widgets, and mailbox-broken widgets all resolve as the same `404 errors.widget.notFound`.
+  - Unknown or stale widget session tokens resolve as `404 errors.widget.sessionNotFound`.
+- Notes:
+  - `behavior.collectName` and `behavior.collectEmail` are UI hints for widget clients; the backend does not reject the message only because `name` or `email` is absent.
+  - The widget mailbox always comes from the widget configuration, never from public request input.
+  - If email is present, contact matching prefers normalized `ContactIdentity(type=email)` and then direct contact email before creating a new contact.
+  - The returned `session.token` always reflects the currently active widget session token for the resolved session context.
+  - First widget messages create a normal internal ticket with `channel=widget` and a normal `customer_message`; later messages reuse the current non-closed session ticket when still eligible.
+  - When the same session is already subscribed over Socket.IO, canonical public or agent reply writes on that widget ticket also emit `widget.message.created` and `widget.conversation.updated`.
+
+### POST `/api/widgets/public/:publicKey/recovery/request`
+
+- Purpose: request a widget-scoped email OTP for verified recovery without leaking whether the identity is recoverable.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Request body:
+
+```json
+{
+  "email": "jane.visitor@example.com"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.recoveryRequested",
+  "message": "Widget recovery verification was requested successfully."
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+- Anti-enumeration note:
+  - The success response is intentionally generic even when no eligible widget history exists for that email in the current widget.
+
+### POST `/api/widgets/public/:publicKey/recovery/verify`
+
+- Purpose: verify the widget-scoped OTP, resolve the latest eligible recovery candidate for that widget + verified email, and return a short-lived recovery token.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Request body:
+
+```json
+{
+  "email": "jane.visitor@example.com",
+  "code": "123456"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.widget.recoveryVerified",
+  "message": "Widget recovery was verified successfully.",
+  "recovery": {
+    "token": "wgr_4f2db3f3d7dce9e4d6c2b99a4dd2f03d3e16b0d6fb5c0fd1",
+    "expiresAt": "2026-04-11T10:15:00.000Z",
+    "candidate": {
+      "state": "active",
+      "ticketStatus": "open",
+      "lastMessageAt": "2026-04-11T10:01:00.000Z",
+      "messageCount": 2,
+      "publicMessageCount": 1
+    },
+    "options": {
+      "canContinue": true,
+      "canStartNew": true
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+- Anti-enumeration note:
+  - The widget remains the scope boundary. OTPs requested for one widget cannot be verified against another widget.
+- Notes:
+  - `candidate` can be `null` when the verified identity has widget history but no currently recoverable ticket; `canStartNew` remains `true`.
+
+### POST `/api/widgets/public/:publicKey/recovery/continue`
+
+- Purpose: continue the latest verified recoverable conversation and issue a fresh widget session token.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Request body:
+
+```json
+{
+  "recoveryToken": "wgr_4f2db3f3d7dce9e4d6c2b99a4dd2f03d3e16b0d6fb5c0fd1"
+}
+```
+
+- Success `200`:
+  - same response shape as `POST /api/widgets/public/:publicKey/session`, including `realtime`
+  - `messageKey` is `success.widget.recoveryContinued`
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound | errors.widget.recoveryNotFound | errors.widget.recoveryCandidateNotFound`
+- Anti-enumeration note:
+  - Expired, spent, or unknown recovery tokens resolve as the same `404 errors.widget.recoveryNotFound`.
+- Notes:
+  - continuing a recovered conversation invalidates superseded widget sessions tied to the recovered candidate session or ticket so stale browser tokens can no longer resume, send messages, or authenticate sockets.
+
+### POST `/api/widgets/public/:publicKey/recovery/start-new`
+
+- Purpose: start a fresh verified widget session instead of continuing the prior recoverable conversation.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+- Request body:
+
+```json
+{
+  "recoveryToken": "wgr_4f2db3f3d7dce9e4d6c2b99a4dd2f03d3e16b0d6fb5c0fd1"
+}
+```
+
+- Success `200`:
+  - same response shape as `POST /api/widgets/public/:publicKey/session`, including `realtime`
+  - `messageKey` is `success.widget.recoveryStartedNew`
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound | errors.widget.recoveryNotFound`
+- Notes:
+  - The returned widget session is already recovery-verified, but its conversation stays `idle` until the next customer message creates a new widget ticket through the normal message flow.
+  - starting new after recovery invalidates superseded widget sessions tied to the recovered candidate session or ticket so the fresh `wgs_*` token is the only active public session for that recovered browser context.
 
 ## 12) SLA Endpoints Reference (SLA v1 Active Surface)
 

@@ -15,8 +15,27 @@ const getCooldownBoundary = (latestOtp) => {
   );
 };
 
-const assertOtpSendRateLimit = async ({ emailNormalized, purpose, now }) => {
-  const latestOtp = await OtpCode.findOne({ emailNormalized, purpose })
+const normalizeScopeKey = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+};
+
+const assertOtpSendRateLimit = async ({
+  emailNormalized,
+  purpose,
+  scopeKey = null,
+  now
+}) => {
+  const normalizedScopeKey = normalizeScopeKey(scopeKey);
+  const latestOtp = await OtpCode.findOne({
+    emailNormalized,
+    purpose,
+    scopeKey: normalizedScopeKey
+  })
     .sort({ createdAt: -1 })
     .select('lastSentAt');
 
@@ -32,6 +51,7 @@ const assertOtpSendRateLimit = async ({ emailNormalized, purpose, now }) => {
   const sentInWindow = await OtpCode.countDocuments({
     emailNormalized,
     purpose,
+    scopeKey: normalizedScopeKey,
     createdAt: { $gte: windowStart }
   });
 
@@ -40,7 +60,12 @@ const assertOtpSendRateLimit = async ({ emailNormalized, purpose, now }) => {
   }
 };
 
-export const createOtp = async ({ email, userId = null, purpose }) => {
+export const createOtp = async ({
+  email,
+  userId = null,
+  purpose,
+  scopeKey = null
+}) => {
   const emailNormalized = normalizeEmail(email);
   if (!emailNormalized) {
     throw createError('errors.validation.failed', 422, [
@@ -49,7 +74,13 @@ export const createOtp = async ({ email, userId = null, purpose }) => {
   }
 
   const now = new Date();
-  await assertOtpSendRateLimit({ emailNormalized, purpose, now });
+  const normalizedScopeKey = normalizeScopeKey(scopeKey);
+  await assertOtpSendRateLimit({
+    emailNormalized,
+    purpose,
+    scopeKey: normalizedScopeKey,
+    now
+  });
 
   const code = generateOtpCode(6);
   const otpCode = await OtpCode.create({
@@ -57,6 +88,7 @@ export const createOtp = async ({ email, userId = null, purpose }) => {
     emailNormalized,
     userId,
     purpose,
+    scopeKey: normalizedScopeKey,
     codeHash: hashValue(code),
     expiresAt: new Date(now.getTime() + authConfig.otp.expiresMinutes * 60 * 1000),
     consumedAt: null,
@@ -70,7 +102,7 @@ export const createOtp = async ({ email, userId = null, purpose }) => {
   };
 };
 
-export const verifyOtp = async ({ email, purpose, code }) => {
+export const verifyOtp = async ({ email, purpose, code, scopeKey = null }) => {
   const emailNormalized = normalizeEmail(email);
   if (!emailNormalized) {
     throw createError('errors.validation.failed', 422, [
@@ -78,9 +110,11 @@ export const verifyOtp = async ({ email, purpose, code }) => {
     ]);
   }
 
+  const normalizedScopeKey = normalizeScopeKey(scopeKey);
   const otpCode = await OtpCode.findOne({
     emailNormalized,
     purpose,
+    scopeKey: normalizedScopeKey,
     consumedAt: null
   }).sort({ createdAt: -1 });
 

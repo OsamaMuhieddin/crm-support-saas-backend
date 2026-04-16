@@ -12,13 +12,14 @@ Current module inventory under `src/modules` falls into three practical groups.
 - Users: workspace user and member management
 - Customers: contacts, organizations, and contact identities
 - Mailboxes: workspace-scoped mailbox dictionaries and defaults
+- Widget: workspace-scoped widget configuration plus public bootstrap/session/message/recovery/realtime foundations
 - Tickets: core support workflow with conversations, messages, dictionaries, assignment, lifecycle, and participants
 - Inbox: inbox-facing conversation and ticket application surface
 - SLA: business-hours and policy management plus ticket first-response/resolution runtime behavior
 - Integrations: integration-facing API surface
 - Admin: platform/admin operational endpoints
 - Files: private file storage plus polymorphic file links
-- Realtime: authenticated collaboration endpoint surface for subscriptions and live state
+- Realtime: centralized Socket.IO subscriptions/live-state surface for both internal staff and public widget sessions
 - Billing: workspace-authenticated billing catalog, lifecycle reads, checkout, portal, Stripe webhook intake, and worker-backed sync foundations
 
 ### Internal or data-only modules
@@ -71,7 +72,7 @@ utils/ (optional, module-local pure helpers only)
 ## Implemented module style
 
 - Protected business modules are workspace-scoped through the active session workspace.
-- The current routed API modules are: `health`, `auth`, `workspaces`, `users`, `customers`, `tickets`, `inbox`, `sla`, `integrations`, `admin`, `files`, `mailboxes`, `realtime`, and `billing`.
+- The current routed API modules are: `health`, `auth`, `workspaces`, `users`, `customers`, `tickets`, `inbox`, `sla`, `integrations`, `admin`, `files`, `mailboxes`, `widgets`, `realtime`, and `billing`.
 - Additional internal modules currently present in `src/modules` are: `platform`, `automations`, `notifications`, and `roles`.
 - Controllers orchestrate request and response handling only.
 - Services own business rules, tenancy checks, invariants, and denormalized updates.
@@ -101,37 +102,49 @@ utils/ (optional, module-local pure helpers only)
 
 - `src/infra/realtime/*` owns Socket.IO bootstrap, room helpers, handshake auth, adapter wiring, and the centralized transport publisher abstraction.
 - `src/infra/redis/*` owns the reusable Redis config/client seam so future platform capabilities can share the same foundation.
-- Realtime is internal-only for the authenticated workspace app in the current phase.
+- Realtime now serves two auth modes on the same Socket.IO foundation:
+  - internal authenticated workspace sockets using access tokens
+  - public widget sockets using `wgs_*` widget session tokens
 - MongoDB and REST remain the source of truth; sockets do not bypass module business logic.
 - Business live events are published from the existing service layer only after successful writes and after downstream counters/SLA side effects are finalized.
 - Existing sockets in a session are disconnected when `POST /api/workspaces/switch` changes the active workspace so the client reconnects under the fresh token/workspace context.
 - Existing sockets for revoked sessions are also disconnected on a best-effort basis during logout, logout-all, change-password, and reset-password flows.
-- Socket auth mirrors the existing HTTP access-token/session/workspace model:
+- Internal socket auth mirrors the existing HTTP access-token/session/workspace model:
   - valid JWT signature, issuer, and audience
   - `typ=access`, `ver=1`
   - required `sub`, `sid`, `wid`, `r`
   - backing session must exist, be active, and still match the token workspace
   - user must be active
   - workspace membership must be active
+- Public widget socket auth is separate from staff auth semantics:
+  - only `wgs_*` widget session tokens are accepted
+  - `wgr_*` recovery tokens remain recovery-only and are rejected for socket auth
+  - widget socket scope is derived server-side from the resolved widget session and current bound ticket context
 - Reserved room patterns in this phase:
   - `workspace:{workspaceId}`
   - `ticket:{ticketId}`
   - `user:{userId}`
+  - `widget-session:{widgetSessionId}`
 - Current published live event families:
   - ticket lifecycle and update events
   - message and conversation summary events
   - ticket participant change events
   - lightweight user-targeted notices
+  - widget public message and conversation update events
 - Ticket create with `initialMessage` still emits `ticket.created` first, then the same message/conversation event pair used by later message writes.
+- Widget public live events currently stay intentionally small:
+  - `widget.message.created`
+  - `widget.conversation.updated`
+- Public widget event envelopes intentionally omit internal `workspaceId` and `actorUserId` to avoid leaking staff-only context.
 - Current ephemeral collaboration signals:
   - ticket presence snapshots and change events
   - typing indicators with TTL refresh/expiry semantics
   - advisory soft-claim state with TTL refresh/expiry semantics
-- Any active readable member, including `viewer`, may publish these advisory collaboration signals in the current internal-only phase.
+- Any active readable member, including `viewer`, may publish these advisory collaboration signals in the current internal-only staff phase.
 - Collaboration actions use a modest per-socket throttle window to suppress conflicting bursts while still allowing quiet same-state refreshes.
 - Collaboration state lives outside MongoDB ticket truth and is coordinated through the shared Redis foundation when enabled, with a single-instance in-memory fallback for local/test runtime parity.
 - Expiry-driven collaboration broadcasts are best-effort per node; snapshot-on-subscribe/reconnect remains the correctness path for stale cleanup recovery.
-- Redis is available as optional shared infrastructure, while the Socket.IO Redis adapter remains behind explicit realtime env flags so horizontal fan-out can be enabled later without reworking the rest of the codebase.
+- Redis is the intended shared infrastructure for realtime coordination and horizontal fan-out, while the Socket.IO Redis adapter remains behind explicit realtime env flags so deployment modes can vary without reworking the rest of the codebase.
 - The main realtime integration suites are intended to run unchanged in three env-driven modes: no Redis, Redis-backed collaboration store without the Socket.IO adapter, and Redis-backed collaboration store with the adapter enabled.
 
 ## Mailboxes v1 module notes
@@ -141,6 +154,25 @@ utils/ (optional, module-local pure helpers only)
 - A default mailbox must be active, a default mailbox cannot be deactivated, and the last active mailbox in a workspace cannot be deactivated.
 - Creating or activating mailboxes may trigger default-mailbox backfill/alignment so every workspace can maintain a usable default target.
 - Mailboxes may optionally point to an active SLA policy, which participates in ticket SLA selection ahead of the workspace default policy.
+
+## Widget foundations module notes
+
+- `src/modules/widget` follows the same routed module pattern as the other business modules and now exposes internal management APIs plus a small public bootstrap/session/message/recovery/realtime surface.
+- Internal widget reads are available to any active workspace member; widget writes and state actions are restricted to `owner|admin`.
+- Each widget references one explicit mailbox and that mailbox must be active in the same workspace on create, update, and re-activate flows.
+- Widgets use a dedicated `publicKey` rather than exposing workspace internals or relying on raw Mongo `_id` as the public bootstrap identifier.
+- Public bootstrap returns only safe client-facing widget configuration; it does not expose `workspaceId`, `mailboxId`, or internal management metadata.
+- Widget `behavior.collectName` and `behavior.collectEmail` are public UI hints only; the backend does not reject widget messages solely because those fields were not provided.
+- Public widget clients initialize or resume an opaque browser-held session token; only the token hash is stored server-side in `WidgetSession`.
+- Widget public messages map into the existing CRM stack by resolving/creating a workspace contact, creating or reusing a normal ticket with `channel=widget`, and writing normal `customer_message` records.
+- One current non-closed ticket is maintained per widget session.
+- Verified recovery is widget-scoped through email OTP, returns a short-lived recovery token, and forces an explicit `continue` versus `start-new` decision that issues a fresh widget session token.
+- Public widget realtime extends the existing Redis-backed Socket.IO stack; widget clients bootstrap safe connection metadata from HTTP, authenticate sockets with `wgs_*` session tokens, and subscribe only to their server-verified `widget-session:{id}` scope.
+- The public live surface stays intentionally small with `widget.message.created` and `widget.conversation.updated`; typing, presence, SSE, and customer history browsing remain deferred.
+- Session replacement and reconnect behavior are hardened: superseded widget sessions are invalidated on recovery replacement, stale widget tokens are rejected consistently by HTTP and Socket.IO, and widget deactivation best-effort disconnects currently connected widget sockets without changing the long-term session contract.
+- Passing a stale widget browser token to the public session-init endpoint does not resume the old session; it safely starts a fresh widget session instead.
+- Recoverable widget tickets are `new|open|pending|waiting_on_customer`, plus `solved` inside the configured solved recovery window; `closed` is not recoverable.
+- Public multi-thread browsing remains intentionally postponed.
 
 ## SLA v1 module notes
 

@@ -86,6 +86,8 @@ const getOtpPurposeLabel = (purpose) => {
       return 'Login Verification';
     case 'changeEmail':
       return 'Email Change Verification';
+    case 'widgetRecovery':
+      return 'Widget Conversation Recovery';
     default:
       return 'Verification';
   }

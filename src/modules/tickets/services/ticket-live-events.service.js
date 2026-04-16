@@ -13,6 +13,10 @@ import {
   normalizeObjectId,
   toObjectIdIfValid,
 } from '../utils/ticket.helpers.js';
+import {
+  publishWidgetConversationUpdated,
+  publishWidgetMessageCreated,
+} from '../../widget/services/widget-live-events.service.js';
 
 const LIVE_TICKET_PROJECTION = {
   _id: 1,
@@ -397,7 +401,7 @@ const publishTicketStateEvent = async ({
       return null;
     }
 
-    return realtimePublisher.emitToRooms({
+    const envelope = realtimePublisher.emitToRooms({
       rooms: buildTicketRooms(ticket),
       event,
       workspaceId: ticket.workspaceId,
@@ -406,6 +410,14 @@ const publishTicketStateEvent = async ({
         ticket,
       },
     });
+
+    await publishWidgetConversationUpdated({
+      workspaceId: ticket.workspaceId,
+      ticketId: ticket._id,
+      actorUserId,
+    });
+
+    return envelope;
   });
 
 export const publishTicketStatusChanged = async ({
@@ -489,7 +501,7 @@ export const publishTicketMessageCreated = async ({
       },
     });
 
-    return realtimePublisher.emitToRooms({
+    const envelope = realtimePublisher.emitToRooms({
       rooms: buildTicketRooms(ticket),
       event: 'conversation.updated',
       workspaceId: ticket.workspaceId,
@@ -499,6 +511,15 @@ export const publishTicketMessageCreated = async ({
         conversation,
       },
     });
+
+    await publishWidgetMessageCreated({
+      workspaceId: ticket.workspaceId,
+      ticketId: ticket._id,
+      actorUserId,
+      messageRecord,
+    });
+
+    return envelope;
   });
 
 export const publishTicketParticipantChanged = async ({

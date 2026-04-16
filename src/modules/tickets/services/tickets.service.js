@@ -1,5 +1,6 @@
 import { TICKET_STATUS } from '../../../constants/ticket-status.js';
 import { TICKET_PRIORITY } from '../../../constants/ticket-priority.js';
+import { TICKET_CHANNEL } from '../../../constants/ticket-channel.js';
 import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
 import { createError } from '../../../shared/errors/createError.js';
 import { buildPagination } from '../../../shared/utils/pagination.js';
@@ -351,6 +352,12 @@ const normalizeCreatePayload = (payload = {}) => ({
   initialMessage: payload.initialMessage || null,
 });
 
+const normalizeCreateContext = (context = {}) => ({
+  channel: context.channel || TICKET_CHANNEL.MANUAL,
+  widgetId: normalizeNullableString(context.widgetId),
+  widgetSessionId: normalizeNullableString(context.widgetSessionId),
+});
+
 const normalizeUpdatePayload = (payload = {}) => {
   const normalized = {};
 
@@ -625,9 +632,11 @@ export const createTicket = async ({
   workspaceId,
   createdByUserId = null,
   payload,
+  context = {},
 }) => {
   const workspaceObjectId = toObjectIdIfValid(workspaceId);
   const normalized = normalizeCreatePayload(payload);
+  const normalizedContext = normalizeCreateContext(context);
   const workspace = await findWorkspaceForTicketWritesOrThrow({
     workspaceId: workspaceObjectId,
   });
@@ -683,6 +692,7 @@ export const createTicket = async ({
       subject: normalized.subject,
       status: assignee?._id ? TICKET_STATUS.OPEN : TICKET_STATUS.NEW,
       priority: normalized.priority,
+      channel: normalizedContext.channel,
       categoryId: category?._id || null,
       tagIds: tags.map((tag) => tag._id),
       contactId: contact._id,
@@ -690,6 +700,12 @@ export const createTicket = async ({
       assigneeId: assignee?._id || null,
       createdByUserId: createdByUserId
         ? toObjectIdIfValid(createdByUserId)
+        : null,
+      widgetId: normalizedContext.widgetId
+        ? toObjectIdIfValid(normalizedContext.widgetId)
+        : null,
+      widgetSessionId: normalizedContext.widgetSessionId
+        ? toObjectIdIfValid(normalizedContext.widgetSessionId)
         : null,
       sla: slaSnapshot,
       createdAt: eventAt,

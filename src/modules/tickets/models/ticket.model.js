@@ -105,6 +105,16 @@ const ticketSchema = new mongoose.Schema(
       ref: 'Conversation',
       default: null
     },
+    widgetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Widget',
+      default: null
+    },
+    widgetSessionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WidgetSession',
+      default: null
+    },
     messageCount: {
       type: Number,
       min: 0,
@@ -230,6 +240,18 @@ ticketSchema.index({
   workspaceId: 1,
   deletedAt: 1,
   contactId: 1,
+  createdAt: -1
+});
+ticketSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  widgetSessionId: 1,
+  createdAt: -1
+});
+ticketSchema.index({
+  workspaceId: 1,
+  deletedAt: 1,
+  widgetId: 1,
   createdAt: -1
 });
 ticketSchema.index({

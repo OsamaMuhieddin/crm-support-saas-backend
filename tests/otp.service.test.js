@@ -44,4 +44,35 @@ describe('otp.service verifyOtp', () => {
     expect(otpRecord.attemptCount).toBe(1);
     expect(otpRecord.save).toHaveBeenCalledTimes(1);
   });
+
+  test('scopeKey mismatch does not verify an OTP from another scope', async () => {
+    jest.spyOn(OtpCode, 'findOne').mockReturnValue({
+      sort: jest.fn().mockResolvedValue(null)
+    });
+
+    await expect(
+      verifyOtp({
+        email: 'user@example.com',
+        purpose: OTP_PURPOSE.WIDGET_RECOVERY,
+        code: '123456',
+        scopeKey: 'widget:scope-b'
+      })
+    ).rejects.toMatchObject({
+      statusCode: 422,
+      messageKey: 'errors.validation.failed',
+      data: [
+        {
+          field: 'code',
+          messageKey: 'errors.otp.invalid'
+        }
+      ]
+    });
+
+    expect(OtpCode.findOne).toHaveBeenCalledWith({
+      emailNormalized: 'user@example.com',
+      purpose: OTP_PURPOSE.WIDGET_RECOVERY,
+      scopeKey: 'widget:scope-b',
+      consumedAt: null
+    });
+  });
 });

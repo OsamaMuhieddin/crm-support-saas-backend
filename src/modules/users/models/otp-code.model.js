@@ -28,6 +28,12 @@ const otpCodeSchema = new mongoose.Schema(
       enum: OTP_PURPOSE_VALUES,
       default: OTP_PURPOSE.LOGIN
     },
+    scopeKey: {
+      type: String,
+      trim: true,
+      maxlength: 180,
+      default: null
+    },
     codeHash: {
       type: String,
       required: true,
@@ -65,7 +71,7 @@ otpCodeSchema.pre('validate', function normalizeEmailFields(next) {
   next();
 });
 
-otpCodeSchema.index({ emailNormalized: 1, purpose: 1, createdAt: -1 });
+otpCodeSchema.index({ emailNormalized: 1, purpose: 1, scopeKey: 1, createdAt: -1 });
 otpCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export const OtpCode =

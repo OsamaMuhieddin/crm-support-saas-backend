@@ -17,7 +17,7 @@ It is intended to be export-ready onboarding/context material for product, engin
 
 ### 2.1 Product Positioning (Current State)
 
-The backend currently delivers the multi-tenant foundation for a support CRM/helpdesk with strong identity, workspace membership, invites, file handling, and mailbox queue management.
+The backend currently delivers the multi-tenant foundation for a support CRM/helpdesk with strong identity, workspace membership, invites, file handling, mailbox queue management, widget management/public messaging/recovery foundations, and the first SLA runtime behavior.
 
 Implemented business pillars:
 
@@ -28,6 +28,7 @@ Implemented business pillars:
 - Billing v1 runtime with fixed catalog sync, workspace billing reads, Stripe checkout/portal entrypoints, Stripe webhook intake, and worker-backed lifecycle sync foundations.
 - Secure file upload/list/download/delete inside workspace boundaries.
 - Mailbox queue management with strict default-mailbox invariants.
+- Widget foundations with internal workspace management APIs, dedicated public bootstrap keys, opaque browser-session continuity, safe public message creation, and widget-scoped verified recovery.
 - SLA v1 active surface: business-hours management, SLA policy management, workspace default policy assignment, mailbox optional SLA overrides, ticket SLA snapshot/runtime behavior, and lightweight SLA summary.
 - Core ticket record creation/list/detail/update with workspace-scoped numbering and auto-created conversations.
 - Ticket conversation and message timeline reads/writes with file attachments linked to messages and tickets.
@@ -42,6 +43,7 @@ Implemented business pillars:
 Partially implemented business pillars:
 
 - Customers v1 currently covers workspace-scoped organizations, contacts, and a minimal ContactIdentity surface, while richer customer workflows are still pending.
+- Widget now covers configuration, public bootstrap, public browser-session continuity, widget customer-message creation on top of normal contact/ticket/message records, widget-scoped verified recovery, public session-scoped realtime, and the final hardening pass around session replacement/reconnect safety.
 - SLA v1 now covers first-response and resolution runtime behavior on tickets, while next-response, jobs, holidays, reminders/escalations, cycle-history, and historical reporting remain postponed.
 - Users API surface is still a list stub.
 
@@ -76,6 +78,8 @@ Current effective permissions by feature:
 | Delete files                                             | Yes             | Yes             | No                           | No                           |
 | Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                           | No                           |
 | Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
+| Create/update/activate/deactivate widgets                | Yes             | Yes             | No                           | No                           |
+| Read widget lists/options/details                        | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
 | Create/update business hours                             | Yes             | Yes             | No                           | No                           |
 | Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes             | No                           | No                           |
 | Read SLA summary/business hours/policies                 | Yes             | Yes             | Yes (inactive policy hidden) | Yes (inactive policy hidden) |
@@ -142,7 +146,23 @@ Current effective permissions by feature:
 5. Default mailbox cannot be deactivated; last active mailbox cannot be deactivated.
 6. Backfill script repairs default mailbox consistency across existing workspaces.
 
-#### Flow G: Customers v1
+#### Flow G: Widget Foundations v1-v4
+
+1. Owner/Admin creates one or more widget configs inside the active workspace.
+2. Each widget is linked to one explicit active mailbox in the same workspace.
+3. Any active workspace member can read active widget list/detail/options responses; inactive widgets are hidden from `agent|viewer`.
+4. Owner/Admin can patch widget branding/behavior fields and toggle active state explicitly.
+5. Public widget clients can call `/api/widgets/public/:publicKey/bootstrap` to fetch only safe client-consumable config.
+6. Public widget clients initialize or resume an opaque browser session through `/api/widgets/public/:publicKey/session`.
+7. Public widget clients send customer messages through `/api/widgets/public/:publicKey/messages`; first messages create CRM records and later messages reuse the current eligible session ticket.
+8. Verified recovery uses widget-scoped email OTP plus a short-lived recovery token and returns either the latest eligible recoverable conversation summary or a start-new path.
+9. Recovery `continue` issues a fresh widget session token bound back to the recoverable ticket/session context; recovery `start-new` issues a fresh verified session without reusing the prior ticket.
+10. Public widget bootstrap and session responses now include safe realtime metadata for the existing Socket.IO runtime.
+11. Public widget sockets authenticate with `wgs_*` widget session tokens, subscribe through `widget.subscribe`, and receive only session-scoped live events.
+12. The current public widget live surface is intentionally small: `widget.message.created` and `widget.conversation.updated`.
+13. Public multi-conversation browsing, typing/presence, and SSE are still pending.
+
+#### Flow H: Customers v1
 
 1. Workspace members create organizations when customer contacts should be grouped under a company/account record.
 2. Workspace members create contacts as external requester/customer records, with optional organization linkage.
@@ -152,7 +172,7 @@ Current effective permissions by feature:
 6. Ticket list/detail reads continue to hydrate only lightweight contact and organization summaries instead of broad customer graphs.
 7. ContactIdentity v1 now exposes lightweight list/create endpoints under contacts without adding verification, delete/archive, or customer-auth flows.
 
-#### Flow H: Tickets Core
+#### Flow I: Tickets Core
 
 1. Owner/Admin maintains ticket categories and tags inside the active workspace when structured routing metadata is needed.
 2. Owner/Admin/Agent creates ticket records with `POST /api/tickets`.
@@ -165,7 +185,7 @@ Current effective permissions by feature:
 9. Participant endpoints manage internal watcher/collaborator metadata and keep `participantCount` synchronized.
 10. Ticket patch updates editable record fields only, and mailbox changes stop once the ticket has messages while preserving the one-conversation mailbox invariant.
 
-#### Flow I: SLA v1 Active Surface
+#### Flow J: SLA v1 Active Surface
 
 1. Owner/Admin creates business-hours records inside the active workspace.
 2. Owner/Admin creates SLA policies that reference same-workspace business hours and define rules by ticket priority.
@@ -176,7 +196,7 @@ Current effective permissions by feature:
 7. Reopen resumes from remaining business time instead of resetting a fresh resolution target, while `closed` remains downstream of resolution success.
 8. Ticket list/detail/action responses derive SLA statuses in memory, and `GET /api/sla/summary` exposes lightweight runtime-aware workspace totals without hidden writes.
 
-#### Flow J: Billing v1 Workspace Billing Runtime
+#### Flow K: Billing v1 Workspace Billing Runtime
 
 1. Owner/Admin authenticates with a workspace-scoped access token.
 2. Frontend loads `GET /api/billing/catalog` to read the fixed active plan/add-on catalog.
@@ -195,6 +215,7 @@ Production-ready business slices:
 - Workspace switching.
 - File operations v1.
 - Mailboxes v1.
+- Widget foundations v1-v4 (internal management + public bootstrap/session/message/recovery flow plus public realtime).
 - SLA v1 active runtime surface for first response and resolution.
 - Customers organizations, contacts, and minimal contact identities v1.
 - Tickets core record flow.
@@ -208,6 +229,7 @@ Foundation-only slices:
 - Inbox/Integrations routes mounted but empty.
 - SLA v1 next-response/jobs/reporting/holiday/cycle-history additions beyond the active runtime surface.
 - Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, Stripe webhook intake, and lifecycle sync foundations; automations/notifications remain model-only.
+- Widget public realtime is now implemented on top of the shared Redis-backed Socket.IO foundation, but typing/presence, SSE, and multi-conversation browsing remain out of scope.
 
 ## 3) Technical Side
 
@@ -218,7 +240,7 @@ Backend stack:
 - Node.js + Express (ESM).
 - MongoDB + Mongoose.
 - JWT for auth.
-- Socket.IO for internal realtime transport.
+- Socket.IO for internal staff and public widget realtime transport.
 - Shared optional Redis foundation for realtime fan-out today and future platform consumers later.
 - Modest collaboration-action throttling plus best-effort expiry cleanup for ephemeral presence, typing, and soft-claim signals.
 - `express-validator` for request validation.
@@ -504,6 +526,39 @@ Mailbox notes:
 - Mailbox action endpoints (`set-default/activate/deactivate`) return compact action payloads instead of full mailbox detail objects.
 - No mailbox delete endpoint in v1.
 
+#### Widget Foundations Endpoints
+
+| Method  | Path                                   | Purpose                                       | Role requirements                                                     |
+| ------- | -------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/widgets`                             | List widgets (pagination/filter/search/sort)  | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/widgets/options`                     | Lightweight widget options list               | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/widgets/:id`                         | Get widget details                            | Any active member; inactive hidden for non-admin roles                |
+| `POST`  | `/widgets`                             | Create widget                                 | `owner/admin`                                                         |
+| `PATCH` | `/widgets/:id`                         | Update widget                                 | `owner/admin`                                                         |
+| `POST`  | `/widgets/:id/activate`                | Activate widget                               | `owner/admin`                                                         |
+| `POST`  | `/widgets/:id/deactivate`              | Deactivate widget                             | `owner/admin`                                                         |
+| `GET`   | `/widgets/public/:publicKey/bootstrap` | Public safe bootstrap read for widget clients | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/session`   | Initialize/resume public widget browser session | Public                                                              |
+| `POST`  | `/widgets/public/:publicKey/messages`  | Create first/follow-up public widget customer message | Public                                                         |
+| `POST`  | `/widgets/public/:publicKey/recovery/request` | Request widget recovery verification challenge | Public                                                         |
+| `POST`  | `/widgets/public/:publicKey/recovery/verify` | Verify widget recovery challenge and resolve candidate | Public                                                   |
+| `POST`  | `/widgets/public/:publicKey/recovery/continue` | Continue the latest eligible recovered widget conversation | Public                                               |
+| `POST`  | `/widgets/public/:publicKey/recovery/start-new` | Start a new verified widget session after recovery | Public                                                     |
+
+Widget notes:
+
+- Widgets are explicit workspace-scoped configurations, not dynamic mailbox discovery across the whole tenant.
+- Every widget must reference one active same-workspace mailbox on create, update, and re-activate flows.
+- Widget writes are restricted to `owner|admin`; active-widget reads are available to all active workspace members.
+- Widgets use a dedicated public `publicKey` instead of exposing workspace internals or relying on raw Mongo `_id` for public bootstrap.
+- Public bootstrap returns only safe client-facing branding/behavior/capability data and hides missing/inactive widgets with the same `404 errors.widget.notFound`.
+- Public widget sessions use an opaque browser-held token while the backend stores only `publicSessionKeyHash`.
+- Widget `behavior.collectName` and `behavior.collectEmail` are frontend collection hints only and do not make `name` or `email` mandatory on public message sends.
+- Widget public messages create or reuse normal CRM contacts/tickets/messages and set ticket `channel=widget`.
+- Verified recovery is now implemented as a widget-scoped email-OTP flow that returns a fresh widget session token after `continue` or `start-new`.
+- Recovery replacement invalidates superseded widget sessions tied to the recovered candidate session or ticket so stale `wgs_*` tokens stop working for both HTTP and realtime.
+- Public widget realtime is implemented on the shared Redis-backed Socket.IO foundation with session-scoped rooms and reconnect-safe snapshot resubscribe.
+
 #### SLA v1 Active Endpoints
 
 | Method  | Path                            | Purpose                                            | Role requirements                                                     |
@@ -562,6 +617,7 @@ Any request under those paths currently falls through to 404.
 | `workspaces`    | Yes            | Implemented                                                                                                                                        | Membership resolution, switch, invite lifecycle                                                                                                                                                                                |
 | `files`         | Yes            | Implemented                                                                                                                                        | Upload/list/get/download/delete + storage abstraction                                                                                                                                                                          |
 | `mailboxes`     | Yes            | Implemented                                                                                                                                        | CRUD-like v1 + default invariants + backfill                                                                                                                                                                                   |
+| `widget`        | Yes            | Internal management + public bootstrap/session/message/recovery flow plus public realtime and hardening              | Widget config persistence, dedicated public-key bootstrap reads, opaque widget-session continuity, widget-scoped verified recovery, same-workspace mailbox invariants, CRM contact/ticket/message linkage, session-scoped public realtime, session invalidation/disconnect hardening, RBAC, and focused integration coverage |
 | `users`         | Yes            | Stub (`GET /users`)                                                                                                                                | Model implemented, service placeholder                                                                                                                                                                                         |
 | `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                                                                        | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows                           |
 | `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries                                             | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                                            |
@@ -598,10 +654,13 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.3 Mailbox Domain Collections
 
-| Model          | Purpose                             | Key Fields                                                                                      | Important Indexes/Constraints                                                                                                                                                           |
-| -------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Mailbox`      | Workspace support queue mailbox     | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive` | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
-| `MailboxAlias` | Additional alias emails per mailbox | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                                  | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
+| Model           | Purpose                                  | Key Fields                                                                                                                                   | Important Indexes/Constraints                                                                                                                                                           |
+| --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Mailbox`       | Workspace support queue mailbox          | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive`                                              | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
+| `MailboxAlias`  | Additional alias emails per mailbox      | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                                                                               | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
+| `Widget`        | Widget configuration record              | `workspaceId`, `mailboxId`, `publicKey`, `name`, `branding`, `behavior`, `isActive`                                                          | Unique `publicKey`; workspace-scoped indexes for active-state, name search, and mailbox lookup                                                                                          |
+| `WidgetSession` | Widget public browser-session continuity | `workspaceId`, `widgetId`, `publicSessionKeyHash`, `contactId`, `organizationId`, `ticketId`, `lastSeenAt`, `invalidatedAt`, `invalidationReason`, `recoveryVerifiedAt`, `recoveredFromSessionId`, `closedAt` | Unique partial `publicSessionKeyHash`; workspace-scoped indexes by widget, ticket, contact, and recovered-session lineage                                                               |
+| `WidgetRecovery` | Widget verified recovery handoff         | `workspaceId`, `widgetId`, `emailNormalized`, `contactId`, `candidateSessionId`, `candidateTicketId`, `recoveryTokenHash`, `verifiedAt`, `expiresAt`, `consumedAt`, `consumedAction` | Unique partial `recoveryTokenHash`; widget/email lookup index; TTL on `expiresAt`                                                                                                         |
 
 #### 3.6.4 Files Domain Collections
 
@@ -625,7 +684,7 @@ Any request under those paths currently falls through to 404.
 | `TicketCategory`    | Ticket category tree                      | `workspaceId`, `name`, `slug`, `parentId`, `path`, `order`, `isActive`                                                                                                                                     | Unique partial (`workspaceId`,`slug`); indexes (`workspaceId`,`parentId`) and partial (`workspaceId`,`path`)                      |
 | `TicketTag`         | Workspace tag dictionary                  | `workspaceId`, `name`, `nameNormalized`, `isActive`                                                                                                                                                        | Unique partial (`workspaceId`,`nameNormalized`) when not deleted                                                                  |
 | `TicketCounter`     | Atomic sequence source for ticket numbers | `workspaceId`, `seq`                                                                                                                                                                                       | Unique (`workspaceId`); static allocator increments sequence                                                                      |
-| `Ticket`            | Core support ticket                       | `workspaceId`, `mailboxId`, `number`, `subjectNormalized`, `status`, `priority`, `channel`, `contactId`, `organizationId`, `assigneeId`, `conversationId`, `tagIds`, summary/count/timestamp fields, `sla` | Unique (`workspaceId`,`number`); operational indexes by status/assignee/category/tag/channel/mailbox/contact/organization/recency |
+| `Ticket`            | Core support ticket                       | `workspaceId`, `mailboxId`, `number`, `subjectNormalized`, `status`, `priority`, `channel`, `contactId`, `organizationId`, `assigneeId`, `conversationId`, optional `widgetId`, optional `widgetSessionId`, `tagIds`, summary/count/timestamp fields, `sla` | Unique (`workspaceId`,`number`); operational indexes by status/assignee/category/tag/channel/mailbox/contact/organization/recency plus widget-session lookup |
 | `Conversation`      | Ticket conversation channel metadata      | `workspaceId`, `ticketId`, `mailboxId`, `channel`, `lastMessageAt`, `messageCount`, message summary/count fields                                                                                           | Unique (`workspaceId`,`ticketId`); indexes by mailbox and recency                                                                 |
 | `Message`           | Message records within conversations      | `workspaceId`, `conversationId`, `ticketId`, `type`, transport `direction`, `from`, `to`, `bodyText`, `attachmentFileIds`                                                                                  | Workspace-scoped indexes by conversation/ticket/mailbox/type/direction + createdAt                                                |
 | `TicketParticipant` | Watchers/collaborators on tickets         | `workspaceId`, `ticketId`, `userId`, `type`                                                                                                                                                                | Unique partial (`workspaceId`,`ticketId`,`userId`) when not deleted                                                               |
@@ -820,11 +879,12 @@ Not fully covered by runtime tests:
 ### 3.12 Known Current Gaps and Implementation Notes
 
 - `users` API is still a public list stub returning an empty array.
-- `customers` currently exposes Organizations v1, Contacts v1, and minimal ContactIdentity list/create endpoints; ticket integration continues using lean same-workspace customer summaries, and identity update/delete/verification/widget flows are not implemented yet.
+- `customers` currently exposes Organizations v1, Contacts v1, and minimal ContactIdentity list/create endpoints; ticket integration continues using lean same-workspace customer summaries, and identity update/delete/verification flows are not implemented yet.
+- `widget` now exposes management/bootstrap/session/message/recovery/realtime foundations with the hardening pass completed; attachments and public multi-thread browsing are not implemented yet.
 - `tickets` currently expose core ticket records, assignment/lifecycle actions, participant metadata, conversation/message flows, and category/tag dictionary APIs.
 - `sla` now exposes active business-hours/policy management plus ticket first-response/resolution runtime behavior.
 - `sla` still postpones next-response SLA, holidays, reminders/escalations/notifications, BullMQ/jobs, cycle-history, and historical/date-range reporting.
-- `realtime` now exposes an authenticated bootstrap endpoint, socket auth/room foundations, ticket/message/participant live business event publishing, and ephemeral ticket presence/typing/soft-claim coordination for the internal workspace app.
+- `realtime` now exposes an authenticated internal bootstrap endpoint, dual socket auth modes (internal access-token and public widget-session), shared room foundations, ticket/message/participant live business event publishing, public widget message/conversation live events, and ephemeral ticket presence/typing/soft-claim coordination for the internal workspace app.
 - Ticket create with `initialMessage` now publishes `ticket.created` plus the same `message.created` and `conversation.updated` live events used by later message writes.
 - Viewer members remain allowed to send advisory collaboration signals on readable tickets in the current internal-only phase.
 - Mounted route groups `inbox` and `integrations` are still empty; `admin` and `reports` now expose live runtime APIs.
@@ -840,7 +900,7 @@ Not fully covered by runtime tests:
 | `WORKSPACE_STATUS`            | `active`, `trial`, `suspended`                                                   |
 | `MEMBER_STATUS`               | `active`, `suspended`, `removed`                                                 |
 | `INVITE_STATUS`               | `pending`, `accepted`, `revoked`, `expired`                                      |
-| `OTP_PURPOSE`                 | `verifyEmail`, `login`, `resetPassword`, `changeEmail`                           |
+| `OTP_PURPOSE`                 | `verifyEmail`, `login`, `resetPassword`, `changeEmail`, `widgetRecovery`         |
 | `MAILBOX_TYPE`                | `email`, `chat`, `form` (API validators currently allow only `email`)            |
 | `FILE_PROVIDER`               | `minio`, `s3`, `local`                                                           |
 | `TICKET_STATUS`               | `new`, `open`, `pending`, `waiting_on_customer`, `solved`, `closed`              |
@@ -901,6 +961,23 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/mailboxes/:id/set-default`
 - `POST /api/mailboxes/:id/activate`
 - `POST /api/mailboxes/:id/deactivate`
+
+### Widgets
+
+- `GET /api/widgets`
+- `GET /api/widgets/options`
+- `GET /api/widgets/:id`
+- `POST /api/widgets`
+- `PATCH /api/widgets/:id`
+- `POST /api/widgets/:id/activate`
+- `POST /api/widgets/:id/deactivate`
+- `GET /api/widgets/public/:publicKey/bootstrap`
+- `POST /api/widgets/public/:publicKey/session`
+- `POST /api/widgets/public/:publicKey/messages`
+- `POST /api/widgets/public/:publicKey/recovery/request`
+- `POST /api/widgets/public/:publicKey/recovery/verify`
+- `POST /api/widgets/public/:publicKey/recovery/continue`
+- `POST /api/widgets/public/:publicKey/recovery/start-new`
 
 ### Customers
 

@@ -4,8 +4,10 @@ import { createError } from '../../../shared/errors/createError.js';
 import { buildRealtimeAck } from '../../../infra/realtime/contracts.js';
 import {
   ticketRoomName,
+  widgetSessionRoomName,
   workspaceRoomName,
 } from '../../../infra/realtime/rooms.js';
+import { initializePublicWidgetSession } from '../../widget/services/widget-public.service.js';
 import {
   clearSocketTicketCollaboration,
   emitTicketCollaborationSnapshot,
@@ -151,5 +153,50 @@ export const unsubscribeTicketRoom = async ({ socket, payload }) => {
     room,
     workspaceId,
     ticketId,
+  });
+};
+
+const assertWidgetRealtimeSocketOrThrow = (socket) => {
+  if (socket?.data?.realtimeAuthType !== 'widget') {
+    throw createError('errors.auth.invalidToken', 401);
+  }
+};
+
+export const subscribeWidgetRoom = async ({ socket }) => {
+  assertWidgetRealtimeSocketOrThrow(socket);
+
+  const room = widgetSessionRoomName(socket.data.auth.widgetSessionId);
+  await socket.join(room);
+
+  const snapshot = await initializePublicWidgetSession({
+    publicKey: socket.data.auth.widgetPublicKey,
+    sessionToken: socket.data.widgetSessionToken,
+  });
+
+  return buildRealtimeAck({
+    ok: true,
+    code: 'realtime.widget.subscribed',
+    messageKey: 'success.ok',
+    data: {
+      scope: 'widget',
+      widgetPublicKey: socket.data.auth.widgetPublicKey,
+      snapshot,
+    },
+  });
+};
+
+export const unsubscribeWidgetRoom = async ({ socket }) => {
+  assertWidgetRealtimeSocketOrThrow(socket);
+
+  await socket.leave(widgetSessionRoomName(socket.data.auth.widgetSessionId));
+
+  return buildRealtimeAck({
+    ok: true,
+    code: 'realtime.widget.unsubscribed',
+    messageKey: 'success.ok',
+    data: {
+      scope: 'widget',
+      widgetPublicKey: socket.data.auth.widgetPublicKey,
+    },
   });
 };

@@ -3,6 +3,10 @@ import {
   parseBearerToken,
   resolveActiveAccessContext,
 } from '../../shared/services/auth-context.service.js';
+import {
+  isWidgetSocketToken,
+  resolveWidgetRealtimeAuthContext,
+} from '../../modules/widget/services/widget-realtime.service.js';
 import { createSocketIoErrorFromError } from './contracts.js';
 import { logRealtimeDebug } from './logger.js';
 
@@ -20,21 +24,66 @@ const normalizeSocketToken = (value) => {
   return parseBearerToken(normalized) || normalized;
 };
 
-const extractSocketToken = (socket) => {
+const extractSocketCredential = (socket) => {
+  const widgetSessionToken = normalizeSocketToken(
+    socket?.handshake?.auth?.widgetSessionToken
+  );
+
+  if (widgetSessionToken) {
+    return {
+      type: 'widget',
+      token: widgetSessionToken,
+    };
+  }
+
+  const authToken = normalizeSocketToken(socket?.handshake?.auth?.token);
+
+  if (authToken && isWidgetSocketToken(authToken)) {
+    return {
+      type: 'widget',
+      token: authToken,
+    };
+  }
+
   const headerToken = normalizeSocketToken(
     socket?.handshake?.headers?.authorization
   );
 
   if (headerToken) {
-    return headerToken;
+    return {
+      type: 'internal',
+      token: headerToken,
+    };
   }
 
-  return normalizeSocketToken(socket?.handshake?.auth?.token);
+  if (authToken) {
+    return {
+      type: 'internal',
+      token: authToken,
+    };
+  }
+
+  return null;
 };
 
-const applyRealtimeSocketAuthContext = ({ socket, token, context }) => {
+const clearWidgetSocketData = (socket) => {
+  delete socket.data.widgetSessionToken;
+  delete socket.data.widget;
+  delete socket.data.widgetSession;
+};
+
+const clearInternalSocketData = (socket) => {
+  delete socket.data.accessToken;
+  delete socket.data.member;
+  delete socket.data.currentUser;
+  delete socket.data.session;
+};
+
+const applyInternalRealtimeSocketAuthContext = ({ socket, token, context }) => {
   const { auth, session, currentUser, member } = context;
 
+  clearWidgetSocketData(socket);
+  socket.data.realtimeAuthType = 'internal';
   socket.data.accessToken = token;
   socket.data.auth = auth;
   socket.data.member = member;
@@ -47,7 +96,38 @@ const applyRealtimeSocketAuthContext = ({ socket, token, context }) => {
   };
 };
 
+const applyWidgetRealtimeSocketAuthContext = ({ socket, token, context }) => {
+  clearInternalSocketData(socket);
+  socket.data.realtimeAuthType = 'widget';
+  socket.data.widgetSessionToken = token;
+  socket.data.auth = context.auth;
+  socket.data.widget = context.widget;
+  socket.data.widgetSession = context.widgetSession;
+};
+
 export const refreshRealtimeSocketAuthContext = async (socket) => {
+  const authType = socket?.data?.realtimeAuthType;
+
+  if (authType === 'widget') {
+    const token = socket?.data?.widgetSessionToken;
+
+    if (!token) {
+      throw createError('errors.auth.invalidToken', 401);
+    }
+
+    const context = await resolveWidgetRealtimeAuthContext({
+      sessionToken: token,
+    });
+
+    applyWidgetRealtimeSocketAuthContext({
+      socket,
+      token,
+      context,
+    });
+
+    return context;
+  }
+
   const token = socket?.data?.accessToken;
 
   if (!token) {
@@ -55,7 +135,7 @@ export const refreshRealtimeSocketAuthContext = async (socket) => {
   }
 
   const context = await resolveActiveAccessContext(token);
-  applyRealtimeSocketAuthContext({
+  applyInternalRealtimeSocketAuthContext({
     socket,
     token,
     context,
@@ -66,16 +146,30 @@ export const refreshRealtimeSocketAuthContext = async (socket) => {
 
 export const authenticateRealtimeSocket = async (socket, next) => {
   try {
-    const token = extractSocketToken(socket);
+    const credential = extractSocketCredential(socket);
 
-    if (!token) {
+    if (!credential?.token) {
       throw createError('errors.auth.invalidToken', 401);
     }
 
-    const context = await resolveActiveAccessContext(token);
-    applyRealtimeSocketAuthContext({
+    if (credential.type === 'widget') {
+      const context = await resolveWidgetRealtimeAuthContext({
+        sessionToken: credential.token,
+      });
+
+      applyWidgetRealtimeSocketAuthContext({
+        socket,
+        token: credential.token,
+        context,
+      });
+
+      return next();
+    }
+
+    const context = await resolveActiveAccessContext(credential.token);
+    applyInternalRealtimeSocketAuthContext({
       socket,
-      token,
+      token: credential.token,
       context,
     });
 

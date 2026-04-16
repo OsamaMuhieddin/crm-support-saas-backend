@@ -46,6 +46,18 @@
       "activated": "Mailbox activated successfully.",
       "deactivated": "Mailbox deactivated successfully."
     },
+    "widget": {
+      "created": "Widget created successfully.",
+      "updated": "Widget updated successfully.",
+      "activated": "Widget activated successfully.",
+      "deactivated": "Widget deactivated successfully.",
+      "sessionInitialized": "Widget session initialized successfully.",
+      "messageCreated": "Widget message sent successfully.",
+      "recoveryRequested": "Widget recovery verification was requested successfully.",
+      "recoveryVerified": "Widget recovery was verified successfully.",
+      "recoveryContinued": "Widget conversation recovery continued successfully.",
+      "recoveryStartedNew": "A new widget conversation was started successfully."
+    },
     "billing": {
       "checkoutSessionCreated": "Checkout session created successfully.",
       "portalSessionCreated": "Billing portal session created successfully.",
@@ -196,6 +208,15 @@
       "defaultCannotDeactivate": "Default mailbox cannot be deactivated.",
       "lastActiveCannotDeactivate": "Cannot deactivate the last active mailbox.",
       "defaultConflict": "Unable to update default mailbox. Please retry."
+    },
+    "widget": {
+      "notFound": "Widget not found.",
+      "publicKeyConflict": "Unable to generate a unique widget public key. Please retry.",
+      "sessionNotFound": "Widget session not found.",
+      "sessionConflict": "Unable to initialize the widget session. Please retry.",
+      "recoveryNotFound": "Widget recovery request was not found or has expired.",
+      "recoveryConflict": "Unable to prepare widget recovery. Please retry.",
+      "recoveryCandidateNotFound": "No recoverable widget conversation is available."
     },
     "billing": {
       "disabled": "Billing is currently disabled.",

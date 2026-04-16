@@ -35,14 +35,26 @@ const nextValue = (prefix) => {
 };
 
 const nextEmail = (prefix) => `${nextValue(prefix)}@example.com`;
+const deriveUserName = ({ email, fallback = 'Realtime User' }) => {
+  const localPart = String(email || '')
+    .split('@')[0]
+    .replace(/[^a-zA-Z0-9]+/g, ' ')
+    .trim();
+
+  return localPart || fallback;
+};
 
 const signupAndCaptureOtp = async ({
   email,
   password = 'Password123!',
-  name = 'Realtime User',
+  name = undefined,
 }) => {
   const { response, logs } = await captureFallbackEmail(() =>
-    request(app).post('/api/auth/signup').send({ email, password, name })
+    request(app).post('/api/auth/signup').send({
+      email,
+      password,
+      name: name || deriveUserName({ email }),
+    })
   );
 
   return {
@@ -54,12 +66,12 @@ const signupAndCaptureOtp = async ({
 const createVerifiedUser = async ({
   email = nextEmail('realtime-user'),
   password = 'Password123!',
-  name = 'Realtime User',
+  name = undefined,
 } = {}) => {
   const signup = await signupAndCaptureOtp({
     email,
     password,
-    name,
+    name: name || deriveUserName({ email }),
   });
 
   expect(signup.response.status).toBe(200);

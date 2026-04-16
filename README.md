@@ -17,7 +17,7 @@
 
 CRM Support SaaS Backend is a modular multi-tenant helpdesk backend focused on workspace-scoped support operations.
 
-The current backend implements authentication, workspace membership/switching, files, customers, mailboxes, tickets, and SLA v1 foundations/runtime behavior.
+The current backend implements authentication, workspace membership/switching, files, customers, mailboxes, widget management + public messaging + verified recovery + public widget realtime foundations/hardening, tickets, and SLA v1 foundations/runtime behavior.
 
 ### Key Capabilities
 
@@ -102,12 +102,13 @@ Implemented modules and active surfaces:
 - Files v1 with private download streaming
 - Customers v1: organizations, contacts, and contact identities
 - Mailboxes v1
+- Widget module: internal management + public bootstrap/session/message/recovery + public realtime + hardening
 - Tickets v1 with messages, assignment, lifecycle, participants, categories, and tags
 - SLA v1: business hours, policies, workspace default/mailbox override assignment, ticket runtime behavior, and workspace summary
 
 Planned or not yet active in this backend:
 
-- Realtime collaboration
+- Additional realtime hardening and expanded live collaboration surfaces
 - Integrations/webhooks
 - Subscription/billing
 - Super-admin governance
@@ -382,6 +383,45 @@ Backfill existing data safely:
 ```bash
 npm run mailboxes:backfill-default
 ```
+
+## Backend Widget Module
+
+The widget module provides a workspace-scoped internal management surface plus public bootstrap, browser-session continuity, customer messaging, verified recovery, public realtime, and the final hardening pass:
+
+- `POST /api/widgets`
+- `GET /api/widgets`
+- `GET /api/widgets/options`
+- `GET /api/widgets/:id`
+- `PATCH /api/widgets/:id`
+- `POST /api/widgets/:id/activate`
+- `POST /api/widgets/:id/deactivate`
+- `GET /api/widgets/public/:publicKey/bootstrap`
+- `POST /api/widgets/public/:publicKey/session`
+- `POST /api/widgets/public/:publicKey/messages`
+- `POST /api/widgets/public/:publicKey/recovery/request`
+- `POST /api/widgets/public/:publicKey/recovery/verify`
+- `POST /api/widgets/public/:publicKey/recovery/continue`
+- `POST /api/widgets/public/:publicKey/recovery/start-new`
+
+Rules:
+
+- Internal widget reads are available to any active workspace member; inactive widgets are hidden from `agent|viewer`.
+- Widget writes are restricted to `owner|admin`.
+- Every widget must reference one active mailbox in the same workspace.
+- The public bootstrap endpoint returns only safe client configuration and hides inactive/missing widgets with the same `404`.
+- Public clients must initialize or resume an opaque widget session before sending messages.
+- Public bootstrap and session-init responses include safe widget realtime metadata so the frontend can connect without reusing internal staff auth assumptions.
+- `behavior.collectName` and `behavior.collectEmail` are frontend collection hints, not backend-required message fields.
+- First widget messages create or resolve a CRM contact, create a normal internal ticket with `channel=widget`, and add a normal `customer_message`.
+- Follow-up widget messages append to the current non-closed session ticket; if no eligible current ticket remains, a new widget ticket is created for that session.
+- Verified recovery is widget-scoped and email-OTP-based; after verification the client can either continue the latest eligible recoverable conversation or start a fresh verified session.
+- Recovery issues a fresh widget session token and never trusts a lost browser token as the recovery authority.
+- Recovery `continue` and `start-new` invalidate superseded widget browser sessions tied to the recovered candidate session or ticket so stale `wgs_*` tokens stop working for both HTTP and realtime.
+- Public widget realtime uses the existing Redis-backed Socket.IO runtime, authenticates only with `wgs_*` widget session tokens, and subscribes through `widget.subscribe` to the server-verified current widget-session room.
+- Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
+- `wgr_*` recovery tokens are recovery-only and are rejected as normal realtime auth.
+- Deactivating a widget disconnects currently connected widget sockets immediately; reactivating the widget allows still-valid non-replaced sessions to reconnect normally.
+- Public multi-thread history, attachments, typing/presence, and SSE remain intentionally out of scope.
 
 ## Backend Customers v1
 

@@ -18,8 +18,10 @@ import {
   stopTicketTyping,
 } from './ticket-collaboration.service.js';
 import {
+  subscribeWidgetRoom,
   subscribeTicketRoom,
   subscribeWorkspaceRoom,
+  unsubscribeWidgetRoom,
   unsubscribeTicketRoom,
   unsubscribeWorkspaceRoom,
 } from './realtime-subscriptions.service.js';
@@ -38,7 +40,11 @@ const bindAckHandler = (socket, handler) => async (payload = {}, ack) => {
     const ackPayload = buildRealtimeErrorAckFromError(error);
     sendSocketAck(ack, ackPayload);
 
-    if (String(ackPayload.messageKey || '').startsWith('errors.auth.')) {
+    const isAuthFailure = String(ackPayload.messageKey || '').startsWith(
+      'errors.auth.'
+    );
+
+    if (isAuthFailure) {
       logRealtimeDebug('Disconnecting stale realtime socket after auth error.', {
         socketId: socket.id,
         messageKey: ackPayload.messageKey,
@@ -57,6 +63,18 @@ const bindAckHandler = (socket, handler) => async (payload = {}, ack) => {
 
 export const registerRealtimeSocketHandlers = (io) => {
   io.on('connection', (socket) => {
+    if (socket.data.realtimeAuthType === 'widget') {
+      socket.on(
+        'widget.subscribe',
+        bindAckHandler(socket, subscribeWidgetRoom)
+      );
+      socket.on(
+        'widget.unsubscribe',
+        bindAckHandler(socket, unsubscribeWidgetRoom)
+      );
+      return;
+    }
+
     socket.join(userRoomName(socket.data.auth.userId));
     socket.join(sessionRoomName(socket.data.auth.sessionId));
 

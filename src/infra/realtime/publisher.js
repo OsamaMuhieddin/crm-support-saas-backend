@@ -1,6 +1,11 @@
 import { buildRealtimeEventEnvelope } from './contracts.js';
 import { getRealtimeServer } from './server-state.js';
-import { ticketRoomName, userRoomName, workspaceRoomName } from './rooms.js';
+import {
+  ticketRoomName,
+  userRoomName,
+  widgetSessionRoomName,
+  workspaceRoomName,
+} from './rooms.js';
 
 const buildRoomEmitter = ({ io, rooms = [] }) => {
   let emitter = io;
@@ -85,6 +90,21 @@ export const realtimePublisher = {
   emitToUser({ userId, event, data = null, workspaceId = null, actorUserId }) {
     return emitToRoom({
       room: userRoomName(userId),
+      event,
+      data,
+      workspaceId,
+      actorUserId,
+    });
+  },
+  emitToWidgetSession({
+    widgetSessionId,
+    event,
+    data = null,
+    workspaceId = null,
+    actorUserId = null,
+  }) {
+    return emitToRoom({
+      room: widgetSessionRoomName(widgetSessionId),
       event,
       data,
       workspaceId,
