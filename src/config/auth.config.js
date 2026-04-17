@@ -14,6 +14,9 @@ const defaultIfEmpty = (value, fallback) => {
   return trimmed.length > 0 ? trimmed : fallback;
 };
 
+const envWithFallback = (primaryKey, fallbackKey, fallback = null) =>
+  defaultIfEmpty(process.env[primaryKey], defaultIfEmpty(process.env[fallbackKey], fallback));
+
 export const authConfig = {
   jwt: {
     accessSecret: defaultIfEmpty(
@@ -50,13 +53,15 @@ export const authConfig = {
     expiresDays: parseInteger(process.env.INVITE_EXPIRES_DAYS, 7)
   },
   email: {
-    sendgridApiKey: defaultIfEmpty(process.env.SENDGRID_API_KEY, null),
     from: defaultIfEmpty(process.env.EMAIL_FROM, null),
     smtp: {
-      host: defaultIfEmpty(process.env.NODEMAILER_HOST, null),
-      port: parseInteger(process.env.NODEMAILER_PORT, 587),
-      user: defaultIfEmpty(process.env.NODEMAILER_USER, null),
-      pass: defaultIfEmpty(process.env.NODEMAILER_PASS, null)
+      host: envWithFallback('SMTP_HOST', 'NODEMAILER_HOST'),
+      port: parseInteger(
+        defaultIfEmpty(process.env.SMTP_PORT, process.env.NODEMAILER_PORT),
+        587
+      ),
+      user: envWithFallback('SMTP_USER', 'NODEMAILER_USER'),
+      pass: envWithFallback('SMTP_PASS', 'NODEMAILER_PASS')
     }
   },
   appBaseUrl: defaultIfEmpty(process.env.APP_BASE_URL, 'http://localhost:5000'),

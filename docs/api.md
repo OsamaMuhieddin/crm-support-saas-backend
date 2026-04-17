@@ -4,6 +4,44 @@ Frontend handoff note:
 
 - For a frontend-friendly Billing v1 flow explanation, see [Billing v1 Frontend Flow Report](./billing-frontend-flow-report.md).
 
+## Table of Contents
+
+- [Overview](#overview)
+- [Frontend Integration Guide](#frontend-integration-guide)
+- [Auth model & authorization model](#auth-model)
+- [Quick Start Flows](#quick-start-flows)
+- [Common frontend recipes](#common-frontend-recipes)
+- [Realtime / Live Collaboration](#realtime)
+- [Auth endpoints](#auth-endpoints)
+- [Workspace context](#workspace-context)
+- [Workspace invites](#workspace-invites)
+- [Files](#files)
+- [Customers](#customers)
+- [Mailboxes](#mailboxes)
+- [Widgets](#widgets)
+- [SLA](#sla)
+- [Tickets](#tickets)
+- [Billing](#billing)
+- [Reports](#reports)
+- [Platform admin](#platform-admin)
+- [Backend / dev / runtime notes](#local-billing-runtime-notes)
+
+<a id="frontend-integration-guide"></a>
+## Frontend Integration Guide
+
+- Success envelope: successful object responses return `messageKey`, localized `message`, and route-specific payload fields.
+- Error envelope: all errors return `{ status, messageKey, message, errors }`.
+- Validation failures: expect `422`, `messageKey = errors.validation.failed`, and field-level entries in `errors[]`.
+- Endpoint scope: protected endpoints require bearer auth; workspace-scoped endpoints include `:workspaceId`; session-context endpoints use the current active workspace session.
+- Token handling: treat tokens as opaque. Use `GET /api/auth/me` as the canonical source for current workspace, role, and UI gating.
+- Workspace switching: `POST /api/workspaces/switch` returns a fresh access token and invalidates the old one immediately.
+- Token isolation: platform-admin tokens are separate from normal workspace-user tokens and should be stored separately in frontend state/storage.
+- Realtime posture: REST/Mongo remains the source of truth; realtime is a live transport for patching UI after canonical REST fetches.
+- Common pagination shape: list endpoints commonly return `page`, `limit`, `total`, and `results` plus the resource array.
+- Common query conventions: `q` and `search` are common search aliases; list/report endpoints document filter params explicitly; sort inputs are allowlisted per endpoint.
+- Anti-enumeration: many public/cross-tenant/inactive-resource cases intentionally resolve as generic `404` responses. Frontend should not infer existence from those outcomes.
+
+<a id="overview"></a>
 ## 1) Overview
 
 ### Base URL
@@ -75,23 +113,31 @@ Session-context endpoints:
 
 ### Environment notes
 
-- Invite emails use `FRONTEND_BASE_URL`:
-  - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
-- `APP_BASE_URL` is still backend runtime base URL.
+- Frontend integration note:
+  - Invite emails use `FRONTEND_BASE_URL`:
+    - `${FRONTEND_BASE_URL}/workspaces/invites/accept?token=...`
+- Backend/local-runtime note:
+  - `APP_BASE_URL` is still backend runtime base URL.
 
+<a id="local-billing-runtime-notes"></a>
 ## 2) Local Billing v1 Dev/Test Setup
 
 This section is for local Billing v1 integration and manual Stripe testing. It documents local runtime setup, not the public API contract itself.
 
+- Backend/local-runtime note:
+  - This section is intentionally for backend/dev/test operation and webhook simulation. Frontend clients do not call these commands directly.
+
 ### Required local runtime
 
-- Backend runs on the host machine with `npm run dev`.
-- Billing worker runs as a separate local process with `npm run billing:worker`.
-- Redis is required for BullMQ-backed webhook processing and replay workers:
-  - `docker compose -f docker-compose.redis.yml up -d`
-- Stripe CLI runs in Docker Compose and forwards webhooks to the local backend webhook route:
-  - `docker compose -f docker-compose.stripe.yml up -d stripe-cli`
-  - `docker compose -f docker-compose.stripe.yml logs -f stripe-cli`
+- Backend/local-runtime note:
+  - Backend runs on the host machine with `npm run dev`.
+  - Billing worker runs as a separate local process with `npm run billing:worker`.
+  - Redis is required for BullMQ-backed webhook processing and replay workers:
+    - `docker compose -f docker-compose.redis.yml up -d`
+- Ops/dev-only note:
+  - Stripe CLI runs in Docker Compose and forwards webhooks to the local backend webhook route:
+    - `docker compose -f docker-compose.stripe.yml up -d stripe-cli`
+    - `docker compose -f docker-compose.stripe.yml logs -f stripe-cli`
 
 ### Required billing env
 
@@ -164,6 +210,7 @@ After changing the manifest locally, rerun:
 
 - `npm run billing:migrate-v1`
 
+<a id="auth-model"></a>
 ## 3) Auth model & authorization model
 
 - Users can belong to multiple workspaces through workspace memberships.
@@ -191,6 +238,7 @@ Platform admin auth model:
 - Platform admin routes under `/api/admin/*` require platform auth and platform role guards.
 - Revenue-sensitive platform analytics currently use stricter role checks than general platform overview access.
 
+<a id="quick-start-flows"></a>
 ## 4) Quick Start Flows
 
 The flows in this section are product-wide entry points. Billing keeps its own quick-start block immediately before the billing endpoint reference so checkout, portal, and webhook-driven sync stay documented next to the billing APIs.
@@ -202,6 +250,9 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 3. `POST /api/auth/verify-email` with `email` + `code`.
 4. Response includes `tokens` (access + refresh).
 5. `GET /api/auth/me` with access token to hydrate user/workspace/role in FE state.
+6. Frontend integration note:
+   - Persist returned tokens first, then call `GET /api/auth/me`.
+   - Use the `me` payload, not signup or verify assumptions, to decide initial route guards and workspace UI.
 
 ### Flow B: Login -> Refresh -> Me
 
@@ -210,6 +261,9 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 3. When access expires, call `POST /api/auth/refresh` with refresh token.
 4. Store rotated tokens returned by refresh.
 5. Call `GET /api/auth/me` to re-sync canonical workspace/role.
+6. Frontend integration note:
+   - Replace both tokens after refresh.
+   - Continue using the refreshed pair only; the previous refresh token is immediately invalid.
 
 ### Flow C: Invite Accept (verified vs unverified) -> Verify Email with inviteToken -> Explicit Switch
 
@@ -232,6 +286,9 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 7. Session active workspace is not auto-switched by invite acceptance/finalization.
 8. FE uses returned `workspaceId`/`inviteWorkspaceId` and calls `POST /api/workspaces/switch` when it wants to move to the invited workspace.
 9. FE calls `GET /api/auth/me` to hydrate canonical active workspace and role.
+10. Frontend integration note:
+    - Do not assume the invited workspace becomes current automatically.
+    - After explicit switch, replace the access token, rehydrate with `GET /api/auth/me`, then reconnect workspace-authenticated sockets.
 
 ### Flow D: Upload -> List/Search -> Metadata -> Download -> Delete
 
@@ -241,6 +298,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 4. `GET /api/files/:fileId/download` streams file bytes from backend (single public API contract in v1).
 5. `DELETE /api/files/:fileId` explicitly removes physical object and soft-deletes the DB record.
 6. Clients should treat `url` as canonical backend route (`/api/files/:fileId/download`), not a direct storage URL.
+7. Frontend integration note:
+   - Upload first, then keep returned file ids/urls for later attachment in ticket or message mutations.
 
 ### Flow E: Mailboxes v1 -> Set Default -> Activate/Deactivate
 
@@ -320,6 +379,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 6. Subscribe explicitly to the current workspace room with `workspace.subscribe`.
 7. Subscribe explicitly to a readable ticket room with `ticket.subscribe` when the UI opens that ticket.
 8. Treat MongoDB-backed REST reads as the source of truth; realtime is a live-collaboration transport, not a replacement for canonical reads.
+9. Frontend integration note:
+   - After `POST /api/workspaces/switch`, replace the access token, call `GET /api/auth/me`, reconnect the socket, and resubscribe rooms in the new workspace context.
 
 ### Flow K: Platform Admin Login -> Overview -> Workspace Action
 
@@ -348,6 +409,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
    - `to`
    - `groupBy=day|week|month`
    - optional `mailboxId`, `assigneeId`, `priority`, `categoryId`, `tagId`
+4. Frontend integration note:
+   - Prefer reports endpoints for dashboard cards and charts instead of deriving aggregates from paginated ticket lists in the client.
 
 ### Flow M: Widget Management, Public Messaging, Recovery, and Realtime
 
@@ -365,7 +428,22 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 12. Public widget sockets authenticate with `wgs_*` widget session tokens only, subscribe through `widget.subscribe`, and are scoped to the server-verified current widget session.
 13. Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
 14. Public multi-conversation browsing, attachments, typing/presence, and SSE remain intentionally deferred.
+15. Frontend integration note:
+   - Do not assume widget session reuse if a stale public token is rejected; restart from public bootstrap/session and continue from the latest returned session token.
 
+<a id="common-frontend-recipes"></a>
+## Common frontend recipes
+
+- Login -> store tokens -> call `GET /api/auth/me` -> hydrate workspace/role/UI gates.
+- Refresh -> replace both returned tokens -> continue API traffic with the new pair.
+- Workspace switch -> replace returned access token -> call `GET /api/auth/me` -> reconnect sockets -> resubscribe rooms.
+- File upload -> keep returned file `_id` and `url` -> attach later in ticket/message mutations.
+- Ticket detail screen -> fetch REST detail/messages first -> connect socket -> subscribe to ticket room -> patch from events -> re-fetch when unsure.
+- Widget public client -> bootstrap -> session -> send message -> connect/subscribe widget realtime using the current `wgs_*` token.
+- Billing portal / plan change / add-ons -> perform billing action -> refetch `GET /api/billing/summary`.
+- Platform-admin login -> store platform tokens separately from workspace-user tokens -> call `GET /api/admin/auth/me` -> fetch admin overview/metrics/workspaces as needed.
+
+<a id="realtime"></a>
 ## Realtime / Live Collaboration
 
 ### Purpose and scope
@@ -1034,7 +1112,10 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - it does not mint tokens or change workspace/session state
   - REST and DB remain the source of truth for business data
   - `collaboration.actionThrottleMs` is the modest server-side guard window for conflicting collaboration-action bursts from the same socket
+  - Frontend integration note:
+    - Recommended posture is: fetch canonical REST data, connect socket, subscribe, patch UI from events, and re-fetch REST whenever ordering or completeness is uncertain.
 
+<a id="auth-endpoints"></a>
 ## 4) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
@@ -1151,6 +1232,9 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `activeWorkspaceId` is the workspace used to mint the access token (`wid` claim).
   - `inviteWorkspaceId` is the finalized invited workspace when `inviteToken` is provided, otherwise `null`.
   - Invite finalization does not auto-switch workspace context.
+  - Frontend note:
+    - After storing tokens, call `GET /api/auth/me`.
+    - If `inviteWorkspaceId` differs from `activeWorkspaceId`, the client still needs explicit `POST /api/workspaces/switch` before moving into the invited workspace context.
 
 ### POST `/api/auth/login`
 
@@ -1179,6 +1263,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `422` `errors.validation.failed`
   - `401` `errors.auth.invalidCredentials`
   - `403` `errors.auth.emailNotVerified | errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Frontend note:
+  - Login returns tokens, but `GET /api/auth/me` remains the canonical source for active workspace + role.
 
 ### POST `/api/auth/refresh`
 
@@ -1208,6 +1294,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Notes:
   - Frontend MUST replace both `accessToken` and `refreshToken` with the returned pair.
   - Refresh token rotation invalidates the previous refresh token immediately.
+  - Frontend note:
+    - Do not keep using the old refresh token as a fallback.
 
 ### POST `/api/auth/forgot-password`
 
@@ -1266,6 +1354,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Notes:
   - On success, all user sessions are revoked.
   - Realtime sockets bound to those revoked sessions are disconnected on a best-effort basis.
+  - Frontend note:
+    - Clear local auth state and send the user back through login after a successful reset-password flow.
 
 ### GET `/api/auth/me`
 
@@ -1301,6 +1391,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     2. `user.lastWorkspaceId` if membership is active.
     3. `user.defaultWorkspaceId` if membership is active.
     4. first active membership.
+  - Frontend note:
+    - Prefer this route over decoding token claims in the UI.
 
 ### POST `/api/auth/logout`
 
@@ -1323,6 +1415,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `403` `errors.auth.userSuspended`
 - Notes:
   - Realtime sockets bound to the current revoked session are disconnected on a best-effort basis.
+  - Frontend note:
+    - Clear current auth state immediately and close authenticated socket connections client-side.
 
 ### POST `/api/auth/logout-all`
 
@@ -1345,6 +1439,8 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - `403` `errors.auth.userSuspended`
 - Notes:
   - Realtime sockets bound to revoked sessions are disconnected on a best-effort basis.
+  - Frontend note:
+    - Clear all remembered sessions for that user in the client.
 
 ### POST `/api/auth/change-password`
 
@@ -1379,7 +1475,10 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Notes:
   - On success, all sessions are revoked. User must login again.
   - Realtime sockets bound to revoked sessions are disconnected on a best-effort basis.
+  - Frontend note:
+    - Treat this as a forced re-auth event and clear stored tokens.
 
+<a id="workspace-context"></a>
 ## 5) Workspace Context Endpoints
 
 ### GET `/api/workspaces/mine`
@@ -1474,7 +1573,10 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - This is the only endpoint that changes active workspace context.
   - Client must replace in-memory access token with returned `accessToken`.
   - Old access token becomes invalid immediately after switch.
+  - Frontend note:
+    - After replacing the token, call `GET /api/auth/me`, then reconnect and resubscribe any workspace-authenticated realtime client.
 
+<a id="workspace-invites"></a>
 ## 6) Workspace Invite Endpoints Reference
 
 ### Shared requirements for protected invite management routes
@@ -1498,6 +1600,8 @@ Requirements:
 ### POST `/api/workspaces/:workspaceId/invites`
 
 - Purpose: create a workspace invite.
+- Requirements:
+  - same shared protected invite-management requirements as above
 - Request body:
 
 ```json
@@ -1536,6 +1640,8 @@ Requirements:
 ### GET `/api/workspaces/:workspaceId/invites`
 
 - Purpose: list invites for workspace with pagination.
+- Requirements:
+  - same shared protected invite-management requirements as above
 - Request query:
   - `status` optional (`pending|accepted|revoked|expired`)
   - `page` optional (`>= 1`, default `1`)
@@ -1570,6 +1676,8 @@ Requirements:
 ### GET `/api/workspaces/:workspaceId/invites/:inviteId`
 
 - Purpose: fetch a single invite by id.
+- Requirements:
+  - same shared protected invite-management requirements as above
 - Request params:
   - `workspaceId`: mongo id
   - `inviteId`: mongo id
@@ -1598,6 +1706,8 @@ Requirements:
 ### POST `/api/workspaces/:workspaceId/invites/:inviteId/resend`
 
 - Purpose: regenerate invite token and resend invite email.
+- Requirements:
+  - same shared protected invite-management requirements as above
 - Request body: optional (empty object is fine)
 - Success `200`:
 
@@ -1617,6 +1727,8 @@ Requirements:
 ### POST `/api/workspaces/:workspaceId/invites/:inviteId/revoke`
 
 - Purpose: revoke an invite (idempotent if already revoked).
+- Requirements:
+  - same shared protected invite-management requirements as above
 - Request body: optional (empty object is fine)
 - Success `200`:
 
@@ -1696,6 +1808,7 @@ Requirements:
 - `errors.auth.forbiddenTenant`: show "no access to this workspace" without necessarily logging user out.
 - `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show cooldown timer before allowing resend.
 
+<a id="files"></a>
 ## 8) Files Endpoints Reference (Files v1)
 
 ### Auth + authorization requirements
@@ -1899,6 +2012,7 @@ Requirements:
   - If object is already missing in storage, endpoint still soft-deletes the DB record.
   - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
 
+<a id="customers"></a>
 ## 9) Customers Endpoints Reference (Organizations v1 + Contacts v1 + ContactIdentity v1)
 
 ### Auth model + authorization rules
@@ -2506,6 +2620,7 @@ Requirements:
 - Anti-enumeration note:
   - Cross-workspace parent contact ids resolve as `404 errors.contact.notFound`.
 
+<a id="mailboxes"></a>
 ## 10) Mailboxes Endpoints Reference (Mailbox v1)
 
 ### Auth model + authorization rules
@@ -2862,6 +2977,7 @@ npm run mailboxes:backfill-default
   - safe to run multiple times (idempotent)
   - does not create duplicate default mailboxes when rerun
 
+<a id="widgets"></a>
 ## Widget Endpoints Reference
 
 ### Auth model & authorization model
@@ -3324,6 +3440,8 @@ npm run mailboxes:backfill-default
 - Notes:
   - `behavior.collectName` and `behavior.collectEmail` are UI hints for the frontend, not backend-required public message fields.
   - The returned `realtime` block is safe bootstrap metadata only; the client still needs the returned `session.token` to authenticate the socket.
+  - Frontend note:
+    - Persist the latest `session.token` returned by the API and use it as the canonical widget-session token for later HTTP and socket calls.
 
 ### POST `/api/widgets/public/:publicKey/messages`
 
@@ -3401,6 +3519,8 @@ npm run mailboxes:backfill-default
   - The returned `session.token` always reflects the currently active widget session token for the resolved session context.
   - First widget messages create a normal internal ticket with `channel=widget` and a normal `customer_message`; later messages reuse the current non-closed session ticket when still eligible.
   - When the same session is already subscribed over Socket.IO, canonical public or agent reply writes on that widget ticket also emit `widget.message.created` and `widget.conversation.updated`.
+  - Frontend note:
+    - If the server returns a replacement `session.token`, overwrite the old one before the next HTTP or socket call.
 
 ### POST `/api/widgets/public/:publicKey/recovery/request`
 
@@ -3531,6 +3651,7 @@ npm run mailboxes:backfill-default
   - The returned widget session is already recovery-verified, but its conversation stays `idle` until the next customer message creates a new widget ticket through the normal message flow.
   - starting new after recovery invalidates superseded widget sessions tied to the recovered candidate session or ticket so the fresh `wgs_*` token is the only active public session for that recovered browser context.
 
+<a id="sla"></a>
 ## 12) SLA Endpoints Reference (SLA v1 Active Surface)
 
 ### Auth model & authorization model
@@ -4197,6 +4318,7 @@ npm run mailboxes:backfill-default
   - Default assignment always points to an active policy.
   - `workspace.defaultSlaPolicyId` is canonical, and the denormalized policy `isDefault` flags are repaired to match it in the same operation.
 
+<a id="tickets"></a>
 ## 13) Tickets Endpoints Reference
 
 ### Auth model + authorization rules
@@ -4481,6 +4603,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/:id`
 
 - Purpose: fetch one ticket detail in the current workspace, including reference summaries and conversation summary.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request params:
   - `id`: mongo id
 - Success `200`:
@@ -4669,6 +4794,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/:id/conversation`
 
 - Purpose: return the one conversation summary linked to the ticket in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request params:
   - `id`: mongo id
 - Success `200`:
@@ -4712,6 +4840,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/:id/messages`
 
 - Purpose: list paginated message history for the ticket thread.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request params:
   - `id`: mongo id
 - Request query:
@@ -4872,9 +5003,6 @@ npm run mailboxes:backfill-default
 }
 ```
 
-- Notes:
-  - `messageRecord` uses the same slim message DTO style as the message list and omits route-redundant ids plus duplicate id-only fields when hydrated objects are already returned.
-
 - Common errors:
   - `422` `errors.validation.failed`
   - `404` `errors.ticket.notFound | errors.file.notFound`
@@ -4884,6 +5012,7 @@ npm run mailboxes:backfill-default
   - ticket and file ids are resolved only inside the active workspace.
   - missing or cross-workspace refs collapse to workspace-scoped `404` responses.
 - Notes:
+  - `messageRecord` uses the same slim message DTO style as the message list and omits route-redundant ids plus duplicate id-only fields when hydrated objects are already returned.
   - each `attachments[]` entry is a lightweight file summary only: `_id`, `url`, `originalName`, `mimeType`, `sizeBytes`.
   - `public_reply` moves the ticket to `waiting_on_customer`.
   - `customer_message` sets the ticket to `open` and reopens solved tickets.
@@ -4930,9 +5059,6 @@ npm run mailboxes:backfill-default
   }
 }
 ```
-
-- Notes:
-  - assignment actions return an action-scoped ticket summary, not the full hydrated ticket detail payload.
 
 - Common errors:
   - `422` `errors.validation.failed`
@@ -4999,9 +5125,6 @@ npm run mailboxes:backfill-default
 }
 ```
 
-- Notes:
-  - assignment actions return an action-scoped ticket summary, not the full hydrated ticket detail payload.
-
 - Common errors:
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenRole`
@@ -5010,6 +5133,7 @@ npm run mailboxes:backfill-default
 - Anti-enumeration note:
   - ticket lookup is resolved only inside the active workspace.
 - Notes:
+  - assignment actions return an action-scoped ticket summary, not the full hydrated ticket detail payload.
   - self-assignment works when the ticket is unassigned or already assigned to the current user.
   - this endpoint does not allow silently taking tickets already assigned to another user.
 
@@ -5321,6 +5445,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/categories`
 
 - Purpose: list ticket categories with pagination, search, filters, and sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request query:
   - `page` optional (`>=1`, default `1`)
   - `limit` optional (`1..100`, default `20`)
@@ -5363,6 +5490,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/categories/options`
 
 - Purpose: return lightweight category options for selectors and typeaheads.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request query:
   - `q` or `search` optional
   - `parentId` optional mongo id
@@ -5396,6 +5526,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/categories/:id`
 
 - Purpose: fetch one ticket category in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request params:
   - `id`: mongo id
 - Success `200`:
@@ -5574,6 +5707,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/tags`
 
 - Purpose: list ticket tags with pagination, search, filters, and sort.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request query:
   - `page` optional (`>=1`, default `1`)
   - `limit` optional (`1..100`, default `20`)
@@ -5611,6 +5747,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/tags/options`
 
 - Purpose: return lightweight tag options for selectors and typeaheads.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request query:
   - `q` or `search` optional
   - `limit` optional (`1..50`, default `20`)
@@ -5640,6 +5779,9 @@ npm run mailboxes:backfill-default
 ### GET `/api/tickets/tags/:id`
 
 - Purpose: fetch one ticket tag in the current workspace.
+- Requirements:
+  - Authorization required
+  - active user + active workspace membership
 - Request params:
   - `id`: mongo id
 - Success `200`:
@@ -5763,6 +5905,7 @@ npm run mailboxes:backfill-default
 - Notes:
   - the operation is idempotent.
 
+<a id="billing"></a>
 ## 14) Billing Quick Start Flows
 
 ### Flow A: Open Billing Summary
@@ -5771,6 +5914,8 @@ npm run mailboxes:backfill-default
 2. Ensure the target workspace is the active workspace for the session.
 3. Call `GET /api/billing/summary`.
 4. Use the returned subscription, entitlements, usage, and billing flags as the FE bootstrap state.
+5. Frontend integration note:
+   - Refetch this summary after any billing action that could change plan, add-ons, or subscription lifecycle state.
 
 ### Flow B: Start First Paid Billing Setup
 
@@ -5778,6 +5923,8 @@ npm run mailboxes:backfill-default
 2. Call `POST /api/billing/checkout-session`.
 3. Redirect the user to the returned Stripe Checkout URL.
 4. Wait for Stripe webhook sync to update local subscription state.
+5. Frontend integration note:
+   - After returning from Checkout, do not assume success from the redirect alone; refetch backend billing state.
 
 ### Flow C: Open Billing Portal For Ongoing Changes
 
@@ -5785,6 +5932,8 @@ npm run mailboxes:backfill-default
 2. Call `POST /api/billing/portal-session`.
 3. Redirect the user to the returned Stripe Billing Portal URL.
 4. Let Stripe webhooks sync upgrades, downgrades, payment recovery, and cancellation state back into the local billing records.
+5. Frontend integration note:
+   - After returning from the portal, refetch `GET /api/billing/summary` instead of inferring final state from the return URL.
 
 ## 15) Billing Endpoints Reference
 
@@ -5897,6 +6046,8 @@ npm run mailboxes:backfill-default
   - `401` `errors.auth.invalidToken`
   - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+- Frontend note:
+  - Use this endpoint to populate plan and add-on pickers before checkout or managed subscription changes.
 
 ### GET `/api/billing/subscription`
 
@@ -6006,6 +6157,8 @@ npm run mailboxes:backfill-default
 - Notes:
   - the backend auto-bootstraps billing foundation rows when the active workspace does not have them yet.
   - if a workspace finishes its trial without setting up billing, local lifecycle fields move into grace and `past_due` state without pretending a payment was made.
+  - Frontend note:
+    - Use this route for the full subscription detail screen; use `GET /api/billing/summary` for compact settings/bootstrap state.
 
 ### GET `/api/billing/entitlements`
 
@@ -6070,6 +6223,8 @@ npm run mailboxes:backfill-default
   - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
   - `404` `errors.workspace.notFound`
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+- Frontend note:
+  - This is the best source for feature and limit gating when the UI needs computed entitlement data directly.
 
 ### GET `/api/billing/usage`
 
@@ -6110,6 +6265,8 @@ npm run mailboxes:backfill-default
   - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
   - `404` `errors.workspace.notFound`
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+- Frontend note:
+  - Use this route when a settings page needs raw usage meters without the rest of the billing summary payload.
 
 ### GET `/api/billing/summary`
 
@@ -6192,6 +6349,8 @@ npm run mailboxes:backfill-default
   - `403` `errors.auth.forbiddenTenant | errors.auth.forbiddenRole`
   - `404` `errors.workspace.notFound`
   - `503` `errors.billing.disabled | errors.billing.catalogUnavailable`
+- Frontend note:
+  - This is the recommended FE bootstrap endpoint for billing cards, banners, and settings summaries.
 
 ### POST `/api/billing/checkout-session`
 
@@ -6243,6 +6402,8 @@ npm run mailboxes:backfill-default
   - this route is intended for initial paid setup when the workspace does not already have a managed Stripe subscription.
   - once a Stripe subscription exists, ongoing plan and add-on changes are handled through the app billing actions below, while payment recovery and cancellation-state changes can still use the billing portal.
   - starting Checkout does not reset local usage counters.
+  - Frontend note:
+    - Treat returned `checkoutSession.url` as the canonical redirect target.
 
 ### POST `/api/billing/change-plan`
 
@@ -6390,6 +6551,8 @@ npm run mailboxes:backfill-default
 - Notes:
   - the portal should be treated as the hosted payment and account-management surface.
   - Billing v1 uses app-managed plan and add-on updates through `POST /api/billing/change-plan` and `POST /api/billing/update-addons`.
+  - Frontend note:
+    - Treat `portalSession.url` as the canonical redirect target, then refetch backend billing state on return.
 
 ### POST `/api/billing/webhooks/stripe`
 
@@ -6421,6 +6584,8 @@ npm run mailboxes:backfill-default
 - Notes:
   - the event is persisted before the queue step so replay and repair remain possible if Redis or worker processing is temporarily unavailable.
   - duplicate Stripe event ids are accepted idempotently and do not create duplicate inbox rows.
+  - Backend/provider-facing note:
+    - This webhook route is called by Stripe or Stripe CLI forwarding, not by normal frontend clients.
 
 ### POST `/api/tickets/tags/:id/deactivate`
 
@@ -6452,6 +6617,7 @@ npm run mailboxes:backfill-default
 - Notes:
   - the operation is idempotent.
 
+<a id="reports"></a>
 ## 16) Reporting and Platform Admin Endpoints Reference
 
 ### PATCH `/api/auth/profile`
@@ -6498,6 +6664,8 @@ npm run mailboxes:backfill-default
 - Notes:
   - unknown fields are rejected
   - this route does not change email or password
+  - Frontend note:
+    - For file-backed avatars, upload first through `POST /api/files`, then persist the returned file `url` or chosen reference string here.
 
 ### GET `/api/reports/overview`
 
@@ -6510,6 +6678,8 @@ npm run mailboxes:backfill-default
   - `from`, `to`
   - `groupBy=day|week|month`
   - optional `mailboxId`, `assigneeId`, `priority`, `categoryId`, `tagId`
+- Frontend note:
+  - Use this endpoint for workspace dashboard cards and mixed overview widgets.
 - Success `200` shape:
 
 ```json
@@ -6535,16 +6705,26 @@ npm run mailboxes:backfill-default
 ```json
 {
   "summary": {
-    "totalTicketsInRange": 14,
-    "backlogTickets": 5,
-    "solvedTicketsInRange": 6,
-    "closedTicketsInRange": 3
+    "totalTicketsInRange": 3,
+    "backlogTickets": 2,
+    "solvedTicketsInRange": 2,
+    "closedTicketsInRange": 1
   },
   "breakdowns": {
     "status": [
-      { "key": "open", "label": "open", "count": 4 },
-      { "key": "solved", "label": "solved", "count": 6 }
-    ]
+      { "key": "open", "label": "open", "count": 1 },
+      { "key": "solved", "label": "solved", "count": 1 },
+      { "key": "closed", "label": "closed", "count": 1 }
+    ],
+    "mailbox": [{ "key": "65f2...", "label": "Escalations", "count": 2 }]
+  },
+  "sla": {
+    "applicableTickets": 3,
+    "breachedTickets": 1
+  },
+  "usage": {
+    "seatsUsed": 3,
+    "activeMailboxes": 2
   }
 }
 ```
@@ -6561,6 +6741,8 @@ npm run mailboxes:backfill-default
   - same as `GET /api/reports/overview`
 - Supported query:
   - same shared report filter contract as `GET /api/reports/overview`
+- Frontend note:
+  - Use this endpoint for ticket volume charts and operational breakdown widgets instead of aggregating paginated ticket lists client-side.
 - Success `200` shape:
 
 ```json
@@ -6583,19 +6765,33 @@ npm run mailboxes:backfill-default
 ```json
 {
   "summary": {
-    "createdTicketsInRange": 14,
-    "solvedTicketsInRange": 6,
-    "closedTicketsInRange": 3
+    "createdTicketsInRange": 3,
+    "solvedTicketsInRange": 2,
+    "closedTicketsInRange": 1
   },
   "series": {
     "volume": [
       {
         "key": "2026-03-01",
-        "created": 2,
+        "created": 1,
+        "solved": 0,
+        "closed": 0
+      },
+      {
+        "key": "2026-03-03",
+        "created": 1,
         "solved": 1,
         "closed": 0
       }
     ]
+  },
+  "breakdowns": {
+    "priority": [
+      { "key": "high", "label": "high", "count": 1 },
+      { "key": "normal", "label": "normal", "count": 1 },
+      { "key": "urgent", "label": "urgent", "count": 1 }
+    ],
+    "tag": [{ "key": "65tg...", "label": "VIP", "count": 2 }]
   }
 }
 ```
@@ -6612,6 +6808,8 @@ npm run mailboxes:backfill-default
   - same as `GET /api/reports/overview`
 - Supported query:
   - same shared report filter contract as `GET /api/reports/overview`
+- Frontend note:
+  - Use this endpoint for SLA compliance cards, breach widgets, and trend charts.
 - Success `200` shape:
 
 ```json
@@ -6632,10 +6830,10 @@ npm run mailboxes:backfill-default
 ```json
 {
   "overview": {
-    "applicableTickets": 10,
-    "breachedTickets": 2,
-    "nonBreachedTickets": 8,
-    "complianceRate": 80
+    "applicableTickets": 3,
+    "breachedTickets": 1,
+    "nonBreachedTickets": 2,
+    "complianceRate": 66.67
   },
   "series": {
     "compliance": [
@@ -6646,6 +6844,14 @@ npm run mailboxes:backfill-default
         "breachedTickets": 1,
         "complianceRate": 66.67
       }
+    ]
+  },
+  "breakdowns": {
+    "byPriority": [
+      { "key": "urgent", "label": "urgent", "applicableTickets": 1, "breachedTickets": 1 }
+    ],
+    "byMailbox": [
+      { "key": "65f2...", "label": "Escalations", "applicableTickets": 2, "breachedTickets": 1 }
     ]
   }
 }
@@ -6710,6 +6916,7 @@ npm run mailboxes:backfill-default
   - `403` `errors.auth.forbiddenRole | errors.workspace.suspended`
   - `422` `errors.validation.failed`
 
+<a id="platform-admin"></a>
 ### Platform Admin Auth
 
 #### POST `/api/admin/auth/login`
@@ -6732,7 +6939,15 @@ npm run mailboxes:backfill-default
 {
   "messageKey": "success.adminAuth.loggedIn",
   "message": "Platform admin logged in successfully.",
-  "platformAdmin": {},
+  "platformAdmin": {
+    "_id": "66aa...",
+    "email": "admin@example.com",
+    "role": "super_admin",
+    "status": "active",
+    "lastLoginAt": "2026-04-17T09:00:00.000Z",
+    "createdAt": "2026-03-01T08:00:00.000Z",
+    "updatedAt": "2026-04-17T09:00:00.000Z"
+  },
   "tokens": {
     "accessToken": "jwt",
     "refreshToken": "jwt"
@@ -6743,6 +6958,8 @@ npm run mailboxes:backfill-default
 - Common errors:
   - `401` `errors.platformAuth.invalidCredentials`
   - `403` `errors.platformAuth.adminSuspended`
+- Frontend note:
+  - Store platform-admin tokens separately from normal workspace auth tokens.
 
 #### POST `/api/admin/auth/refresh`
 
@@ -6757,26 +6974,97 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.adminAuth.refreshed",
+  "message": "Platform admin session refreshed successfully.",
+  "tokens": {
+    "accessToken": "jwt",
+    "refreshToken": "jwt"
+  }
+}
+```
+
 - Common errors:
   - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+- Frontend note:
+  - Replace both returned platform tokens. Do not mix them with workspace-user refresh flows.
 
 #### GET `/api/admin/auth/me`
 
 - Purpose: return the current platform admin identity and active platform session summary.
 - Requirements:
   - valid platform-admin bearer access token
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "platformAdmin": {
+    "_id": "66aa...",
+    "email": "admin@example.com",
+    "role": "platform_admin",
+    "status": "active",
+    "lastLoginAt": "2026-04-17T09:00:00.000Z",
+    "createdAt": "2026-03-01T08:00:00.000Z",
+    "updatedAt": "2026-04-17T09:00:00.000Z"
+  },
+  "session": {
+    "_id": "66ss...",
+    "expiresAt": "2026-05-17T09:00:00.000Z",
+    "createdAt": "2026-04-17T09:00:00.000Z",
+    "updatedAt": "2026-04-17T09:00:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+- Frontend note:
+  - Use this route as the canonical platform-admin identity/session hydration endpoint after login and refresh.
 
 #### POST `/api/admin/auth/logout`
 
 - Purpose: revoke the current platform session only.
 - Requirements:
   - valid platform-admin bearer access token
+- Request body:
+  - optional empty object
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.adminAuth.loggedOut",
+  "message": "Platform admin logged out successfully."
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
 
 #### POST `/api/admin/auth/logout-all`
 
 - Purpose: revoke all sessions for the authenticated platform admin.
 - Requirements:
   - valid platform-admin bearer access token
+- Request body:
+  - optional empty object
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.adminAuth.loggedOutAll",
+  "message": "Platform admin logged out from all sessions successfully."
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+- Frontend note:
+  - Clear all stored platform-admin auth state after logout or logout-all.
 
 ### GET `/api/admin/overview`
 
@@ -6784,6 +7072,61 @@ npm run mailboxes:backfill-default
 - Requirements:
   - valid platform-admin bearer access token
   - role must be `super_admin|platform_admin`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "overview": {
+    "report": "overview",
+    "visibility": "platform_admin",
+    "platformRole": "platform_admin",
+    "generatedAt": "2026-04-17T09:00:00.000Z",
+    "kpis": {
+      "totalWorkspaces": 3,
+      "activeWorkspaces": 1,
+      "suspendedWorkspaces": 1,
+      "trialWorkspaces": 1,
+      "activeUsersCount": 3,
+      "totalTicketsCount": 3,
+      "ticketsCreatedLast30Days": 2
+    },
+    "billing": {
+      "statusCounts": {
+        "active": 1,
+        "trialing": 1,
+        "past_due": 1
+      },
+      "revenue": {
+        "visible": false,
+        "currentMrrCents": null,
+        "currency": null,
+        "managedSubscriptionCount": 0,
+        "source": null
+      }
+    },
+    "operational": {
+      "totalMailboxesCount": 4,
+      "totalStorageBytes": 0,
+      "usagePressure": {
+        "workspacesWithEntitlements": 3,
+        "overSeatLimit": 1,
+        "anyOverLimit": 2,
+        "slaDisabled": 1
+      }
+    },
+    "activityWindow": {
+      "from": "2026-03-18T00:00:00.000Z",
+      "to": "2026-04-17T23:59:59.999Z"
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
 - Notes:
   - frontend should use this endpoint for current KPI cards and other live platform snapshot sections
   - revenue-sensitive fields are omitted for non-`super_admin` callers
@@ -6797,6 +7140,53 @@ npm run mailboxes:backfill-default
 - Supported query:
   - `from`, `to`
   - `groupBy=day|week|month`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "metrics": {
+    "report": "metrics",
+    "visibility": "platform_admin",
+    "platformRole": "platform_admin",
+    "generatedAt": "2026-04-17T09:00:00.000Z",
+    "filters": {
+      "from": "2026-04-01T00:00:00.000Z",
+      "to": "2026-04-03T23:59:59.999Z",
+      "groupBy": "day"
+    },
+    "coverage": {
+      "expectedBuckets": 3,
+      "bucketsWithSnapshots": 2,
+      "availableDailySnapshots": 2,
+      "isComplete": false,
+      "aggregationMethod": "latest_snapshot_in_bucket"
+    },
+    "series": {
+      "workspaces": [
+        { "key": "2026-04-01", "sourceDateKey": "2026-04-01", "value": 10 },
+        { "key": "2026-04-02", "sourceDateKey": null, "value": null },
+        { "key": "2026-04-03", "sourceDateKey": "2026-04-03", "value": 11 }
+      ],
+      "activeUsers": [],
+      "tickets": []
+    },
+    "historicalDataSource": "platform_metric_daily",
+    "availableSections": {
+      "workspaces": true,
+      "activeUsers": false,
+      "tickets": false,
+      "revenue": false
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `422` `errors.validation.failed`
 - Notes:
   - frontend should use this endpoint for historical charts and trend visualizations rather than current KPI cards
   - sparse historical data is returned honestly as partial series; the API does not invent missing trend values
@@ -6807,6 +7197,67 @@ npm run mailboxes:backfill-default
 - Requirements:
   - valid platform-admin bearer access token
   - role must be `super_admin`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "billingOverview": {
+    "report": "billing_overview",
+    "visibility": "super_admin",
+    "platformRole": "super_admin",
+    "generatedAt": "2026-04-17T09:00:00.000Z",
+    "subscriptionStatus": {
+      "counts": {
+        "active": 1,
+        "trialing": 1,
+        "past_due": 1
+      },
+      "distribution": [
+        { "key": "active", "label": "active", "count": 1 }
+      ]
+    },
+    "plans": {
+      "distribution": [
+        { "key": "starter", "label": "Starter", "count": 2 },
+        { "key": "growth", "label": "Growth", "count": 1 }
+      ]
+    },
+    "lifecycle": {
+      "trialing": 1,
+      "pastDue": 1,
+      "inGracePeriod": 1,
+      "partialBlockActive": 0,
+      "cancelAtPeriodEnd": 1,
+      "providerManaged": 2
+    },
+    "usagePressure": {
+      "overSeatLimit": 1,
+      "overMailboxLimit": 1,
+      "overStorageLimit": 1,
+      "overUploadsPerMonthLimit": 1,
+      "overTicketsPerMonthLimit": 1,
+      "anyOverLimit": 2,
+      "slaDisabled": 1
+    },
+    "revenue": {
+      "visible": true,
+      "currentMrrCents": 12000,
+      "currency": "USD",
+      "managedSubscriptionCount": 2,
+      "unsupportedSubscriptionCount": 0,
+      "source": "managed_subscription_snapshot"
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+- Frontend note:
+  - Use this endpoint for revenue-sensitive billing analytics; non-`super_admin` clients should not expect access.
 
 ### GET `/api/admin/workspaces`
 
@@ -6820,10 +7271,64 @@ npm run mailboxes:backfill-default
   - `billingStatus`
   - `planKey`
   - `trialing`
-  - `page`, `limit`, `sort`
+  - `page`, `limit`
+  - `sort=name|-name|status|-status|createdAt|-createdAt|updatedAt|-updatedAt`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "workspaces": [
+    {
+      "_id": "65aa...",
+      "name": "Alpha Workspace",
+      "slug": "alpha-workspace",
+      "status": "active",
+      "createdAt": "2026-04-01T00:00:00.000Z",
+      "owner": {
+        "_id": "65u1...",
+        "email": "owner@example.com",
+        "name": "Alpha Owner"
+      },
+      "billing": {
+        "_id": "65sb...",
+        "status": "trialing",
+        "provider": "stripe",
+        "planKey": "starter",
+        "trialEndsAt": "2026-04-20T00:00:00.000Z",
+        "currentPeriodEnd": "2026-04-20T00:00:00.000Z",
+        "graceEndsAt": null,
+        "pastDueAt": null,
+        "cancelAtPeriodEnd": false,
+        "lastSyncedAt": null
+      },
+      "usage": {
+        "seatsUsed": 3,
+        "activeMailboxes": 2,
+        "storageBytes": 0
+      },
+      "entitlementSummary": {
+        "slaEnabled": true
+      }
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `422` `errors.validation.failed`
 - Notes:
   - the list stays intentionally compact; deeper billing, entitlement, usage, and ticket inspection belongs to `GET /api/admin/workspaces/:id`
   - each row includes a lightweight entitlement summary with `entitlementSummary.slaEnabled` when available
+  - Frontend note:
+    - This is the standard paginated admin list endpoint; use `q` or `search` for search UIs and keep sort values on the documented allowlist only.
 
 ### GET `/api/admin/workspaces/:id`
 
@@ -6831,6 +7336,71 @@ npm run mailboxes:backfill-default
 - Requirements:
   - valid platform-admin bearer access token
   - role must be `super_admin|platform_admin|platform_support`
+- Success `200` shape:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "workspace": {
+    "_id": "65aa...",
+    "name": "Alpha Workspace",
+    "slug": "alpha-workspace",
+    "status": "active",
+    "ownerUserId": "65u1...",
+    "defaultMailboxId": "65mb...",
+    "defaultSlaPolicyId": "65sl...",
+    "createdAt": "2026-04-01T00:00:00.000Z",
+    "updatedAt": "2026-04-10T00:00:00.000Z"
+  },
+  "owner": {
+    "_id": "65u1...",
+    "email": "owner@example.com",
+    "name": "Alpha Owner"
+  },
+  "billing": {
+    "subscription": {
+      "_id": "65sb...",
+      "status": "trialing",
+      "provider": "stripe",
+      "planKey": "starter"
+    }
+  },
+  "usage": {
+    "current": {
+      "seatsUsed": 3,
+      "activeMailboxes": 2,
+      "storageBytes": 0
+    }
+  },
+  "counts": {
+    "members": {
+      "active": 2,
+      "suspended": 0,
+      "removed": 0
+    },
+    "pendingInvites": 1,
+    "mailboxes": {
+      "total": 2,
+      "active": 2
+    },
+    "tickets": {
+      "total": 2,
+      "statusBreakdown": {
+        "open": 1,
+        "solved": 1
+      }
+    }
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
+- Frontend note:
+  - Use detail inspection screens for deeper billing/usage/counts, not the list endpoint.
 
 ### POST `/api/admin/workspaces/:id/suspend`
 
@@ -6838,10 +7408,32 @@ npm run mailboxes:backfill-default
 - Requirements:
   - valid platform-admin bearer access token
   - role must be `super_admin`
+- Request body:
+  - optional empty object
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.admin.workspaceSuspended",
+  "message": "Workspace suspended successfully.",
+  "changed": true,
+  "workspace": {
+    "_id": "65aa...",
+    "status": "suspended"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
 - Notes:
   - idempotent
   - does not cancel, downgrade, or reset billing state
   - blocks normal workspace runtime access while keeping the workspace inspectable to platform admins
+  - Frontend note:
+    - After success, refetch admin workspace detail or list data rather than mutating all derived fields locally.
 
 ### POST `/api/admin/workspaces/:id/reactivate`
 
@@ -6849,10 +7441,32 @@ npm run mailboxes:backfill-default
 - Requirements:
   - valid platform-admin bearer access token
   - role must be `super_admin`
+- Request body:
+  - optional empty object
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.admin.workspaceReactivated",
+  "message": "Workspace reactivated successfully.",
+  "changed": true,
+  "workspace": {
+    "_id": "65aa...",
+    "status": "trial"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
 - Notes:
   - idempotent
   - does not modify plan, usage, or billing lifecycle state
   - when restoring from suspension, the workspace returns to `trial` if its subscription is still `trialing`; otherwise it returns to `active`
+  - Frontend note:
+    - Workspace runtime access can resume immediately after successful reactivation, but admin UIs should still refetch canonical detail/list state.
 
 ### POST `/api/admin/workspaces/:id/extend-trial`
 
@@ -6868,10 +7482,31 @@ npm run mailboxes:backfill-default
 }
 ```
 
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.admin.workspaceTrialExtended",
+  "message": "Workspace trial extended successfully.",
+  "trialExtension": {
+    "workspaceId": "65aa...",
+    "daysExtended": 5,
+    "subscriptionStatus": "trialing",
+    "trialEndsAt": "2026-04-25T00:00:00.000Z",
+    "currentPeriodEnd": "2026-04-25T00:00:00.000Z"
+  }
+}
+```
+
 - Common errors:
   - `409` `errors.billing.trialExtensionNotAllowed`
   - `422` `errors.validation.failed`
+  - `401` `errors.platformAuth.invalidToken | errors.platformAuth.sessionRevoked`
+  - `403` `errors.platformAuth.forbiddenRole`
+  - `404` `errors.workspace.notFound`
 - Notes:
   - `days` must be a positive integer
   - the current implementation caps extensions at `30` days
   - the action does not reset usage or recreate billing foundations
+  - Frontend note:
+    - After success, refetch workspace detail if the UI displays updated trial dates or billing state.

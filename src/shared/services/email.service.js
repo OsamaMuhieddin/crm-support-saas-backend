@@ -1,20 +1,14 @@
 import nodemailer from 'nodemailer';
-import sendgridMail from '@sendgrid/mail';
 import { authConfig } from '../../config/auth.config.js';
 
 let smtpTransporter = null;
 
-const hasSendgrid = Boolean(authConfig.email.sendgridApiKey);
 const hasSmtp = Boolean(
   authConfig.email.smtp.host &&
   authConfig.email.smtp.port &&
   authConfig.email.smtp.user &&
   authConfig.email.smtp.pass
 );
-
-if (hasSendgrid) {
-  sendgridMail.setApiKey(authConfig.email.sendgridApiKey);
-}
 
 const getSmtpTransporter = () => {
   if (!hasSmtp) {
@@ -39,21 +33,6 @@ const getSmtpTransporter = () => {
 const sendMail = async ({ to, subject, text, html, debugPayload }) => {
   const from = authConfig.email.from;
 
-  if (hasSendgrid) {
-    if (!from) {
-      throw new Error('EMAIL_FROM is required when SENDGRID_API_KEY is set');
-    }
-
-    await sendgridMail.send({
-      to,
-      from,
-      subject,
-      text,
-      html,
-    });
-    return;
-  }
-
   const transporter = getSmtpTransporter();
   if (transporter) {
     await transporter.sendMail({
@@ -72,7 +51,7 @@ const sendMail = async ({ to, subject, text, html, debugPayload }) => {
   }
 
   throw new Error(
-    'No email provider configured. Set SENDGRID_API_KEY or NODEMAILER_* env vars.'
+    'No email provider configured. Set SMTP_* env vars.'
   );
 };
 
