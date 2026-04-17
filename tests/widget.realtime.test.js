@@ -40,7 +40,10 @@ const signupAndCaptureOtp = async ({
 
   return {
     response,
-    code: extractOtpCodeFromLogs(logs),
+    code: extractOtpCodeFromLogs(logs, {
+      to: email,
+      purpose: 'verifyEmail',
+    }),
   };
 };
 
@@ -424,7 +427,10 @@ describe('Widget public realtime', () => {
           email: 'widget-realtime-reject@example.com',
         })
       );
-      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs);
+      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs, {
+        to: 'widget-realtime-reject@example.com',
+        purpose: 'widgetRecovery',
+      });
       const recoveryVerify = await verifyPublicWidgetRecovery({
         publicKey: widget.body.widget.publicKey,
         email: 'widget-realtime-reject@example.com',
@@ -554,7 +560,10 @@ describe('Widget public realtime', () => {
           email: 'widget-realtime-recovery-replace@example.com',
         })
       );
-      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs);
+      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs, {
+        to: 'widget-realtime-recovery-replace@example.com',
+        purpose: 'widgetRecovery',
+      });
 
       const { httpServer, baseUrl } = await startRealtimeRuntime();
       let originalClient = null;
@@ -1017,7 +1026,10 @@ describe('Widget public realtime', () => {
           email: 'widget-realtime-recovery@example.com',
         })
       );
-      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs);
+      const recoveryCode = extractOtpCodeFromLogs(recoveryRequest.logs, {
+        to: 'widget-realtime-recovery@example.com',
+        purpose: 'widgetRecovery',
+      });
       const recoveryVerify = await verifyPublicWidgetRecovery({
         publicKey: widget.body.widget.publicKey,
         email: 'widget-realtime-recovery@example.com',
@@ -1090,7 +1102,11 @@ describe('Widget public realtime', () => {
           })
         );
         const secondRecoveryCode = extractOtpCodeFromLogs(
-          secondRecoveryRequest.logs
+          secondRecoveryRequest.logs,
+          {
+            to: 'widget-realtime-recovery@example.com',
+            purpose: 'widgetRecovery',
+          }
         );
         const secondRecoveryVerify = await verifyPublicWidgetRecovery({
           publicKey: widget.body.widget.publicKey,

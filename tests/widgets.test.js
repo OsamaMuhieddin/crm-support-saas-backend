@@ -1,5 +1,6 @@
 import request from 'supertest';
 import app from '../src/app.js';
+import { realtimeConfig } from '../src/config/realtime.config.js';
 import { TICKET_CHANNEL } from '../src/constants/ticket-channel.js';
 import { TICKET_STATUS } from '../src/constants/ticket-status.js';
 import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
@@ -319,7 +320,7 @@ describe('Widget foundations + management endpoints', () => {
       });
       expect(bootstrap.body.realtime).toEqual(
         expect.objectContaining({
-          enabled: true,
+          enabled: realtimeConfig.enabled,
           auth: expect.objectContaining({
             mode: 'widget_session',
             field: 'widgetSessionToken',
@@ -889,7 +890,7 @@ describe('Widget foundations + management endpoints', () => {
       expect(firstInit.body.session.token).toMatch(/^wgs_[a-f0-9]{48}$/);
       expect(firstInit.body.realtime).toEqual(
         expect.objectContaining({
-          enabled: true,
+          enabled: realtimeConfig.enabled,
           auth: expect.objectContaining({
             mode: 'widget_session',
             field: 'widgetSessionToken',

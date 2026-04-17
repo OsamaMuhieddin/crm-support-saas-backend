@@ -59,7 +59,10 @@ const signupAndCaptureOtp = async ({
 
   return {
     response,
-    code: extractOtpCodeFromLogs(logs),
+    code: extractOtpCodeFromLogs(logs, {
+      to: email,
+      purpose: 'verifyEmail',
+    }),
   };
 };
 
@@ -641,7 +644,10 @@ describe('Realtime collaboration foundation', () => {
           email: owner.email,
         })
       );
-      const resetCode = extractOtpCodeFromLogs(forgot.logs);
+      const resetCode = extractOtpCodeFromLogs(forgot.logs, {
+        to: owner.email,
+        purpose: 'resetPassword',
+      });
 
       expect(forgot.response.status).toBe(200);
       expect(resetCode).toBeTruthy();
