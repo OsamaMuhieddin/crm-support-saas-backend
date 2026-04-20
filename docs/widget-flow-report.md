@@ -196,13 +196,19 @@ Behavior:
 - if a valid `wgs_*` token is provided, the session is resumed
 - otherwise a new widget session is created
 - a ticket is not required yet
-- conversation state may still be `idle`
+- conversation state may be `idle`, `active`, or `closed` depending on the resolved current ticket snapshot
 - if a stale or invalidated `wgs_*` is provided, the old session is not resumed and the backend safely starts a fresh session instead
 
 Relevant files:
 
 - `src/modules/widget/services/widget-public.service.js`
 - `src/modules/widget/services/widget-session-view.service.js`
+
+Current conversation state semantics:
+
+- `idle` means the session has no current bound conversation
+- `active` means the session is bound to a current non-closed ticket
+- `closed` means the session still resolves to a closed ticket snapshot
 
 ### 3. First message
 
@@ -226,7 +232,7 @@ Behavior:
 - if no eligible ticket exists, create a new normal CRM ticket
 - create the first message as a normal `customer_message`
 - update the widget session ticket pointer
-- return the active widget session token for the resolved session context
+- return the canonical active widget session token for the resolved session context
 
 Ticket creation details:
 
@@ -475,7 +481,7 @@ Relevant files:
 ### Reconnect and recovery behavior
 
 - valid `wgs_*` sessions can reconnect and resubscribe safely
-- stale or invalidated widget sessions fail auth
+- stale or invalidated widget sessions fail auth and stale widget sockets are disconnected consistently
 - recovery continue issues a fresh `wgs_*` bound to the recovered ticket
 - recovery start-new issues a fresh `wgs_*` bound to the new empty session context
 
