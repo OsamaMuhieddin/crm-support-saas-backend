@@ -4,6 +4,8 @@ import cors from 'cors';
 import morgan from 'morgan';
 
 import routes from './routes/index.js';
+import { httpConfig, isCorsOriginAllowed } from './config/http.config.js';
+import { createError } from './shared/errors/createError.js';
 import langMiddleware from './shared/middlewares/lang.js';
 import { t, DEFAULT_LANG } from './i18n/index.js';
 
@@ -20,11 +22,27 @@ if (process.env.TRUST_PROXY) {
 }
 
 // Middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (isCorsOriginAllowed(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        createError(
+          'CORS origin is not allowed. Configure CORS_ALLOWED_ORIGINS.',
+          403
+        )
+      );
+    },
+  })
+);
 app.use('/api/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
 app.use(express.json({ limit: '2mb' }));
 app.use(morgan('dev'));
 app.use(langMiddleware);
+app.locals.httpConfig = httpConfig;
 
 // Success-response localization wrapper
 app.use((req, res, next) => {

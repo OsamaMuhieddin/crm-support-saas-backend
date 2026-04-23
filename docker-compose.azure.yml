@@ -1,0 +1,87 @@
+services:
+  api:
+    image: ${APP_IMAGE}
+    container_name: crm-support-api
+    env_file:
+      - ${APP_ENV_FILE:-.env.azure}
+    depends_on:
+      - mongo
+      - redis
+      - minio
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:5000:5000'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - |
+          const http = require('node:http');
+          const req = http.get('http://127.0.0.1:5000/api/health', (res) => {
+            process.exit(res.statusCode === 200 ? 0 : 1);
+          });
+          req.on('error', () => process.exit(1));
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  billing-worker:
+    image: ${APP_IMAGE}
+    container_name: crm-support-billing-worker
+    command: ["node", "src/workers/billing.worker.js"]
+    env_file:
+      - ${APP_ENV_FILE:-.env.azure}
+    depends_on:
+      - mongo
+      - redis
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    container_name: crm-support-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        - CMD
+        - mongosh
+        - --quiet
+        - --eval
+        - db.adminCommand('ping').ok
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine
+    container_name: crm-support-redis
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio:
+    image: minio/minio:latest
+    container_name: crm-support-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    restart: unless-stopped
+    volumes:
+      - minio_data:/data
+
+volumes:
+  mongo_data:
+  redis_data:
+  minio_data:

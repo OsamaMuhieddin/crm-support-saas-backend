@@ -475,3 +475,155 @@ Rules:
 - Resolution is satisfied by `solved`, paused by `waiting_on_customer`, and resumed on reopen from remaining business time.
 - Action endpoints return compact action payloads; full resource views belong to list/detail endpoints.
 - BullMQ/jobs, reminders, escalations, next-response SLA, holidays, cycle history, and reporting dashboards are not part of SLA v1.
+
+## Azure VM Dev Deployment (GHCR + Docker Compose + Host NGINX)
+
+This repo includes a minimal single-VM Azure deployment path for dev/demo use:
+
+- GitHub Actions builds the backend image
+- the image is pushed to GHCR
+- the Azure VM pulls the exact immutable image tag from GHCR
+- Docker Compose runs `api`, `mongo`, `redis`, `billing-worker`, and `minio`
+- host-installed NGINX terminates HTTPS and proxies to the local Dockerized API
+
+### Deployment files
+
+- `Dockerfile`
+- `.dockerignore`
+- `docker-compose.azure.yml`
+- `deploy/nginx.dev.conf`
+- `deploy/deploy.sh`
+- `deploy/bootstrap-vm.sh`
+- `.env.azure.example`
+- `.github/workflows/deploy-dev.yml`
+
+### Public exposure model
+
+Only these ports should be public on the VM:
+
+- `22` for SSH
+- `80` for HTTP
+- `443` for HTTPS
+
+Do not publicly expose:
+
+- MongoDB
+- Redis
+- MinIO API
+- MinIO console
+- backend port `5000`
+
+The Compose stack binds the backend only to `127.0.0.1:5000`, so NGINX is the public entrypoint.
+
+### Azure env file
+
+Keep `.env.example` for local development.
+
+`.env.azure.example` is a repo template/reference file.
+The real runtime file is `/opt/crm-support/.env.azure`.
+
+Create `/opt/crm-support/.env.azure` manually once from `.env.azure.example`.
+CI does not upload `.env.azure.example`, and CI should not overwrite `/opt/crm-support/.env.azure` after you create it.
+
+Azure values must use Docker service names, not localhost:
+
+```env
+MONGO_URI=mongodb://mongo:27017/crm_support_saas
+REDIS_URL=redis://redis:6379
+S3_ENDPOINT=minio
+TRUST_PROXY=1
+CORS_ALLOWED_ORIGINS=http://localhost:5173,https://app.dev.example.com
+REALTIME_CORS_ORIGIN=http://localhost:5173,https://app.dev.example.com
+```
+
+This supports the current local frontend calling the cloud backend, while leaving room for a later deployed frontend origin.
+
+### Stripe local vs Azure
+
+`docker-compose.stripe.yml` remains local-only and should not be deployed to Azure.
+
+Local webhook flow:
+
+- run the backend locally
+- run `stripe-cli` from `docker-compose.stripe.yml`
+- use the local Stripe CLI `whsec_...` value in local `.env`
+
+Azure webhook flow:
+
+- create a Stripe Dashboard webhook endpoint for:
+  - `https://api.dev.example.com/api/billing/webhooks/stripe`
+- put that endpoint signing secret into Azure `STRIPE_WEBHOOK_SECRET`
+- do not reuse the local Stripe CLI secret in Azure
+
+`STRIPE_CHECKOUT_SUCCESS_URL`, `STRIPE_CHECKOUT_CANCEL_URL`, and `STRIPE_PORTAL_RETURN_URL` remain env-driven so they can point to the current local frontend or a future deployed frontend.
+
+### One-time Azure VM bootstrap
+
+Run this once on the VM:
+
+```bash
+sudo bash deploy/bootstrap-vm.sh
+```
+
+Then:
+
+1. Copy `deploy/nginx.dev.conf` to `/etc/nginx/sites-available/crm-support-dev`
+2. Replace `api.dev.example.com` with the real API hostname
+3. Enable the site
+4. Run `sudo nginx -t && sudo systemctl reload nginx`
+5. Point DNS to the VM public IP
+6. Run `sudo certbot --nginx -d api.dev.example.com`
+7. Create `/opt/crm-support/.env.azure` manually from `.env.azure.example`
+
+### GitHub Actions deployment flow
+
+The workflow triggers on pushes to the `dev` branch.
+
+It performs:
+
+1. `npm ci`
+2. basic validation tests
+3. Docker image build
+4. GHCR push
+5. upload of deployment files to the VM
+6. SSH deploy on the VM
+7. Docker Compose restart
+8. smoke verification against `/api/health`
+
+The workflow does not upload `.env.azure.example`.
+It expects the real runtime file `/opt/crm-support/.env.azure` to already exist on the VM.
+
+### GitHub secrets required
+
+- `AZURE_VM_HOST`
+- `AZURE_VM_USER`
+- `AZURE_VM_SSH_KEY`
+- `GHCR_PULL_USERNAME`
+- `GHCR_PULL_TOKEN`
+
+Recommended `GHCR_PULL_TOKEN` scope:
+
+- `read:packages`
+
+### GHCR image naming convention
+
+The workflow publishes:
+
+- `ghcr.io/<lowercase-github-owner>/crm-support-saas-backend:sha-<commit-sha>`
+- `ghcr.io/<lowercase-github-owner>/crm-support-saas-backend:dev`
+
+Deployments use the immutable `sha-<commit-sha>` tag.
+
+### Assumptions
+
+- The VM is already running when CI deploys
+- DNS already points the API hostname to the VM public IP
+- NGINX is already installed on the VM
+- `/opt/crm-support/.env.azure` already exists
+
+The workflow does not start a stopped or deallocated Azure VM. For cost-saving stop/deallocate patterns, use a separate start-VM workflow or a manual wake-up step before deploy.
+
+### Rollback-safe note
+
+`deploy/deploy.sh` records deploy history in `deploy-history.log`.
+If a deploy is bad, rerun the script with the previous immutable `APP_IMAGE` tag.
