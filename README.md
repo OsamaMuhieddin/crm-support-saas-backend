@@ -577,7 +577,7 @@ Then:
 
 ### GitHub Actions deployment flow
 
-The workflow triggers on pushes to the `dev` branch.
+The workflow triggers on pushes to the `main` branch.
 
 It performs:
 
