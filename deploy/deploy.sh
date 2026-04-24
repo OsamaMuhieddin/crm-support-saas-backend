@@ -28,6 +28,8 @@ fi
 
 DEPLOY_APP_IMAGE="$APP_IMAGE"
 
+sed -i 's/\r$//' "$APP_ENV_FILE"
+
 set -a
 source "$APP_ENV_FILE"
 set +a
