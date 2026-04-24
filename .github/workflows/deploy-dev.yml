@@ -16,6 +16,16 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.adminCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -31,6 +41,12 @@ jobs:
         run: npm ci
 
       - name: Run basic validation tests
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://127.0.0.1:27017/crm_support_saas_test
+          STORAGE_PROVIDER: local
+          STORAGE_LOCAL_ROOT: .tmp/test-storage
+          S3_BUCKET: crm-support-test-files
         run: npm test -- --runTestsByPath tests/storage.config.test.js tests/i18n.interpolation.test.js tests/i18n.ar.test.js
 
       - name: Compute image metadata
