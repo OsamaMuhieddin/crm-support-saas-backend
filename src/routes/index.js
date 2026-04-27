@@ -16,9 +16,11 @@ import widgetRouter from '../modules/widget/index.js';
 import realtimeRouter from '../modules/realtime/index.js';
 import billingRouter from '../modules/billing/index.js';
 import reportsRouter from '../modules/reports/index.js';
+import swaggerDocsRouter from '../docs/swagger.router.js';
 
 const router = Router();
 
+router.use(swaggerDocsRouter);
 router.use('/health', healthRouter);
 
 // Mounted CRM runtime modules
