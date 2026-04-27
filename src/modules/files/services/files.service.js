@@ -48,6 +48,7 @@ const resolveBucketName = () => {
 };
 
 const normalizeObjectId = (value) => String(value || '');
+const normalizeNullableObjectId = (value) => (value ? String(value) : null);
 const toObjectIdIfValid = (value) => {
   if (value instanceof mongoose.Types.ObjectId) {
     return value;
@@ -63,7 +64,7 @@ const toObjectIdIfValid = (value) => {
 const buildFileView = (file, options = {}) => ({
   _id: normalizeObjectId(file._id),
   workspaceId: normalizeObjectId(file.workspaceId),
-  uploadedByUserId: normalizeObjectId(file.uploadedByUserId),
+  uploadedByUserId: normalizeNullableObjectId(file.uploadedByUserId),
   url: file.url,
   sizeBytes: file.sizeBytes,
   mimeType: file.mimeType,

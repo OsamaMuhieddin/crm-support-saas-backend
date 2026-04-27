@@ -73,6 +73,20 @@ const recoveryTokenField = body('recoveryToken')
   .custom((value) => PUBLIC_WIDGET_RECOVERY_TOKEN_PATTERN.test(value))
   .withMessage('errors.validation.invalid');
 
+const validateUniqueMongoIdArray = (field) =>
+  body(field).custom((value) => {
+    if (!Array.isArray(value)) {
+      return true;
+    }
+
+    const ids = value.map((item) => String(item));
+    if (new Set(ids).size !== ids.length) {
+      throw new Error('errors.validation.duplicateValues');
+    }
+
+    return true;
+  });
+
 const emptyBodyValidation = (req) => {
   const requestBody = req.body || {};
   const bodyFields = Object.keys(requestBody);
@@ -406,9 +420,38 @@ export const publicWidgetMessageValidator = [
     .trim()
     .isLength({ min: 1, max: 5000 })
     .withMessage('errors.validation.lengthRange'),
+  body('attachmentFileIds')
+    .optional()
+    .isArray({ max: 20 })
+    .withMessage('errors.validation.invalid'),
+  body('attachmentFileIds.*')
+    .optional()
+    .isMongoId()
+    .withMessage('errors.validation.invalidId'),
+  validateUniqueMongoIdArray('attachmentFileIds'),
   buildAllowedBodyValidation({
-    allowedFields: ['sessionToken', 'name', 'email', 'message'],
+    allowedFields: [
+      'sessionToken',
+      'name',
+      'email',
+      'message',
+      'attachmentFileIds',
+    ],
     requireAtLeastOne: false,
+  }),
+];
+
+export const publicWidgetFileUploadValidator = [
+  publicWidgetKeyParam,
+  body('sessionToken')
+    .isString()
+    .withMessage('errors.validation.invalid')
+    .trim()
+    .custom((value) => PUBLIC_WIDGET_SESSION_TOKEN_PATTERN.test(value))
+    .withMessage('errors.validation.invalid'),
+  buildAllowedBodyValidation({
+    allowedFields: ['sessionToken'],
+    requireAtLeastOne: true,
   }),
 ];
 

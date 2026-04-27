@@ -421,14 +421,15 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 5. Use `POST /api/widgets/:id/activate` and `POST /api/widgets/:id/deactivate` for explicit operational state changes.
 6. Public widget clients call `GET /api/widgets/public/:publicKey/bootstrap` to fetch only safe bootstrap config plus safe realtime connection metadata.
 7. Public widget clients create or resume an opaque browser session through `POST /api/widgets/public/:publicKey/session`.
-8. Public widget clients send first and follow-up customer messages through `POST /api/widgets/public/:publicKey/messages`.
-9. Verified recovery starts with `POST /api/widgets/public/:publicKey/recovery/request`, verifies through `POST /api/widgets/public/:publicKey/recovery/verify`, then explicitly chooses `continue` or `start-new`.
-10. First widget messages resolve or create a CRM contact, create a normal internal ticket with `channel=widget`, and write a normal `customer_message`; follow-up messages append to the current eligible session ticket.
-11. Verified recovery is widget-scoped, email-OTP-based, and issues a fresh widget session token after `continue` or `start-new`.
-12. Public widget sockets authenticate with `wgs_*` widget session tokens only, subscribe through `widget.subscribe`, and are scoped to the server-verified current widget session.
-13. Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
-14. Public multi-conversation browsing, attachments, typing/presence, and SSE remain intentionally deferred.
-15. Frontend integration note:
+8. Public widget clients upload visitor files through `POST /api/widgets/public/:publicKey/files`, then send the returned file ids in `attachmentFileIds`.
+9. Public widget clients send first and follow-up customer messages through `POST /api/widgets/public/:publicKey/messages`.
+10. Verified recovery starts with `POST /api/widgets/public/:publicKey/recovery/request`, verifies through `POST /api/widgets/public/:publicKey/recovery/verify`, then explicitly chooses `continue` or `start-new`.
+11. First widget messages resolve or create a CRM contact, create a normal internal ticket with `channel=widget`, and write a normal `customer_message`; follow-up messages append to the current eligible session ticket.
+12. Verified recovery is widget-scoped, email-OTP-based, and issues a fresh widget session token after `continue` or `start-new`.
+13. Public widget sockets authenticate with `wgs_*` widget session tokens only, subscribe through `widget.subscribe`, and are scoped to the server-verified current widget session.
+14. Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
+15. Public multi-conversation browsing, typing/presence, and SSE remain intentionally deferred.
+16. Frontend integration note:
    - Do not assume widget session reuse if a stale public token is rejected; restart from public bootstrap/session and continue from the latest returned session token.
 
 <a id="common-frontend-recipes"></a>
@@ -439,7 +440,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Workspace switch -> replace returned access token -> call `GET /api/auth/me` -> reconnect sockets -> resubscribe rooms.
 - File upload -> keep returned file `_id` and `url` -> attach later in ticket/message mutations.
 - Ticket detail screen -> fetch REST detail/messages first -> connect socket -> subscribe to ticket room -> patch from events -> re-fetch when unsure.
-- Widget public client -> bootstrap -> session -> send message -> connect/subscribe widget realtime using the current `wgs_*` token.
+- Widget public client -> bootstrap -> session -> optionally upload files -> send message with `attachmentFileIds` -> connect/subscribe widget realtime using the current `wgs_*` token.
 - Billing portal / plan change / add-ons -> perform billing action -> refetch `GET /api/billing/summary`.
 - Platform-admin login -> store platform tokens separately from workspace-user tokens -> call `GET /api/admin/auth/me` -> fetch admin overview/metrics/workspaces as needed.
 
@@ -2987,6 +2988,7 @@ npm run mailboxes:backfill-default
 - Public widget endpoints are intentionally unauthenticated:
   - `GET /api/widgets/public/:publicKey/bootstrap`
   - `POST /api/widgets/public/:publicKey/session`
+  - `POST /api/widgets/public/:publicKey/files`
   - `POST /api/widgets/public/:publicKey/messages`
   - `POST /api/widgets/public/:publicKey/recovery/request`
   - `POST /api/widgets/public/:publicKey/recovery/verify`
@@ -3004,13 +3006,14 @@ npm run mailboxes:backfill-default
   - internal management APIs
   - public safe bootstrap read
   - public widget browser-session continuity
+  - public widget visitor file upload
   - public first/follow-up customer messages
+  - public widget message attachments through `attachmentFileIds`
   - public verified recovery request/verify/continue/start-new flow
   - public session-scoped realtime bootstrap/auth/subscription contract
   - CRM mapping into normal contacts, tickets, and ticket messages
 - Still intentionally postponed:
   - public multi-conversation browsing/history
-  - attachments
   - typing/presence
   - SSE
 
@@ -3022,6 +3025,8 @@ npm run mailboxes:backfill-default
 - Public widget sessions use an opaque browser-held token; the backend stores only `publicSessionKeyHash`.
 - Verified recovery uses widget-scoped email OTP plus a short-lived opaque `recoveryToken`; the lost browser session token is never the recovery authority.
 - Public bootstrap and public session/message responses do not expose `workspaceId`, `mailboxId`, or internal management metadata.
+- Public widget file uploads require a valid `wgs_*` session token, store `source=widget`, and tag server-side metadata with the resolved widget/session.
+- Public widget attachment ids are accepted only when the files belong to the same active widget session, are ready, and have not already been linked to a message.
 - Public bootstrap, session-init, and message action responses include safe realtime metadata for the widget client.
 - If a widget session has no current eligible non-closed ticket, the next customer message creates a new widget ticket; otherwise it appends to the current ticket.
 - Recovery `continue` creates a fresh widget session token that points back to the latest eligible recoverable widget ticket for that widget + verified identity.
@@ -3443,6 +3448,50 @@ npm run mailboxes:backfill-default
   - Frontend note:
     - Persist the latest `session.token` returned by the API and use it as the canonical widget-session token for later HTTP and socket calls.
 
+### POST `/api/widgets/public/:publicKey/files`
+
+- Purpose: upload one visitor file for the current public widget session before attaching it to a customer message.
+- Requirements:
+  - no Authorization header required
+  - widget must be active
+  - linked mailbox must still be active in the same workspace
+  - `sessionToken` must come from `POST /api/widgets/public/:publicKey/session`
+  - request must be `multipart/form-data`
+- Request form fields:
+  - `sessionToken` required string
+  - `file` required binary file
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.file.uploaded",
+  "message": "File uploaded successfully.",
+  "file": {
+    "_id": "6612...",
+    "url": "/api/files/6612.../download",
+    "sizeBytes": 18422,
+    "mimeType": "image/png",
+    "originalName": "screenshot.png",
+    "kind": "widget_attachment",
+    "source": "widget"
+  }
+}
+```
+
+- Common errors:
+  - `400` `errors.file.uploadFailed`
+  - `413` `errors.file.tooLarge`
+  - `422` `errors.validation.failed`
+  - `404` `errors.widget.notFound`
+  - `404` `errors.widget.sessionNotFound`
+- Anti-enumeration note:
+  - Missing widgets, inactive widgets, and mailbox-broken widgets all resolve as the same `404 errors.widget.notFound`.
+  - Unknown or stale widget session tokens resolve as `404 errors.widget.sessionNotFound`.
+- Notes:
+  - The public response intentionally omits `workspaceId`, `uploadedByUserId`, and internal metadata.
+  - The backend stores the uploaded file with `source=widget` and server-side widget/session metadata so later message attachment validation cannot be spoofed by public input.
+  - Uploading a file does not create a ticket message by itself. Send the returned file `_id` in `attachmentFileIds` on `POST /api/widgets/public/:publicKey/messages`.
+
 ### POST `/api/widgets/public/:publicKey/messages`
 
 - Purpose: send the first or next public customer message for the current widget browser session.
@@ -3451,6 +3500,7 @@ npm run mailboxes:backfill-default
   - widget must be active
   - linked mailbox must still be active in the same workspace
   - `sessionToken` must come from `POST /api/widgets/public/:publicKey/session`
+  - `attachmentFileIds`, when present, must reference files uploaded by the same widget session through `POST /api/widgets/public/:publicKey/files`
 - Request body:
 
 ```json
@@ -3458,7 +3508,8 @@ npm run mailboxes:backfill-default
   "sessionToken": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77",
   "name": "Jane Visitor",
   "email": "jane.visitor@example.com",
-  "message": "Need help with billing."
+  "message": "Need help with billing.",
+  "attachmentFileIds": ["6612..."]
 }
 ```
 
@@ -3467,7 +3518,6 @@ npm run mailboxes:backfill-default
 ```json
 {
   "messageKey": "success.widget.messageCreated",
-  "message": "Widget message sent successfully.",
   "session": {
     "token": "wgs_5bb78f0b7c55fdf3e3e4b0b1e3f3c6410f0f90a9ad0c4d77",
     "recoveryVerified": false,
@@ -3480,6 +3530,15 @@ npm run mailboxes:backfill-default
     "direction": "inbound",
     "sender": "customer",
     "bodyText": "Need help with billing.",
+    "attachments": [
+      {
+        "_id": "6612...",
+        "url": "/api/files/6612.../download",
+        "sizeBytes": 18422,
+        "mimeType": "image/png",
+        "originalName": "screenshot.png"
+      }
+    ],
     "createdAt": "2026-04-11T10:01:00.000Z"
   },
   "conversation": {
@@ -3501,20 +3560,25 @@ npm run mailboxes:backfill-default
     "subscribeEvent": "widget.subscribe",
     "unsubscribeEvent": "widget.unsubscribe",
     "events": ["widget.message.created", "widget.conversation.updated"]
-  }
+  },
+  "messageText": "Widget message sent successfully."
 }
 ```
 
 - Common errors:
   - `422` `errors.validation.failed`
+  - `404` `errors.file.notFound`
   - `404` `errors.widget.notFound`
   - `404` `errors.widget.sessionNotFound`
+  - `409` `errors.ticket.attachmentAlreadyLinked`
 - Anti-enumeration note:
   - Missing widgets, inactive widgets, and mailbox-broken widgets all resolve as the same `404 errors.widget.notFound`.
   - Unknown or stale widget session tokens resolve as `404 errors.widget.sessionNotFound`.
 - Notes:
   - `behavior.collectName` and `behavior.collectEmail` are UI hints for widget clients; the backend does not reject the message only because `name` or `email` is absent.
   - The widget mailbox always comes from the widget configuration, never from public request input.
+  - `attachmentFileIds` is optional, must be unique, and is limited to 20 ids.
+  - Public widget files can be attached only once to a message; message creation also links them to the root ticket for reverse lookup.
   - If email is present, contact matching prefers normalized `ContactIdentity(type=email)` and then direct contact email before creating a new contact.
   - The returned `session.token` always reflects the currently active widget session token for the resolved session context.
   - First widget messages create a normal internal ticket with `channel=widget` and a normal `customer_message`; later messages reuse the current non-closed session ticket when still eligible.

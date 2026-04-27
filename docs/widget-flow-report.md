@@ -222,11 +222,13 @@ Public request shape includes:
 - optional `name`
 - optional `email`
 - `message`
+- optional `attachmentFileIds`
 
 Behavior:
 
 - resolve widget from `publicKey`
 - resolve widget session from `wgs_*`
+- validate any attachment ids against files uploaded by the same widget session
 - resolve or create contact
 - find current eligible widget ticket for this session
 - if no eligible ticket exists, create a new normal CRM ticket
@@ -241,6 +243,7 @@ Ticket creation details:
 - ticket stores `widgetSessionId`
 - mailbox comes from widget configuration
 - contact comes from contact resolution logic
+- attachments, when present, are linked to the message and root ticket through the normal file link mechanism
 
 Relevant files:
 
@@ -248,13 +251,41 @@ Relevant files:
 - `src/modules/tickets/services/tickets.service.js`
 - `src/modules/tickets/models/ticket.model.js`
 
-### 4. Subsequent messages
+### 4. Public file upload
+
+Route:
+
+- `POST /api/widgets/public/:publicKey/files`
+
+Behavior:
+
+- accepts multipart `file` plus the current `sessionToken`
+- resolves widget and validates the `wgs_*` widget session
+- stores the file through the shared files module with `source=widget`
+- tags server-side file metadata with the resolved widget and session ids
+- returns a public-safe file summary only
+
+Attachment rules:
+
+- uploaded files do not create messages by themselves
+- the public client sends returned file ids in `attachmentFileIds`
+- message creation accepts only ready widget files from the same widget session
+- a public widget file can be linked to a message only once
+
+Relevant files:
+
+- `src/modules/widget/routes/widget.routes.js`
+- `src/modules/widget/services/widget-public.service.js`
+- `src/modules/files/services/files.service.js`
+
+### 5. Subsequent messages
 
 Behavior:
 
 - backend loads the session's current ticket
 - if the ticket is still eligible and not closed, append another normal `customer_message`
 - if the ticket is no longer eligible, the next message creates a new ticket
+- optional attachments follow the same same-session validation and file-link behavior as the first message
 
 Current rule:
 
@@ -529,7 +560,6 @@ Current widget implementation does not include:
 
 - customer account login or logout
 - public multi-thread inbox or history portal
-- attachments in widget flow
 - typing or presence
 - captcha
 - SSE

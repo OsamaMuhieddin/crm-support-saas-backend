@@ -11,6 +11,7 @@ import {
 } from '../../../shared/utils/object-id.js';
 import { Message } from '../../tickets/models/message.model.js';
 import { Ticket } from '../../tickets/models/ticket.model.js';
+import { File } from '../../files/models/file.model.js';
 import { WidgetSession } from '../models/widget-session.model.js';
 
 const SESSION_TOKEN_PREFIX = 'wgs_';
@@ -42,7 +43,16 @@ const PUBLIC_MESSAGE_PROJECTION = {
   type: 1,
   direction: 1,
   bodyText: 1,
+  attachmentFileIds: 1,
   createdAt: 1,
+};
+
+const PUBLIC_ATTACHMENT_PROJECTION = {
+  _id: 1,
+  url: 1,
+  sizeBytes: 1,
+  mimeType: 1,
+  originalName: 1,
 };
 
 export const normalizeWidgetSessionToken = (value) => {
@@ -64,13 +74,26 @@ export const buildPublicSessionView = ({ token, session }) => ({
   updatedAt: session.updatedAt,
 });
 
-export const buildPublicMessageView = (message) => ({
+const buildPublicAttachmentView = (file) => ({
+  _id: normalizeObjectId(file._id),
+  url: file.url,
+  sizeBytes: file.sizeBytes,
+  mimeType: file.mimeType,
+  originalName: file.originalName,
+});
+
+export const buildPublicMessageView = (message, attachmentsById = new Map()) => ({
   _id: normalizeObjectId(message._id),
   type: message.type,
   direction: message.direction || null,
   sender:
     message.type === TICKET_MESSAGE_TYPE.PUBLIC_REPLY ? 'agent' : 'customer',
   bodyText: message.bodyText,
+  attachments: Array.isArray(message.attachments)
+    ? message.attachments.map((file) => buildPublicAttachmentView(file))
+    : (message.attachmentFileIds || [])
+        .map((fileId) => attachmentsById.get(String(fileId)) || null)
+        .filter(Boolean),
   createdAt: message.createdAt,
 });
 
@@ -314,7 +337,31 @@ export const loadCurrentConversationMessages = async ({
     .select(PUBLIC_MESSAGE_PROJECTION)
     .lean();
 
-  return messages.map((message) => buildPublicMessageView(message));
+  const attachmentIds = new Set();
+  for (const message of messages) {
+    for (const fileId of message.attachmentFileIds || []) {
+      attachmentIds.add(String(fileId));
+    }
+  }
+
+  const files = attachmentIds.size
+    ? await File.find({
+        _id: {
+          $in: [...attachmentIds].map((fileId) => toObjectIdIfValid(fileId)),
+        },
+        workspaceId: toObjectIdIfValid(workspaceId),
+        deletedAt: null,
+      })
+        .select(PUBLIC_ATTACHMENT_PROJECTION)
+        .lean()
+    : [];
+  const attachmentsById = new Map(
+    files.map((file) => [String(file._id), buildPublicAttachmentView(file)])
+  );
+
+  return messages.map((message) =>
+    buildPublicMessageView(message, attachmentsById)
+  );
 };
 
 export const syncSessionTicketPointers = async ({ session, ticket = null }) => {

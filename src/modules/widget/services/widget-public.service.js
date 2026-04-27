@@ -15,6 +15,9 @@ import {
 } from '../../customers/utils/customer.helpers.js';
 import { Message } from '../../tickets/models/message.model.js';
 import { Ticket } from '../../tickets/models/ticket.model.js';
+import { File } from '../../files/models/file.model.js';
+import { FileLink } from '../../files/models/file-link.model.js';
+import { uploadFile } from '../../files/services/files.service.js';
 import { createTicket } from '../../tickets/services/tickets.service.js';
 import { createTicketMessage } from '../../tickets/services/ticket-messages.service.js';
 import { WidgetSession } from '../models/widget-session.model.js';
@@ -38,8 +41,35 @@ const PUBLIC_MESSAGE_PROJECTION = {
   type: 1,
   direction: 1,
   bodyText: 1,
+  attachmentFileIds: 1,
   createdAt: 1,
 };
+
+const PUBLIC_ATTACHMENT_PROJECTION = {
+  _id: 1,
+  url: 1,
+  sizeBytes: 1,
+  mimeType: 1,
+  originalName: 1,
+};
+
+const buildPublicAttachmentView = (file) => ({
+  _id: normalizeObjectId(file._id),
+  url: file.url,
+  sizeBytes: file.sizeBytes,
+  mimeType: file.mimeType,
+  originalName: file.originalName,
+});
+
+const buildPublicWidgetFileView = (file) => ({
+  _id: normalizeObjectId(file._id),
+  url: file.url,
+  sizeBytes: file.sizeBytes,
+  mimeType: file.mimeType,
+  originalName: file.originalName,
+  kind: file.kind,
+  source: file.source,
+});
 
 const buildSessionCreateSeed = ({
   contactId = null,
@@ -88,7 +118,58 @@ const normalizeIncomingProfile = (payload = {}) => ({
       field: 'email',
     }) || null,
   message: String(payload.message || '').trim(),
+  attachmentFileIds: Array.isArray(payload.attachmentFileIds)
+    ? payload.attachmentFileIds
+        .map((fileId) => normalizeNullableString(fileId))
+        .filter(Boolean)
+    : [],
 });
+
+const assertWidgetAttachmentFilesAllowed = async ({
+  workspaceId,
+  widgetId,
+  widgetSessionId,
+  attachmentFileIds = [],
+}) => {
+  if (!Array.isArray(attachmentFileIds) || attachmentFileIds.length === 0) {
+    return [];
+  }
+
+  const normalizedFileIds = attachmentFileIds.map((fileId) =>
+    toObjectIdIfValid(fileId)
+  );
+  const files = await File.find({
+    _id: { $in: normalizedFileIds },
+    workspaceId: toObjectIdIfValid(workspaceId),
+    deletedAt: null,
+    storageStatus: 'ready',
+    source: 'widget',
+    'metadata.widgetId': normalizeObjectId(widgetId),
+    'metadata.widgetSessionId': normalizeObjectId(widgetSessionId),
+  })
+    .select('_id')
+    .lean();
+
+  if (files.length !== normalizedFileIds.length) {
+    throw createError('errors.file.notFound', 404);
+  }
+
+  const linkedFiles = await FileLink.find({
+    workspaceId: toObjectIdIfValid(workspaceId),
+    fileId: { $in: normalizedFileIds },
+    entityType: 'message',
+    relationType: 'attachment',
+    deletedAt: null,
+  })
+    .select('fileId')
+    .lean();
+
+  if (linkedFiles.length > 0) {
+    throw createError('errors.ticket.attachmentAlreadyLinked', 409);
+  }
+
+  return attachmentFileIds;
+};
 
 export const createWidgetSessionWithToken = async ({
   workspaceId,
@@ -332,7 +413,27 @@ const loadLatestCustomerMessage = async ({ workspaceId, ticketId }) => {
     throw createError('errors.ticket.conversationInvariantFailed', 500);
   }
 
-  return message;
+  const attachmentIds = Array.isArray(message.attachmentFileIds)
+    ? message.attachmentFileIds
+    : [];
+  if (attachmentIds.length === 0) {
+    return message;
+  }
+
+  const files = await File.find({
+    _id: {
+      $in: attachmentIds.map((fileId) => toObjectIdIfValid(fileId)),
+    },
+    workspaceId: toObjectIdIfValid(workspaceId),
+    deletedAt: null,
+  })
+    .select(PUBLIC_ATTACHMENT_PROJECTION)
+    .lean();
+
+  return {
+    ...message,
+    attachments: files.map((file) => buildPublicAttachmentView(file)),
+  };
 };
 
 export const initializePublicWidgetSession = async ({
@@ -377,6 +478,45 @@ export const initializePublicWidgetSession = async ({
   };
 };
 
+export const uploadPublicWidgetFile = async ({
+  publicKey,
+  sessionToken,
+  file,
+}) => {
+  const widget = await findActivePublicWidgetByPublicKeyOrThrow({
+    publicKey,
+  });
+  const resolvedSessionToken = normalizeWidgetSessionToken(sessionToken);
+  const session = await findWidgetSessionByToken({
+    workspaceId: widget.workspaceId,
+    widgetId: widget._id,
+    sessionToken: resolvedSessionToken,
+  });
+
+  if (!session) {
+    throw createError('errors.widget.sessionNotFound', 404);
+  }
+
+  session.lastSeenAt = new Date();
+  await session.save();
+
+  const uploaded = await uploadFile({
+    workspaceId: widget.workspaceId,
+    uploadedByUserId: null,
+    file,
+    kind: 'widget_attachment',
+    source: 'widget',
+    metadata: {
+      widgetId: normalizeObjectId(widget._id),
+      widgetSessionId: normalizeObjectId(session._id),
+    },
+  });
+
+  return {
+    file: buildPublicWidgetFileView(uploaded.file),
+  };
+};
+
 export const createPublicWidgetMessage = async ({ publicKey, payload }) => {
   const widget = await findActivePublicWidgetByPublicKeyOrThrow({
     publicKey,
@@ -394,6 +534,13 @@ export const createPublicWidgetMessage = async ({ publicKey, payload }) => {
   if (!session) {
     throw createError('errors.widget.sessionNotFound', 404);
   }
+
+  const attachmentFileIds = await assertWidgetAttachmentFilesAllowed({
+    workspaceId: widget.workspaceId,
+    widgetId: widget._id,
+    widgetSessionId: session._id,
+    attachmentFileIds: normalized.attachmentFileIds,
+  });
 
   const contact = await resolveOrCreateSessionContact({
     workspaceId: widget.workspaceId,
@@ -426,6 +573,7 @@ export const createPublicWidgetMessage = async ({ publicKey, payload }) => {
         initialMessage: {
           type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
           bodyText: normalized.message,
+          attachmentFileIds,
         },
       },
       context: {
@@ -456,6 +604,7 @@ export const createPublicWidgetMessage = async ({ publicKey, payload }) => {
       payload: {
         type: TICKET_MESSAGE_TYPE.CUSTOMER_MESSAGE,
         bodyText: normalized.message,
+        attachmentFileIds,
       },
     });
 

@@ -6,6 +6,8 @@ import { TICKET_STATUS } from '../src/constants/ticket-status.js';
 import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
 import { ContactIdentity } from '../src/modules/customers/models/contact-identity.model.js';
 import { Contact } from '../src/modules/customers/models/contact.model.js';
+import { File } from '../src/modules/files/models/file.model.js';
+import { FileLink } from '../src/modules/files/models/file-link.model.js';
 import { Mailbox } from '../src/modules/mailboxes/models/mailbox.model.js';
 import { Message } from '../src/modules/tickets/models/message.model.js';
 import { Ticket } from '../src/modules/tickets/models/ticket.model.js';
@@ -212,6 +214,7 @@ const createPublicWidgetMessage = async ({
   name = undefined,
   email = undefined,
   message,
+  attachmentFileIds = undefined,
 }) => {
   const body = {
     sessionToken,
@@ -226,8 +229,27 @@ const createPublicWidgetMessage = async ({
     body.email = email;
   }
 
+  if (attachmentFileIds !== undefined) {
+    body.attachmentFileIds = attachmentFileIds;
+  }
+
   return request(app).post(`/api/widgets/public/${publicKey}/messages`).send(body);
 };
+
+const uploadPublicWidgetFile = async ({
+  publicKey,
+  sessionToken,
+  filename = 'visitor-note.txt',
+  content = 'hello from visitor',
+  mimeType = 'text/plain',
+}) =>
+  request(app)
+    .post(`/api/widgets/public/${publicKey}/files`)
+    .field('sessionToken', sessionToken)
+    .attach('file', Buffer.from(content), {
+      filename,
+      contentType: mimeType,
+    });
 
 const requestPublicWidgetRecovery = async ({ publicKey, email }) =>
   request(app)
@@ -1157,6 +1179,132 @@ describe('Widget foundations + management endpoints', () => {
         deletedAt: null,
       }).lean();
       expect(ticket.messageCount).toBe(2);
+    }
+  );
+
+  maybeDbTest(
+    'public widget visitors can upload files and attach them to customer messages',
+    async () => {
+      const owner = await createVerifiedUser({
+        email: 'widget-public-attachment-owner@example.com',
+      });
+
+      const mailbox = await createMailbox({
+        accessToken: owner.accessToken,
+        name: 'Public Attachment Mailbox',
+        emailAddress: 'widget-public-attachment-mailbox@example.com',
+      });
+      expect(mailbox.status).toBe(200);
+
+      const widget = await createWidget({
+        accessToken: owner.accessToken,
+        name: 'Public Attachment Widget',
+        mailboxId: mailbox.body.mailbox._id,
+      });
+      expect(widget.status).toBe(200);
+
+      const init = await initializePublicWidgetSession({
+        publicKey: widget.body.widget.publicKey,
+      });
+      expect(init.status).toBe(200);
+
+      const upload = await uploadPublicWidgetFile({
+        publicKey: widget.body.widget.publicKey,
+        sessionToken: init.body.session.token,
+        filename: 'issue.txt',
+        content: 'invoice screenshot placeholder',
+      });
+      expect(upload.status).toBe(200);
+      expect(upload.body.messageKey).toBe('success.file.uploaded');
+      expect(upload.body.file._id).toBeTruthy();
+      expect(upload.body.file.workspaceId).toBeUndefined();
+      expect(upload.body.file.uploadedByUserId).toBeUndefined();
+      expect(upload.body.file.metadata).toBeUndefined();
+      expect(upload.body.file.source).toBe('widget');
+      expect(upload.body.file.kind).toBe('widget_attachment');
+
+      const storedFile = await File.findById(upload.body.file._id).lean();
+      expect(storedFile).toBeTruthy();
+      expect(storedFile.uploadedByUserId).toBeNull();
+      expect(storedFile.metadata).toEqual(
+        expect.objectContaining({
+          widgetId: widget.body.widget._id,
+        })
+      );
+
+      const firstMessage = await createPublicWidgetMessage({
+        publicKey: widget.body.widget.publicKey,
+        sessionToken: init.body.session.token,
+        message: 'Please check the attached file.',
+        attachmentFileIds: [upload.body.file._id],
+      });
+      expect(firstMessage.status).toBe(200);
+      expect(firstMessage.body.message.attachments).toEqual([
+        expect.objectContaining({
+          _id: upload.body.file._id,
+          originalName: 'issue.txt',
+          mimeType: 'text/plain',
+        }),
+      ]);
+      expect(firstMessage.body.conversation.messageCount).toBe(1);
+
+      const session = await WidgetSession.findOne({
+        workspaceId: owner.workspaceId,
+        widgetId: widget.body.widget._id,
+        publicSessionKeyHash: hashValue(init.body.session.token),
+        deletedAt: null,
+      }).lean();
+      expect(session.ticketId).toBeTruthy();
+
+      const message = await Message.findOne({
+        workspaceId: owner.workspaceId,
+        ticketId: session.ticketId,
+        deletedAt: null,
+      }).lean();
+      expect(message.attachmentFileIds.map(String)).toEqual([
+        upload.body.file._id,
+      ]);
+
+      const links = await FileLink.find({
+        workspaceId: owner.workspaceId,
+        fileId: upload.body.file._id,
+        deletedAt: null,
+      }).lean();
+      expect(links).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            entityType: 'message',
+            relationType: 'attachment',
+          }),
+          expect.objectContaining({
+            entityType: 'ticket',
+            relationType: 'attachment',
+          }),
+        ])
+      );
+
+      const resumed = await initializePublicWidgetSession({
+        publicKey: widget.body.widget.publicKey,
+        sessionToken: init.body.session.token,
+      });
+      expect(resumed.status).toBe(200);
+      expect(resumed.body.conversation.messages[0].attachments).toEqual([
+        expect.objectContaining({
+          _id: upload.body.file._id,
+          originalName: 'issue.txt',
+        }),
+      ]);
+
+      const duplicateAttach = await createPublicWidgetMessage({
+        publicKey: widget.body.widget.publicKey,
+        sessionToken: init.body.session.token,
+        message: 'Try attaching the same file again.',
+        attachmentFileIds: [upload.body.file._id],
+      });
+      expect(duplicateAttach.status).toBe(409);
+      expect(duplicateAttach.body.messageKey).toBe(
+        'errors.ticket.attachmentAlreadyLinked'
+      );
     }
   );
 

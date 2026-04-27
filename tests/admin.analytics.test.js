@@ -126,6 +126,8 @@ const seedTicket = async ({
 
 const seedPlatformAnalyticsData = async () => {
   await syncBillingCatalog();
+  const now = Date.now();
+  const daysFromNow = (days) => new Date(now + days * 24 * 60 * 60 * 1000);
   const [starterPlan, growthPlan] = await Promise.all([
     Plan.findOne({ key: 'starter' }).select('_id').lean(),
     Plan.findOne({ key: 'growth' }).select('_id').lean(),
@@ -209,8 +211,8 @@ const seedPlatformAnalyticsData = async () => {
           addonItems: [],
           stripeSubscriptionId: 'sub_past_due_gamma',
           stripeCustomerId: 'cus_past_due_gamma',
-          graceEndsAt: new Date('2026-04-25T00:00:00.000Z'),
-          partialBlockStartsAt: new Date('2026-04-15T00:00:00.000Z'),
+          graceEndsAt: daysFromNow(7),
+          partialBlockStartsAt: daysFromNow(14),
           currentPeriodEnd: new Date('2026-05-10T00:00:00.000Z'),
           lastSyncedAt: new Date('2026-04-01T00:00:00.000Z'),
         },

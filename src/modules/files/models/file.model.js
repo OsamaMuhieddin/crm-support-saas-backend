@@ -22,7 +22,7 @@ const fileSchema = new mongoose.Schema(
     uploadedByUserId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-      required: true,
+      default: null,
       index: true,
     },
     provider: {
