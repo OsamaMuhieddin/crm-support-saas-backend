@@ -176,7 +176,20 @@ const ticketCreateBody = objectSchema(
     assigneeId: { ...idSchema('Assignee user id.'), nullable: true },
     initialMessage: ticketInitialMessage,
   },
-  { required: ['subject', 'contactId'], additionalProperties: false }
+  {
+    required: ['subject', 'contactId'],
+    additionalProperties: false,
+    example: {
+      subject: 'Cannot access billing portal',
+      contactId: '64f1a6f3b7c9a0a1b2c3d4e5',
+      priority: 'normal',
+      tagIds: ['64f1a6f3b7c9a0a1b2c3d4e6'],
+      initialMessage: {
+        type: 'customer_message',
+        bodyText: 'The customer cannot open the billing portal.',
+      },
+    },
+  }
 );
 
 const ticketUpdateBody = objectSchema(
@@ -227,6 +240,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Categories',
       summary: 'Create ticket category',
       operationId: 'createTicketCategory',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a ticket category. Authorization: owner or admin roleKey required. Parent category must be active and in the same workspace.',
       requestBody: jsonRequest(categoryBody(['name'])),
@@ -269,6 +283,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Categories',
       summary: 'Update ticket category',
       operationId: 'updateTicketCategory',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update category fields. Authorization: owner or admin roleKey required. At least one allowed field is required.',
       parameters: [dictionaryIdParam],
@@ -285,6 +300,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Categories',
       summary: 'Activate ticket category',
       operationId: 'activateTicketCategory',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: activate a category. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [dictionaryIdParam],
@@ -301,6 +317,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Categories',
       summary: 'Deactivate ticket category',
       operationId: 'deactivateTicketCategory',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: deactivate a category when business rules allow it. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [dictionaryIdParam],
@@ -334,6 +351,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Tags',
       summary: 'Create ticket tag',
       operationId: 'createTicketTag',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a ticket tag. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(tagBody(['name'])),
@@ -375,6 +393,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Tags',
       summary: 'Update ticket tag',
       operationId: 'updateTicketTag',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update a tag name. Authorization: owner or admin roleKey required. At least one allowed field is required.',
       parameters: [dictionaryIdParam],
@@ -391,6 +410,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Tags',
       summary: 'Activate ticket tag',
       operationId: 'activateTicketTag',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: activate a tag. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [dictionaryIdParam],
@@ -407,6 +427,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Tags',
       summary: 'Deactivate ticket tag',
       operationId: 'deactivateTicketTag',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: deactivate a tag when business rules allow it. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [dictionaryIdParam],
@@ -440,12 +461,28 @@ export const ticketsOpenApiPaths = {
       tags: 'Tickets',
       summary: 'Create ticket',
       operationId: 'createTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: create a protected workspace-scoped ticket. Authorization: owner, admin, or agent roleKey required. mailboxId defaults from workspace.defaultMailboxId when omitted.',
       requestBody: jsonRequest(ticketCreateBody),
       success: {
         messageKey: 'success.ticket.created',
         payload: { ticket: ref('Ticket') },
+        example: {
+          messageKey: 'success.ticket.created',
+          message: 'Ticket created successfully.',
+          ticket: {
+            _id: '64f1a6f3b7c9a0a1b2c3d4e5',
+            workspaceId: '64f1a6f3b7c9a0a1b2c3d4e0',
+            number: 1024,
+            subject: 'Cannot access billing portal',
+            status: 'open',
+            priority: 'normal',
+            channel: 'manual',
+            contactId: '64f1a6f3b7c9a0a1b2c3d4e5',
+            messageCount: 1,
+          },
+        },
       },
       errors: ['401', '403', '404', '409', '422', '500'],
     }),
@@ -465,6 +502,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Tickets',
       summary: 'Update ticket',
       operationId: 'updateTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: update ticket fields. Authorization: owner, admin, or agent roleKey required. Mailbox can change only while messageCount is 0.',
       parameters: [ticketIdParam],
@@ -481,6 +519,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Assign ticket',
       operationId: 'assignTicket',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: assign a ticket to an active operational member. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -502,6 +541,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Unassign ticket',
       operationId: 'unassignTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: remove the assignee when allowed. Authorization: owner, admin, or agent roleKey required; agents cannot steal or alter tickets assigned to another user. Action response is compact.',
       parameters: [ticketIdParam],
@@ -518,6 +558,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Self-assign ticket',
       operationId: 'selfAssignTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: assign the ticket to the current user when unassigned or already assigned to them. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -534,6 +575,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Update ticket status',
       operationId: 'updateTicketStatus',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: set ticket status to open, pending, waiting_on_customer, or solved. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -559,6 +601,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Solve ticket',
       operationId: 'solveTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: mark a ticket solved. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -575,6 +618,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Close ticket',
       operationId: 'closeTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: close a ticket. Closed tickets accept internal_note only until explicit reopen. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -591,6 +635,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Actions',
       summary: 'Reopen ticket',
       operationId: 'reopenTicket',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: reopen a solved or closed ticket. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [ticketIdParam],
@@ -652,6 +697,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Messages',
       summary: 'Create ticket message',
       operationId: 'createTicketMessage',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: add a manual-first message to a ticket. customer_message sets status open, public_reply sets waiting_on_customer, internal_note does not change status. Authorization: owner, admin, or agent roleKey required.',
       parameters: [ticketIdParam],
@@ -682,6 +728,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Participants',
       summary: 'Save ticket participant',
       operationId: 'saveTicketParticipant',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: create or update an internal participant as watcher or collaborator. Authorization: owner, admin, or agent roleKey required.',
       parameters: [ticketIdParam],
@@ -709,6 +756,7 @@ export const ticketsOpenApiPaths = {
       tags: 'Ticket Participants',
       summary: 'Remove ticket participant',
       operationId: 'removeTicketParticipant',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: remove an internal participant. Authorization: owner, admin, or agent roleKey required. Action response is compact.',
       parameters: [

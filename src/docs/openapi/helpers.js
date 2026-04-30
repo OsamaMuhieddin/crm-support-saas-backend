@@ -457,40 +457,8 @@ const AUTH_PROFILES = {
   }),
 };
 
-const inferAuthProfileName = (security, description) => {
-  const text = String(description || '');
-
-  if (security === 'tenant') {
-    if (
-      /Authorization:\s*owner,\s*admin,\s*or agent roleKey required/i.test(text)
-    ) {
-      return 'workspaceOwnerAdminAgent';
-    }
-
-    if (/Authorization:\s*owner or admin roleKey required/i.test(text)) {
-      return 'workspaceOwnerAdmin';
-    }
-
-    return 'tenant';
-  }
-
-  if (security === 'platform') {
-    if (/Authorization:\s*super_admin required/i.test(text)) {
-      return 'platformSuperAdmin';
-    }
-
-    if (/Authorization:\s*super_admin or platform_admin required/i.test(text)) {
-      return 'platformAnalytics';
-    }
-  }
-
-  return security;
-};
-
-const resolveAuthProfile = (security, description) => {
-  const profileName = inferAuthProfileName(security, description);
-  return AUTH_PROFILES[profileName] || AUTH_PROFILES.tenant;
-};
+const resolveAuthProfile = (security) =>
+  AUTH_PROFILES[security] || AUTH_PROFILES.tenant;
 
 const appendAuthorizationDescription = (description, auth) => {
   if (!auth?.protected || !auth.description) {
@@ -519,7 +487,7 @@ export const operation = ({
   success,
   errors = ['401', '403', '422', '500'],
 }) => {
-  const authProfile = resolveAuthProfile(security, description);
+  const authProfile = resolveAuthProfile(security);
   const resolvedAuth = auth
     ? { ...authProfile.auth, ...auth }
     : authProfile.auth;

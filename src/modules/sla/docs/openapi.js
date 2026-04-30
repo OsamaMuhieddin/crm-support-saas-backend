@@ -95,6 +95,7 @@ export const slaOpenApiPaths = {
       tags: 'Business Hours',
       summary: 'Create business hours',
       operationId: 'createBusinessHours',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a business-hours schedule. Authorization: owner or admin roleKey required. weeklySchedule must contain unique dayOfWeek values, valid HH:mm windows, and open days must have windows.',
       requestBody: jsonRequest(
@@ -133,6 +134,7 @@ export const slaOpenApiPaths = {
       tags: 'Business Hours',
       summary: 'Update business hours',
       operationId: 'updateBusinessHours',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update business-hours fields. Authorization: owner or admin roleKey required. At least one allowed field is required.',
       parameters: [pathIdParam()],
@@ -177,6 +179,7 @@ export const slaOpenApiPaths = {
       tags: 'SLA Policies',
       summary: 'Create SLA policy',
       operationId: 'createSlaPolicy',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create an SLA policy. Authorization: owner or admin roleKey required. rulesByPriority must include configured rules for each priority on create.',
       requestBody: jsonRequest(
@@ -218,6 +221,7 @@ export const slaOpenApiPaths = {
       tags: 'SLA Policies',
       summary: 'Update SLA policy',
       operationId: 'updateSlaPolicy',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update SLA policy fields. Authorization: owner or admin roleKey required. At least one allowed field is required.',
       parameters: [pathIdParam()],
@@ -234,6 +238,7 @@ export const slaOpenApiPaths = {
       tags: 'SLA Policies',
       summary: 'Activate SLA policy',
       operationId: 'activateSlaPolicy',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: activate an SLA policy. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -250,6 +255,7 @@ export const slaOpenApiPaths = {
       tags: 'SLA Policies',
       summary: 'Deactivate SLA policy',
       operationId: 'deactivateSlaPolicy',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: deactivate an SLA policy and clear or replace related defaults/overrides when needed. Authorization: owner or admin roleKey required. Action response is compact plus deactivation impact metadata.',
       parameters: [pathIdParam()],
@@ -279,6 +285,7 @@ export const slaOpenApiPaths = {
       tags: 'SLA Policies',
       summary: 'Set default SLA policy',
       operationId: 'setDefaultSlaPolicy',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: set an active SLA policy as the workspace default. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],

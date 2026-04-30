@@ -63,6 +63,48 @@ const documentationOpenApiPaths = {
       },
     }),
   },
+  '/docs/realtime': {
+    get: operation({
+      tags: 'API Documentation',
+      summary: 'Realtime AsyncAPI UI',
+      operationId: 'getRealtimeAsyncApiUi',
+      security: 'public',
+      includeLang: false,
+      description:
+        'Purpose: serve a lightweight HTML viewer for the Socket.IO AsyncAPI realtime contract.',
+      responses: {
+        200: {
+          description: 'HTML realtime AsyncAPI viewer.',
+          content: {
+            'text/html': {
+              schema: stringSchema(),
+            },
+          },
+        },
+      },
+    }),
+  },
+  '/docs/realtime.json': {
+    get: operation({
+      tags: 'API Documentation',
+      summary: 'Raw realtime AsyncAPI document',
+      operationId: 'getRealtimeAsyncApiDocument',
+      security: 'public',
+      includeLang: false,
+      description:
+        'Purpose: return the raw AsyncAPI JSON document for Socket.IO realtime events. This route intentionally bypasses the API success-envelope wrapper.',
+      responses: {
+        200: {
+          description: 'AsyncAPI document.',
+          content: {
+            'application/json': {
+              schema: objectSchema({}, { additionalProperties: true }),
+            },
+          },
+        },
+      },
+    }),
+  },
 };
 
 export const openApiDocument = {
@@ -81,6 +123,7 @@ export const openApiDocument = {
       '',
       '- Authorization: Bearer access token for protected endpoints.',
       '- x-lang: optional en or ar response language; defaults to en.',
+      '- Realtime Socket.IO contract: GET /docs/realtime or GET /docs/realtime.json.',
       '',
       'Quick Start Flows',
       '',

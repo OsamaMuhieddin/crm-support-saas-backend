@@ -74,6 +74,7 @@ export const reportsOpenApiPaths = {
       tags: 'Reports',
       summary: 'Get team report',
       operationId: 'getReportsTeam',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return team reporting metrics for the active workspace. Authorization: owner or admin roleKey required. Date range may not exceed 366 days.',
       parameters: reportFilterParams,

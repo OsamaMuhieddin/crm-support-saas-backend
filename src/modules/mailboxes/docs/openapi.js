@@ -90,6 +90,7 @@ export const mailboxesOpenApiPaths = {
       tags: 'Mailboxes',
       summary: 'Create mailbox',
       operationId: 'createMailbox',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create an email mailbox. Authorization: owner or admin roleKey required. Referenced SLA policy must belong to the active workspace.',
       requestBody: jsonRequest(mailboxBody(['name'])),
@@ -142,6 +143,7 @@ export const mailboxesOpenApiPaths = {
       tags: 'Mailboxes',
       summary: 'Update mailbox',
       operationId: 'updateMailbox',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update mailbox settings. Authorization: owner or admin roleKey required. At least one allowed field is required.',
       parameters: [pathIdParam()],
@@ -160,6 +162,7 @@ export const mailboxesOpenApiPaths = {
       tags: 'Mailboxes',
       summary: 'Set default mailbox',
       operationId: 'setDefaultMailbox',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: make a mailbox the workspace default. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -178,6 +181,7 @@ export const mailboxesOpenApiPaths = {
       tags: 'Mailboxes',
       summary: 'Activate mailbox',
       operationId: 'activateMailbox',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: activate a mailbox. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -196,6 +200,7 @@ export const mailboxesOpenApiPaths = {
       tags: 'Mailboxes',
       summary: 'Deactivate mailbox',
       operationId: 'deactivateMailbox',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: deactivate a mailbox when business rules allow it. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],

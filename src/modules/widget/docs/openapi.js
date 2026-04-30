@@ -291,6 +291,7 @@ export const widgetOpenApiPaths = {
       tags: 'Widgets',
       summary: 'Create widget',
       operationId: 'createWidget',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a public support widget for a mailbox. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(widgetBody(['name', 'mailboxId'])),
@@ -333,6 +334,7 @@ export const widgetOpenApiPaths = {
       tags: 'Widgets',
       summary: 'Update widget',
       operationId: 'updateWidget',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update widget settings. Authorization: owner or admin roleKey required. At least one allowed top-level or nested field is required.',
       parameters: [pathIdParam()],
@@ -349,6 +351,7 @@ export const widgetOpenApiPaths = {
       tags: 'Widgets',
       summary: 'Activate widget',
       operationId: 'activateWidget',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: activate a widget. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -365,6 +368,7 @@ export const widgetOpenApiPaths = {
       tags: 'Widgets',
       summary: 'Deactivate widget',
       operationId: 'deactivateWidget',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: deactivate a widget. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam()],

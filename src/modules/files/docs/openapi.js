@@ -20,6 +20,7 @@ export const filesOpenApiPaths = {
       tags: 'Files',
       summary: 'Upload file',
       operationId: 'uploadFile',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: upload one file to workspace storage. Authorization: owner, admin, or agent roleKey required. The file is stored privately; public object URLs are not exposed.',
       requestBody: multipartRequest(
@@ -34,6 +35,22 @@ export const filesOpenApiPaths = {
         messageKey: 'success.file.uploaded',
         payload: {
           file: ref('File'),
+        },
+        example: {
+          messageKey: 'success.file.uploaded',
+          message: 'File uploaded successfully.',
+          file: {
+            _id: '64f1a6f3b7c9a0a1b2c3d4e5',
+            workspaceId: '64f1a6f3b7c9a0a1b2c3d4e0',
+            originalName: 'invoice.pdf',
+            mimeType: 'application/pdf',
+            extension: '.pdf',
+            sizeBytes: 24576,
+            kind: 'ticket_attachment',
+            source: 'agent',
+            downloadUrl: '/api/files/64f1a6f3b7c9a0a1b2c3d4e5/download',
+            isLinked: false,
+          },
         },
       },
       errors: ['401', '403', '422', '429', '500', '502'],
@@ -108,6 +125,7 @@ export const filesOpenApiPaths = {
       tags: 'Files',
       summary: 'Delete file',
       operationId: 'deleteFile',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: soft-delete a file and related links when allowed. Authorization: owner or admin roleKey required. Action response is compact.',
       parameters: [pathIdParam('fileId', 'File id.')],

@@ -72,6 +72,7 @@ export const workspacesOpenApiPaths = {
       tags: 'Workspace Invites',
       summary: 'List workspace invites',
       operationId: 'listWorkspaceInvites',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: list invites for the active workspace. Authorization: owner or admin roleKey required. Anti-enumeration: workspaceId must match the active token workspace.',
       parameters: [
@@ -98,6 +99,7 @@ export const workspacesOpenApiPaths = {
       tags: 'Workspace Invites',
       summary: 'Create workspace invite',
       operationId: 'createWorkspaceInvite',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: invite a user to the active workspace. Authorization: owner or admin roleKey required. Anti-enumeration: workspaceId must match the active token workspace.',
       parameters: [workspaceIdParam],
@@ -126,6 +128,7 @@ export const workspacesOpenApiPaths = {
       tags: 'Workspace Invites',
       summary: 'Get workspace invite',
       operationId: 'getWorkspaceInvite',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: fetch a single invite in the active workspace. Authorization: owner or admin roleKey required. Anti-enumeration: missing or cross-workspace invites return not found or forbidden according to tenant checks.',
       parameters: [workspaceIdParam, inviteIdParam],
@@ -142,6 +145,7 @@ export const workspacesOpenApiPaths = {
       tags: 'Workspace Invites',
       summary: 'Resend workspace invite',
       operationId: 'resendWorkspaceInvite',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: resend a pending invite. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [workspaceIdParam, inviteIdParam],
@@ -154,6 +158,7 @@ export const workspacesOpenApiPaths = {
       tags: 'Workspace Invites',
       summary: 'Revoke workspace invite',
       operationId: 'revokeWorkspaceInvite',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: revoke a pending invite. Authorization: owner or admin roleKey required. Request body accepts no fields.',
       parameters: [workspaceIdParam, inviteIdParam],

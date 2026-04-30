@@ -118,6 +118,7 @@ export const customersOpenApiPaths = {
       tags: 'Customer Contacts',
       summary: 'Create contact',
       operationId: 'createContact',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: create a contact in the active workspace. Authorization: owner, admin, or agent roleKey required. Referenced organization must belong to the same workspace.',
       requestBody: jsonRequest(contactBodySchema(['fullName'])),
@@ -166,6 +167,7 @@ export const customersOpenApiPaths = {
       tags: 'Customer Contacts',
       summary: 'Update contact',
       operationId: 'updateContact',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: update a contact. Authorization: owner, admin, or agent roleKey required. At least one allowed field is required.',
       parameters: [pathIdParam()],
@@ -198,6 +200,7 @@ export const customersOpenApiPaths = {
       tags: 'Contact Identities',
       summary: 'Create contact identity',
       operationId: 'createContactIdentity',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: add an email, phone, or WhatsApp identity to a contact. Authorization: owner, admin, or agent roleKey required.',
       parameters: [pathIdParam('id', 'Contact id.')],
@@ -241,6 +244,7 @@ export const customersOpenApiPaths = {
       tags: 'Customer Organizations',
       summary: 'Create organization',
       operationId: 'createOrganization',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: create a customer organization. Authorization: owner, admin, or agent roleKey required.',
       requestBody: jsonRequest(organizationBodySchema(['name'])),
@@ -291,6 +295,7 @@ export const customersOpenApiPaths = {
       tags: 'Customer Organizations',
       summary: 'Update organization',
       operationId: 'updateOrganization',
+      security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: update an organization. Authorization: owner, admin, or agent roleKey required. At least one allowed field is required.',
       parameters: [pathIdParam()],

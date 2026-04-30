@@ -199,7 +199,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Workspace Actions',
       summary: 'Suspend workspace',
       operationId: 'suspendAdminWorkspace',
-      security: 'platform',
+      security: 'platformSuperAdmin',
       description:
         'Purpose: suspend a tenant workspace. Authorization: super_admin required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -225,7 +225,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Workspace Actions',
       summary: 'Reactivate workspace',
       operationId: 'reactivateAdminWorkspace',
-      security: 'platform',
+      security: 'platformSuperAdmin',
       description:
         'Purpose: reactivate a suspended tenant workspace to active or trial depending on billing state. Authorization: super_admin required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -251,7 +251,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Workspace Actions',
       summary: 'Extend workspace trial',
       operationId: 'extendAdminWorkspaceTrial',
-      security: 'platform',
+      security: 'platformSuperAdmin',
       description:
         'Purpose: extend an eligible unmanaged trial subscription. Authorization: super_admin required. Action response is compact.',
       parameters: [pathIdParam()],
@@ -275,7 +275,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Analytics',
       summary: 'Get platform overview',
       operationId: 'getAdminOverview',
-      security: 'platform',
+      security: 'platformAnalytics',
       description:
         'Purpose: return platform overview analytics. Authorization: super_admin or platform_admin required. Request schema accepts no query parameters.',
       success: { payload: { overview: ref('AdminOverview') } },
@@ -287,7 +287,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Analytics',
       summary: 'Get platform metrics',
       operationId: 'getAdminMetrics',
-      security: 'platform',
+      security: 'platformAnalytics',
       description:
         'Purpose: return time-series platform metrics. Authorization: super_admin or platform_admin required. Date range may not exceed 366 days.',
       parameters: metricsParams,
@@ -300,7 +300,7 @@ export const adminOpenApiPaths = {
       tags: 'Admin Analytics',
       summary: 'Get platform billing overview',
       operationId: 'getAdminBillingOverview',
-      security: 'platform',
+      security: 'platformSuperAdmin',
       description:
         'Purpose: return platform billing overview. Authorization: super_admin required. Request schema accepts no query parameters.',
       success: {

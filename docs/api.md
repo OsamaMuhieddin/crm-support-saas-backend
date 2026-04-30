@@ -7,6 +7,7 @@ Frontend handoff note:
 ## Table of Contents
 
 - [Overview](#overview)
+- [Generated docs](#generated-docs)
 - [Frontend Integration Guide](#frontend-integration-guide)
 - [Auth model & authorization model](#auth-model)
 - [Quick Start Flows](#quick-start-flows)
@@ -25,6 +26,20 @@ Frontend handoff note:
 - [Reports](#reports)
 - [Platform admin](#platform-admin)
 - [Backend / dev / runtime notes](#local-billing-runtime-notes)
+
+<a id="generated-docs"></a>
+## Generated docs
+
+The backend also serves generated machine-readable docs for implementation reference:
+
+- HTTP API Swagger UI: `GET /api/docs`
+- Raw HTTP OpenAPI JSON: `GET /api/docs.json`
+- Realtime Socket.IO docs UI: `GET /api/docs/realtime`
+- Raw realtime AsyncAPI JSON: `GET /api/docs/realtime.json`
+
+OpenAPI documents the HTTP request/response API. AsyncAPI documents the Socket.IO realtime contract, including auth modes, rooms, client events, server events, ack/error shapes, and reconnect notes.
+
+These docs are read-only reference surfaces and do not change API behavior.
 
 <a id="frontend-integration-guide"></a>
 ## Frontend Integration Guide

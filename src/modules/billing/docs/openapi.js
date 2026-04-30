@@ -72,6 +72,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Get billing catalog',
       operationId: 'getBillingCatalog',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return available billing plans and add-ons. Authorization: owner or admin roleKey required.',
       success: {
@@ -87,6 +88,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Get current subscription',
       operationId: 'getBillingSubscription',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return the current workspace subscription. Authorization: owner or admin roleKey required.',
       success: { payload: { subscription: ref('BillingSubscription') } },
@@ -97,6 +99,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Get current entitlements',
       operationId: 'getBillingEntitlements',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return current workspace billing entitlements. Authorization: owner or admin roleKey required.',
       success: { payload: { entitlements: ref('BillingEntitlements') } },
@@ -107,6 +110,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Get current usage',
       operationId: 'getBillingUsage',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return current workspace billing usage. Authorization: owner or admin roleKey required.',
       success: { payload: { usage: ref('BillingUsage') } },
@@ -117,6 +121,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Get billing summary',
       operationId: 'getBillingSummary',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: return subscription, entitlement, usage, and flag summary for the active workspace. Authorization: owner or admin roleKey required.',
       success: { payload: { summary: ref('BillingSummary') } },
@@ -127,6 +132,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Create checkout session',
       operationId: 'createBillingCheckoutSession',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a Stripe checkout session for a plan and optional add-ons. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(
@@ -140,12 +146,31 @@ export const billingOpenApiPaths = {
           {
             required: ['planKey'],
             additionalProperties: false,
+            example: {
+              planKey: 'growth',
+              addonItems: [
+                {
+                  addonKey: 'extra_agents',
+                  quantity: 5,
+                },
+              ],
+              successUrl: 'https://app.example.com/billing/success',
+              cancelUrl: 'https://app.example.com/billing/cancel',
+            },
           }
         )
       ),
       success: {
         messageKey: 'success.billing.checkoutSessionCreated',
         payload: { checkoutSession: ref('BillingCheckoutSession') },
+        example: {
+          messageKey: 'success.billing.checkoutSessionCreated',
+          message: 'Checkout session created successfully.',
+          checkoutSession: {
+            sessionId: 'cs_test_123',
+            url: 'https://checkout.stripe.com/c/pay/cs_test_123',
+          },
+        },
       },
       errors: ['401', '403', '409', '422', '500'],
     }),
@@ -155,6 +180,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Create billing portal session',
       operationId: 'createBillingPortalSession',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: create a Stripe billing portal session. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(
@@ -177,6 +203,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Change billing plan',
       operationId: 'changeBillingPlan',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: change the current workspace plan through the billing provider. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(
@@ -201,6 +228,7 @@ export const billingOpenApiPaths = {
       tags: 'Billing',
       summary: 'Update billing add-ons',
       operationId: 'updateBillingAddons',
+      security: 'workspaceOwnerAdmin',
       description:
         'Purpose: update add-on quantities for the current workspace subscription. Authorization: owner or admin roleKey required.',
       requestBody: jsonRequest(

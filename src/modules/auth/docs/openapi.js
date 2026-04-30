@@ -111,12 +111,34 @@ export const authOpenApiPaths = {
             email,
             password,
           },
-          { required: ['email', 'password'], additionalProperties: true }
+          {
+            required: ['email', 'password'],
+            additionalProperties: true,
+            example: {
+              email: 'agent@example.com',
+              password: 'StrongPass123!',
+            },
+          }
         )
       ),
       success: {
         messageKey: 'success.auth.loggedIn',
         payload: authPayload,
+        example: {
+          messageKey: 'success.auth.loggedIn',
+          message: 'Logged in successfully.',
+          user: {
+            _id: '64f1a6f3b7c9a0a1b2c3d4e5',
+            email: 'agent@example.com',
+            profile: {
+              name: 'Support Agent',
+            },
+          },
+          tokens: {
+            accessToken: 'eyJhbGciOi...',
+            refreshToken: 'eyJhbGciOi...',
+          },
+        },
       },
       errors: ['401', '403', '422', '500'],
     }),
