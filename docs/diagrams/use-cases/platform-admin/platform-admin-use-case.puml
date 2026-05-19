@@ -1,0 +1,106 @@
+@startuml
+title System Use Case Diagram - Platform Admin (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Platform Admin\nUser" as PlatformAdminUser <<abstract>>
+actor "Platform Support" as PlatformSupport
+actor "Platform Admin" as PlatformAdmin
+actor "Super Admin" as SuperAdmin
+actor "Workspace\nOwner/Admin" as WorkspaceOwnerAdmin
+
+PlatformSupport --|> PlatformAdminUser
+PlatformAdmin --|> PlatformAdminUser
+SuperAdmin --|> PlatformAdminUser
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (Authenticate Platform\nAdmin) as UCAuth
+  (Log In as\nPlatform Admin) as UCLogin
+  (Refresh Platform\nSession) as UCRefresh
+  (View Current\nPlatform Identity) as UCMe
+  (Log Out Current\nPlatform Session) as UCLogout
+  (Log Out All\nPlatform Sessions) as UCLogoutAll
+  (Keep Platform Tokens\nIsolated from Workspace\nTokens) as UCTokenIsolation
+  (Enforce Platform\nRole Authorization) as UCRoleAuth
+
+  (View Platform\nOverview) as UCOverview
+  (View Platform\nMetrics) as UCMetrics
+  (View Billing\nOverview) as UCBillingOverview
+  (Hide Revenue from\nNon-Super Admins) as UCHideRevenue
+
+  (Inspect Tenant\nWorkspaces) as UCInspect
+  (List Workspaces) as UCList
+  (Search/Filter\nWorkspaces) as UCSearch
+  (View Workspace\nDetail) as UCDetail
+  (Review Workspace\nOwner, Billing, Usage,\nand Counts) as UCWorkspaceSnapshot
+
+  (Suspend Workspace) as UCSuspend
+  (Reactivate\nWorkspace) as UCReactivate
+  (Block/Restore Workspace\nRuntime Access) as UCRuntimeAccess
+  (Extend Workspace\nTrial) as UCExtendTrial
+  (Validate Trial\nExtension Eligibility) as UCTrialEligibility
+}
+
+PlatformAdminUser --> UCLogin
+PlatformAdminUser --> UCRefresh
+PlatformAdminUser --> UCMe
+PlatformAdminUser --> UCLogout
+PlatformAdminUser --> UCLogoutAll
+
+PlatformSupport --> UCInspect
+
+PlatformAdmin --> UCOverview
+PlatformAdmin --> UCMetrics
+PlatformAdmin --> UCInspect
+
+SuperAdmin --> UCOverview
+SuperAdmin --> UCMetrics
+SuperAdmin --> UCBillingOverview
+SuperAdmin --> UCInspect
+SuperAdmin --> UCSuspend
+SuperAdmin --> UCReactivate
+SuperAdmin --> UCExtendTrial
+
+WorkspaceOwnerAdmin --> UCRuntimeAccess
+
+UCLogin ..> UCAuth : <<include>>
+UCRefresh ..> UCAuth : <<include>>
+UCMe ..> UCAuth : <<include>>
+UCLogout ..> UCAuth : <<include>>
+UCLogoutAll ..> UCAuth : <<include>>
+
+UCAuth ..> UCTokenIsolation : <<include>>
+UCOverview ..> UCRoleAuth : <<include>>
+UCMetrics ..> UCRoleAuth : <<include>>
+UCBillingOverview ..> UCRoleAuth : <<include>>
+UCInspect ..> UCRoleAuth : <<include>>
+UCSuspend ..> UCRoleAuth : <<include>>
+UCReactivate ..> UCRoleAuth : <<include>>
+UCExtendTrial ..> UCRoleAuth : <<include>>
+
+UCOverview ..> UCHideRevenue : <<extend>>
+UCMetrics ..> UCHideRevenue : <<extend>>
+
+UCInspect ..> UCList : <<include>>
+UCInspect ..> UCDetail : <<include>>
+UCList ..> UCSearch : <<include>>
+UCDetail ..> UCWorkspaceSnapshot : <<include>>
+
+UCSuspend ..> UCRuntimeAccess : <<include>>
+UCReactivate ..> UCRuntimeAccess : <<include>>
+UCExtendTrial ..> UCTrialEligibility : <<include>>
+
+@enduml

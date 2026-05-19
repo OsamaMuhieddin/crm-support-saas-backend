@@ -1,0 +1,70 @@
+@startuml
+title System Use Case Diagram - Mailboxes (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View/List\nMailboxes) as UCViewMailboxes
+  (Search and Select\nMailboxes) as UCSearchMailboxes
+
+  (Manage Mailboxes) as UCManageMailboxes
+  (Create Mailbox) as UCCreateMailbox
+  (Update Mailbox) as UCUpdateMailbox
+  (Activate/Deactivate\nMailbox) as UCActivateDeactivate
+  (Set Default\nMailbox) as UCSetDefault
+  (Configure Mailbox\nSLA Override) as UCConfigureSla
+
+  (Use Default Mailbox\nfor Tickets) as UCUseDefault
+  (Use Mailbox in\nTicket Creation) as UCUseTicketMailbox
+  (Apply Mailbox\nSLA Override) as UCApplySla
+}
+
+WorkspaceMember --> UCViewMailboxes
+WorkspaceMember --> UCSearchMailboxes
+Viewer --> UCViewMailboxes
+
+WorkspaceManager --> UCManageMailboxes
+WorkspaceManager --> UCCreateMailbox
+WorkspaceManager --> UCUpdateMailbox
+WorkspaceManager --> UCActivateDeactivate
+WorkspaceManager --> UCSetDefault
+WorkspaceManager --> UCConfigureSla
+
+Agent --> UCUseDefault
+Agent --> UCUseTicketMailbox
+Agent --> UCApplySla
+WorkspaceManager --> UCUseDefault
+WorkspaceManager --> UCUseTicketMailbox
+WorkspaceManager --> UCApplySla
+
+UCManageMailboxes ..> UCCreateMailbox : <<include>>
+UCManageMailboxes ..> UCUpdateMailbox : <<include>>
+UCManageMailboxes ..> UCActivateDeactivate : <<include>>
+UCManageMailboxes ..> UCSetDefault : <<include>>
+UCUpdateMailbox ..> UCConfigureSla : <<extend>>
+UCUseTicketMailbox ..> UCUseDefault : <<extend>>
+UCUseTicketMailbox ..> UCApplySla : <<include>>
+
+@enduml

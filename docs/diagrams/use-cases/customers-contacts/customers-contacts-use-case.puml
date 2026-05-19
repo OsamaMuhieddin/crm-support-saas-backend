@@ -1,0 +1,73 @@
+@startuml
+title System Use Case Diagram - Customers and Contacts (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam nodesep 70
+skinparam ranksep 90
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Operational Member\n(Owner/Admin/Agent)" as OperationalMember <<abstract>>
+actor "Viewer" as Viewer
+actor "Customer /\nWidget Visitor" as WidgetVisitor
+
+OperationalMember --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View Customer\nOrganizations) as UCViewOrganizations
+  (Manage Customer\nOrganizations) as UCManageOrganizations
+
+  (View Contacts) as UCViewContacts
+  (Manage Contacts) as UCManageContacts
+  (Link Contact to\nOrganization) as UCLinkContactOrganization
+
+  (View Contact\nIdentities) as UCViewIdentities
+  (Manage Contact\nIdentities) as UCManageIdentities
+  (Add Contact\nIdentity) as UCAddContactIdentity
+
+  (Search and Select\nCustomer Records) as UCSearchSelect
+
+  (Use Customer\nRecords in Tickets) as UCTicketCustomerRecords
+
+  (Resolve Widget\nVisitor Contact) as UCResolveWidgetContact
+}
+
+' Keep adjoining use cases from being packed too tightly in generated exports.
+UCViewOrganizations -[hidden]down- UCViewContacts
+UCViewContacts -[hidden]down- UCViewIdentities
+UCViewIdentities -[hidden]down- UCSearchSelect
+UCSearchSelect -[hidden]down- UCTicketCustomerRecords
+UCTicketCustomerRecords -[hidden]down- UCManageOrganizations
+UCManageOrganizations -[hidden]down- UCManageContacts
+UCManageContacts -[hidden]down- UCManageIdentities
+UCManageIdentities -[hidden]down- UCResolveWidgetContact
+
+WorkspaceMember --> UCViewOrganizations
+WorkspaceMember --> UCViewContacts
+WorkspaceMember --> UCViewIdentities
+WorkspaceMember --> UCSearchSelect
+WorkspaceMember --> UCTicketCustomerRecords
+
+OperationalMember --> UCManageOrganizations
+OperationalMember --> UCManageContacts
+OperationalMember --> UCManageIdentities
+
+WidgetVisitor --> UCResolveWidgetContact
+
+UCManageContacts ..> UCLinkContactOrganization : <<include>>
+UCManageIdentities ..> UCAddContactIdentity : <<include>>
+
+@enduml

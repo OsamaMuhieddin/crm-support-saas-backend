@@ -1,0 +1,67 @@
+@startuml
+title System Use Case Diagram - Ticket Operations (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Operational Member\n(Owner/Admin/Agent)" as OperationalMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+
+WorkspaceManager --|> OperationalMember
+Agent --|> OperationalMember
+OperationalMember --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (Manage Tickets) as UCManageTickets
+  (Create Ticket) as UCCreateTicket
+  (View/List Tickets) as UCViewTickets
+  (Update Ticket) as UCUpdateTicket
+  (Change Ticket Status) as UCChangeStatus
+  (Solve Ticket) as UCSolveTicket
+  (Close Ticket) as UCCloseTicket
+  (Reopen Ticket) as UCReopenTicket
+  (Assign Ticket) as UCAssignTicket
+  (Self-Assign Ticket) as UCSelfAssignTicket
+  (Unassign Ticket) as UCUnassignTicket
+  (Use Ticket Category) as UCUseCategory
+  (Use Ticket Tags) as UCUseTags
+  (Manage Ticket\nCategories) as UCManageCategories
+  (Manage Ticket Tags) as UCManageTags
+}
+
+WorkspaceMember --> UCViewTickets
+WorkspaceMember --> UCUseCategory
+WorkspaceMember --> UCUseTags
+Viewer --> UCViewTickets
+
+OperationalMember --> UCManageTickets
+OperationalMember --> UCCreateTicket
+OperationalMember --> UCUpdateTicket
+OperationalMember --> UCChangeStatus
+OperationalMember --> UCSolveTicket
+OperationalMember --> UCCloseTicket
+OperationalMember --> UCReopenTicket
+OperationalMember --> UCUnassignTicket
+Agent --> UCSelfAssignTicket
+
+WorkspaceManager --> UCAssignTicket
+WorkspaceManager --> UCManageCategories
+WorkspaceManager --> UCManageTags
+
+@enduml

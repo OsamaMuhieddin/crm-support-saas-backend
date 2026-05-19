@@ -1,0 +1,85 @@
+@startuml public-widget-conversation
+title Public Widget Conversation and Ticket Creation
+
+hide footbox
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantFontColor #111111
+  ParticipantFontSize 16
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  ActorFontSize 16
+  GroupBorderColor #111111
+  GroupBackgroundColor #FFFFFF
+}
+
+actor "Visitor" as Visitor
+participant "Widget UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "WidgetPublic\nController" as Controller
+participant "WidgetPublic\nService" as PublicService
+participant "FileService" as FileService
+participant "Domain Models\nWidget/Session/File/Contact/Ticket" as Models
+participant "TicketService" as TicketService
+participant "MessageService" as MessageService
+participant "RealtimePublisher" as Realtime
+
+== 1. Bootstrap/session ==
+
+UI -> Routes: GET bootstrap
+Routes -> Controller: validated request
+Controller -> PublicService: load public bootstrap
+PublicService -> Models: active widget + active mailbox
+PublicService --> UI: widget config + realtime metadata
+
+UI -> Routes: POST session
+Routes -> Controller: validated request
+Controller -> PublicService: start or resume session
+PublicService -> Models: create/resume wgs_* session\nand load conversation snapshot
+PublicService --> UI: session token + conversation
+
+== 2. Optional attachment upload ==
+
+opt Attachment before message
+  Visitor -> UI: Select file
+  UI -> Routes: POST files
+  Routes -> Controller: parsed file + validated sessionToken
+  Controller -> PublicService: upload widget file
+  PublicService -> FileService: verify session, upload with\nwidget/session metadata
+  FileService -> Models: enforce limits, store object,\ncreate ready file
+  FileService --> UI: file id
+end
+
+== 3. Send message ==
+
+Visitor -> UI: Sends message
+UI -> Routes: POST messages
+Routes -> Controller: validated message + attachment ids
+Controller -> PublicService: create public widget message
+PublicService -> Models: verify session, attachments,\ncontact/identity, current ticket
+
+== 4. Reuse/create ticket ==
+
+alt Reuse current non-closed same-mailbox ticket
+  PublicService -> MessageService: append customer_message
+  MessageService -> Models: persist message, link attachments,\nupdate ticket/conversation
+  MessageService -> Realtime: publish message + conversation events
+else Create new widget ticket
+  PublicService -> TicketService: create widget ticket\nwith initial customer_message
+  TicketService -> Models: create ticket, conversation,\nmessage, attachment links
+  TicketService -> Realtime: publish ticket + message events
+end
+
+== 5. Sync response/realtime ==
+
+PublicService -> Models: sync session pointers
+PublicService --> UI: message + conversation + session
+
+@enduml

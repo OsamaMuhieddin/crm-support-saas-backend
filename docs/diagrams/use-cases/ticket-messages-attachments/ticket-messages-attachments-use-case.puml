@@ -1,0 +1,88 @@
+@startuml
+title System Use Case Diagram - Ticket Messages, Participants & Attachments (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #A0AEC0
+}
+skinparam ArrowColor #A0AEC0
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Operational Member\n(Owner/Admin/Agent)" as OperationalMember <<abstract>>
+actor "Viewer" as Viewer
+actor "Customer /\nWidget Visitor" as WidgetVisitor
+
+OperationalMember --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View Ticket\nConversation) as UCViewConversation
+  (List Ticket\nMessages) as UCListMessages
+  (View/Download\nMessage Attachments) as UCViewAttachments
+
+  (Add Ticket\nMessage) as UCAddMessage
+  (Add Public\nReply) as UCPublicReply
+  (Add Internal\nNote) as UCInternalNote
+  (Add Customer\nMessage) as UCCustomerMessage
+  (Send Widget\nCustomer Message) as UCWidgetMessage
+
+  (Use Message\nAttachments) as UCUseAttachments
+  (Upload File for\nAttachment) as UCUploadAttachment
+  (Attach Uploaded\nFiles to Message) as UCLinkMessage
+  (Link Attachment to\nRoot Ticket) as UCLinkTicket
+
+  (Manage Ticket\nParticipants) as UCManageParticipants
+  (View Participants) as UCViewParticipants
+  (Add/Update\nParticipant) as UCUpsertParticipant
+  (Remove Participant) as UCRemoveParticipant
+
+  (Receive Message &\nConversation Updates) as UCMessageEvents
+  (Receive Participant\nChange Updates) as UCParticipantEvents
+  (Receive Widget\nConversation Updates) as UCWidgetEvents
+}
+
+WorkspaceMember --> UCViewConversation
+WorkspaceMember --> UCListMessages
+WorkspaceMember --> UCViewAttachments
+WorkspaceMember --> UCViewParticipants
+WorkspaceMember --> UCMessageEvents
+WorkspaceMember --> UCParticipantEvents
+Viewer --> UCViewConversation
+Viewer --> UCViewAttachments
+
+OperationalMember --> UCAddMessage
+OperationalMember --> UCPublicReply
+OperationalMember --> UCInternalNote
+OperationalMember --> UCCustomerMessage
+OperationalMember --> UCUseAttachments
+OperationalMember --> UCUploadAttachment
+OperationalMember --> UCManageParticipants
+OperationalMember --> UCUpsertParticipant
+OperationalMember --> UCRemoveParticipant
+
+WidgetVisitor --> UCWidgetMessage
+WidgetVisitor --> UCUseAttachments
+WidgetVisitor --> UCUploadAttachment
+WidgetVisitor --> UCWidgetEvents
+
+UCAddMessage ..> UCUseAttachments : <<extend>>
+UCUseAttachments ..> UCUploadAttachment : <<include>>
+UCUseAttachments ..> UCLinkMessage : <<include>>
+UCUseAttachments ..> UCLinkTicket : <<include>>
+UCManageParticipants ..> UCUpsertParticipant : <<include>>
+UCManageParticipants ..> UCRemoveParticipant : <<include>>
+UCAddMessage ..> UCMessageEvents : <<include>>
+UCManageParticipants ..> UCParticipantEvents : <<include>>
+UCWidgetMessage ..> UCWidgetEvents : <<include>>
+
+@enduml

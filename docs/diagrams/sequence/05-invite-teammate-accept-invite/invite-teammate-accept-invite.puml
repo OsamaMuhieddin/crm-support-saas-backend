@@ -1,0 +1,78 @@
+@startuml invite-teammate-accept-invite
+title Invite Teammate and Accept Invite
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  BoxBorderColor #111111
+  BoxBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Workspace\nOwner/Admin" as Admin
+actor "Invitee" as Invitee
+participant "App UI" as UI
+participant "Invite UI" as InviteUI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Workspace\nController" as Controller
+participant "Workspace\nService" as WorkspaceService
+participant "Auth\nService" as AuthService
+participant "Email/OTP\nService" as EmailService
+participant "Domain Models\nWorkspace/Invite/User/Member/Session" as Models
+participant "Billing\nEnforcement" as Billing
+
+== 1. Create invite ==
+Admin -> UI: Enter teammate email + role
+UI -> Routes: POST /api/workspaces/:workspaceId/invites
+Routes -> Guards: auth, active user/member,\nowner/admin role
+Routes -> Controller: validated workspaceId, email, roleKey
+Controller -> WorkspaceService: createWorkspaceInvite()
+
+== 2. Reserve seat and send invite ==
+WorkspaceService -> Models: load workspace and existing user/member
+WorkspaceService -> Billing: assert seat reservation allowed
+WorkspaceService -> Models: create pending invite\nwith hashed token
+WorkspaceService -> EmailService: send invite link/token
+WorkspaceService --> UI: success.invite.created + invite view
+
+== 3. Open invite ==
+Invitee -> InviteUI: Open invite link
+InviteUI -> Routes: POST /api/workspaces/invites/accept
+Routes -> Controller: validated token, email,\noptional password/name
+Controller -> WorkspaceService: acceptWorkspaceInvite()
+WorkspaceService -> Models: validate raw token,\nstatus, expiry, email match
+
+== 4. Accept or finalize invite ==
+alt Existing verified user
+  WorkspaceService -> Billing: assert member activation allowed
+  WorkspaceService -> Models: create/activate member\nand mark invite accepted
+  WorkspaceService --> InviteUI: success.invite.accepted\nworkspaceId + roleKey
+else New or unverified user
+  WorkspaceService -> Models: create/find unverified user
+  WorkspaceService -> EmailService: create OTP and send verification
+  WorkspaceService --> InviteUI: success.invite.acceptRequiresVerification
+  InviteUI -> Routes: POST /api/auth/verify-email\nwith inviteToken
+  Routes -> AuthService: verifyEmailAndLogin()
+  AuthService -> WorkspaceService: ensureWorkspaceForVerifiedUser(inviteToken)
+  WorkspaceService -> Billing: assert member activation allowed
+  WorkspaceService -> Models: activate member,\naccept invite, create session
+  AuthService --> InviteUI: tokens + active/invite workspace ids
+end
+
+== 5. Membership available ==
+InviteUI -> UI: Show invited workspace option
+note over UI,WorkspaceService
+Invite acceptance/finalization does not auto-switch session workspace.
+Client calls POST /api/workspaces/switch when moving into the invited workspace.
+end note
+
+@enduml

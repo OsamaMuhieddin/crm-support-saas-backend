@@ -1,0 +1,61 @@
+@startuml billing-entitlement-enforcement
+title Billing Entitlement Enforcement and Plan Limits
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Workspace User\nor Widget Visitor" as User
+participant "App / Widget UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Domain Service\nInvite/File/Mailbox/SLA/Ticket" as Domain
+participant "Billing\nEnforcement" as Enforcement
+participant "Billing\nFoundation" as Foundation
+participant "Billing Models\nSubscription/Entitlement/Usage" as BillingModels
+participant "Domain Models\nMember/Invite/File/Mailbox/Ticket" as DomainModels
+
+== 1. Protected product action ==
+User -> UI: Create invite, upload file,\ncreate mailbox, configure SLA,\nor create ticket
+UI -> Routes: Product endpoint request
+Routes -> Guards: auth/workspace guards\nwhere endpoint is protected
+Routes -> Domain: validated request
+
+== 2. Load entitlement and usage ==
+Domain -> Enforcement: assert allowed for action
+Enforcement -> Foundation: ensureWorkspaceBillingFoundation()
+Foundation -> BillingModels: load subscription, plan,\nentitlement, usage meter
+Foundation -> DomainModels: count seats, invites,\nmailboxes, storage
+Foundation -> BillingModels: recompute entitlement snapshot
+Foundation --> Enforcement: limits, features, usage, flags
+
+== 3. Check limit ==
+Enforcement -> Enforcement: check partial block,\nseats/mailboxes/storage/uploads/SLA feature
+
+== 4. Allow action or block ==
+alt Allowed
+  Enforcement --> Domain: allowed
+  Domain -> DomainModels: create invite/file/mailbox/SLA\nor ticket
+else Limit exceeded or feature unavailable
+  Enforcement --> UI: standard error envelope\n409 billing limit/feature error
+end
+
+== 5. Update usage when implemented ==
+Domain -> Foundation: increment uploads or tickets\nand refresh usage snapshot
+Foundation -> BillingModels: update UsageMeter\nand Entitlement.usage
+note over Domain,Foundation
+Ticket creation records monthly usage but no hard ticket-create block is implemented.
+Seat, mailbox, upload/storage, SLA feature, and partial-block checks are enforced.
+end note
+
+@enduml

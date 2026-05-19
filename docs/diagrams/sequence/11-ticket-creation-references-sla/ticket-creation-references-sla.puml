@@ -1,0 +1,68 @@
+@startuml ticket-creation-references-sla
+title Ticket Creation With References and SLA Snapshot
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Agent" as Agent
+participant "Ticket UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Ticket\nController" as Controller
+participant "Ticket\nService" as TicketService
+participant "Reference\nService" as RefService
+participant "Reference Models\nWorkspace/Mailbox/Contact/\nOrg/Category/Tag/Member" as RefModels
+participant "SLA Runtime\nService" as SlaRuntime
+participant "SLA Models\nPolicy/BusinessHours" as SlaModels
+participant "Ticket Models\nCounter/Ticket/Conversation" as TicketModels
+participant "Message/File\nServices" as MessageFileServices
+participant "Billing Usage +\nLive Events" as Events
+
+== 1. Submit ticket create ==
+Agent -> UI: Fill ticket form
+UI -> Routes: POST /api/tickets
+Routes -> Guards: auth, active user/member,\nowner/admin/agent role
+Routes -> Routes: validate createTicket body
+Routes -> Controller: createTicketController(req)
+Controller -> TicketService: createTicket(workspaceId,\ncreatedByUserId, payload)
+
+== 2. Resolve references ==
+TicketService -> RefService: load workspace and resolve mailbox\n(provided or workspace default)
+RefService -> RefModels: find active same-workspace mailbox
+TicketService -> RefService: validate contact, organization,\ncategory, tags, assignee
+RefService -> RefModels: load active same-workspace references
+
+== 3. Snapshot SLA ==
+TicketService -> SlaRuntime: resolveTicketSlaSnapshot(workspace,\nmailbox, priority)
+alt Effective SLA policy exists
+  SlaRuntime -> SlaModels: load active policy\nand business hours
+  SlaRuntime --> TicketService: SLA snapshot with targets,\ndue dates, business-hours copy
+else No effective SLA
+  SlaRuntime --> TicketService: empty SLA snapshot
+end
+
+== 4. Create ticket and conversation ==
+TicketService -> TicketModels: allocate workspace ticket number
+TicketService -> TicketModels: create Ticket with references,\nstatus, number, sla snapshot
+TicketService -> TicketModels: create Conversation and save\nticket.conversationId
+TicketService -> MessageFileServices: if initialMessage exists,\ncreate message and link attachments
+
+== 5. Publish and update usage ==
+TicketService -> Events: increment tickets-created usage\n(best effort)
+TicketService -> Events: publish ticket.created\nand message events when needed
+TicketService --> Controller: hydrated ticket detail
+Controller --> UI: success.ticket.created
+UI --> Agent: Show created ticket
+
+@enduml

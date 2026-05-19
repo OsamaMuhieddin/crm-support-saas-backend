@@ -1,0 +1,104 @@
+@startuml
+title System Use Case Diagram - Widget and Public Customer Flow (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+actor "Customer /\nWidget Visitor" as WidgetVisitor
+actor "Email Provider\n(Hostinger SMTP)" as EmailProvider
+
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View/List\nWidgets) as UCViewWidgets
+  (Manage Support\nWidgets) as UCManageWidgets
+  (Create Widget) as UCCreateWidget
+  (Update Widget) as UCUpdateWidget
+  (Configure Widget\nMailbox) as UCConfigureMailbox
+  (Activate/Deactivate\nWidget) as UCActivateWidget
+
+  (Bootstrap Public\nWidget) as UCBootstrap
+  (Start/Resume Public\nWidget Session) as UCSession
+  (View Widget\nConversation) as UCViewConversation
+  (Upload Widget\nAttachment) as UCUploadAttachment
+  (Send Widget\nCustomer Message) as UCSendMessage
+  (Resolve/Create\nCustomer Contact) as UCResolveContact
+  (Maintain Widget\nEmail Identity) as UCEmailIdentity
+  (Create or Append\nWidget Ticket\nConversation) as UCTicketConversation
+
+  (Recover Widget\nConversation) as UCRecover
+  (Request Recovery\nOTP) as UCRequestOtp
+  (Verify Recovery\nOTP) as UCVerifyOtp
+  (Continue Recovered\nConversation) as UCContinue
+  (Start New Recovered\nConversation) as UCStartNew
+
+  (Subscribe to Widget\nRealtime Updates) as UCSubscribeRealtime
+  (Receive Message and\nConversation Updates) as UCReceiveRealtime
+  (Reply to Widget\nTicket Publicly) as UCAgentReply
+}
+
+WorkspaceMember --> UCViewWidgets
+Viewer --> UCViewWidgets
+Agent --> UCViewWidgets
+
+WorkspaceManager --> UCManageWidgets
+WorkspaceManager --> UCCreateWidget
+WorkspaceManager --> UCUpdateWidget
+WorkspaceManager --> UCConfigureMailbox
+WorkspaceManager --> UCActivateWidget
+
+WidgetVisitor --> UCBootstrap
+WidgetVisitor --> UCSession
+WidgetVisitor --> UCViewConversation
+WidgetVisitor --> UCUploadAttachment
+WidgetVisitor --> UCSendMessage
+WidgetVisitor --> UCRecover
+WidgetVisitor --> UCSubscribeRealtime
+WidgetVisitor --> UCReceiveRealtime
+
+Agent --> UCAgentReply
+
+EmailProvider --> UCRequestOtp
+
+UCManageWidgets ..> UCCreateWidget : <<include>>
+UCManageWidgets ..> UCUpdateWidget : <<include>>
+UCManageWidgets ..> UCActivateWidget : <<include>>
+UCUpdateWidget ..> UCConfigureMailbox : <<include>>
+
+UCBootstrap ..> UCSession : <<extend>>
+UCSession ..> UCViewConversation : <<include>>
+UCSendMessage ..> UCResolveContact : <<include>>
+UCSendMessage ..> UCTicketConversation : <<include>>
+UCSendMessage ..> UCEmailIdentity : <<extend>>
+UCSendMessage ..> UCUploadAttachment : <<extend>>
+
+UCRecover ..> UCRequestOtp : <<include>>
+UCRecover ..> UCVerifyOtp : <<include>>
+UCRecover ..> UCContinue : <<extend>>
+UCRecover ..> UCStartNew : <<extend>>
+UCVerifyOtp ..> UCEmailIdentity : <<include>>
+UCContinue ..> UCSession : <<include>>
+UCStartNew ..> UCSession : <<include>>
+
+UCSubscribeRealtime ..> UCReceiveRealtime : <<include>>
+UCAgentReply ..> UCReceiveRealtime : <<extend>>
+
+@enduml

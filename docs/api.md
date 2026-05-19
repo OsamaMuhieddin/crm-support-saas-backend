@@ -1132,7 +1132,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     - Recommended posture is: fetch canonical REST data, connect socket, subscribe, patch UI from events, and re-fetch REST whenever ordering or completeness is uncertain.
 
 <a id="auth-endpoints"></a>
-## 4) Auth Endpoints Reference
+## 5) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
 
@@ -1495,7 +1495,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     - Treat this as a forced re-auth event and clear stored tokens.
 
 <a id="workspace-context"></a>
-## 5) Workspace Context Endpoints
+## 6) Workspace Context Endpoints
 
 ### GET `/api/workspaces/mine`
 
@@ -1593,7 +1593,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     - After replacing the token, call `GET /api/auth/me`, then reconnect and resubscribe any workspace-authenticated realtime client.
 
 <a id="workspace-invites"></a>
-## 6) Workspace Invite Endpoints Reference
+## 7) Workspace Invite Endpoints Reference
 
 ### Shared requirements for protected invite management routes
 
@@ -1818,14 +1818,14 @@ Requirements:
     - If `success.invite.acceptRequiresVerification`: show OTP verification UI and call `POST /api/auth/verify-email` with `inviteToken` to finalize membership and receive tokens.
     - Then call `POST /api/workspaces/switch` when user chooses to move to invited workspace context.
 
-## 7) Common FE Error Handling Guidance
+## 8) Common FE Error Handling Guidance
 
 - `errors.auth.invalidToken` or `errors.auth.sessionRevoked`: clear tokens and force logout.
 - `errors.auth.forbiddenTenant`: show "no access to this workspace" without necessarily logging user out.
 - `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show cooldown timer before allowing resend.
 
 <a id="files"></a>
-## 8) Files Endpoints Reference (Files v1)
+## 9) Files Endpoints Reference (Files v1)
 
 ### Auth + authorization requirements
 
@@ -2029,7 +2029,7 @@ Requirements:
   - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
 
 <a id="customers"></a>
-## 9) Customers Endpoints Reference (Organizations v1 + Contacts v1 + ContactIdentity v1)
+## 10) Customers Endpoints Reference (Organizations v1 + Contacts v1 + ContactIdentity v1)
 
 ### Auth model + authorization rules
 
@@ -2637,7 +2637,7 @@ Requirements:
   - Cross-workspace parent contact ids resolve as `404 errors.contact.notFound`.
 
 <a id="mailboxes"></a>
-## 10) Mailboxes Endpoints Reference (Mailbox v1)
+## 11) Mailboxes Endpoints Reference (Mailbox v1)
 
 ### Auth model + authorization rules
 
@@ -2974,7 +2974,7 @@ Requirements:
   - Ticket/conversation/message mailbox references are preserved.
   - Mailbox action endpoints return compact action payloads, not the full mailbox detail view.
 
-## 11) Mailbox Backfill Command
+## 12) Mailbox Backfill Command
 
 - Purpose: idempotently repair workspaces with missing/invalid mailbox defaults.
 - Command:
@@ -2994,7 +2994,7 @@ npm run mailboxes:backfill-default
   - does not create duplicate default mailboxes when rerun
 
 <a id="widgets"></a>
-## Widget Endpoints Reference
+## 13) Widget Endpoints Reference
 
 ### Auth model & authorization model
 
@@ -3731,7 +3731,7 @@ npm run mailboxes:backfill-default
   - starting new after recovery invalidates superseded widget sessions tied to the recovered candidate session or ticket so the fresh `wgs_*` token is the only active public session for that recovered browser context.
 
 <a id="sla"></a>
-## 12) SLA Endpoints Reference (SLA v1 Active Surface)
+## 14) SLA Endpoints Reference (SLA v1 Active Surface)
 
 ### Auth model & authorization model
 
@@ -4398,7 +4398,7 @@ npm run mailboxes:backfill-default
   - `workspace.defaultSlaPolicyId` is canonical, and the denormalized policy `isDefault` flags are repaired to match it in the same operation.
 
 <a id="tickets"></a>
-## 13) Tickets Endpoints Reference
+## 15) Tickets Endpoints Reference
 
 ### Auth model + authorization rules
 
@@ -5984,8 +5984,38 @@ npm run mailboxes:backfill-default
 - Notes:
   - the operation is idempotent.
 
+### POST `/api/tickets/tags/:id/deactivate`
+
+- Purpose: deactivate a ticket tag.
+- Requirements:
+  - role must be `owner|admin`
+- Request body:
+  - empty object allowed
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ticketTag.deactivated",
+  "message": "Ticket tag deactivated successfully.",
+  "tag": {
+    "_id": "65f1...",
+    "workspaceId": "65aa...",
+    "isActive": false
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `403` `errors.auth.forbiddenRole`
+  - `404` `errors.ticketTag.notFound | errors.workspace.notFound`
+- Anti-enumeration note:
+  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
+- Notes:
+  - the operation is idempotent.
+
 <a id="billing"></a>
-## 14) Billing Quick Start Flows
+## 16) Billing Quick Start Flows
 
 ### Flow A: Open Billing Summary
 
@@ -6014,7 +6044,7 @@ npm run mailboxes:backfill-default
 5. Frontend integration note:
    - After returning from the portal, refetch `GET /api/billing/summary` instead of inferring final state from the return URL.
 
-## 15) Billing Endpoints Reference
+## 17) Billing Endpoints Reference
 
 ### GET `/api/billing/catalog`
 
@@ -6666,38 +6696,8 @@ npm run mailboxes:backfill-default
   - Backend/provider-facing note:
     - This webhook route is called by Stripe or Stripe CLI forwarding, not by normal frontend clients.
 
-### POST `/api/tickets/tags/:id/deactivate`
-
-- Purpose: deactivate a ticket tag.
-- Requirements:
-  - role must be `owner|admin`
-- Request body:
-  - empty object allowed
-- Success `200`:
-
-```json
-{
-  "messageKey": "success.ticketTag.deactivated",
-  "message": "Ticket tag deactivated successfully.",
-  "tag": {
-    "_id": "65f1...",
-    "workspaceId": "65aa...",
-    "isActive": false
-  }
-}
-```
-
-- Common errors:
-  - `422` `errors.validation.failed`
-  - `403` `errors.auth.forbiddenRole`
-  - `404` `errors.ticketTag.notFound | errors.workspace.notFound`
-- Anti-enumeration note:
-  - cross-workspace ids resolve as `404 errors.ticketTag.notFound`.
-- Notes:
-  - the operation is idempotent.
-
 <a id="reports"></a>
-## 16) Reporting and Platform Admin Endpoints Reference
+## 18) Reporting and Platform Admin Endpoints Reference
 
 ### PATCH `/api/auth/profile`
 

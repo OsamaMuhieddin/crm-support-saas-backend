@@ -1,0 +1,96 @@
+@startuml
+title System Use Case Diagram - Billing (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Billing Provider\n(Stripe)" as BillingProvider
+actor "System /\nScheduler" as Scheduler
+
+WorkspaceManager --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View Billing\nState) as UCViewState
+  (Bootstrap Billing\nFoundation) as UCFoundation
+  (Recompute\nEntitlements) as UCRecompute
+  (Track Ticket and\nUpload Usage) as UCTrackUsage
+
+  (Manage Workspace\nSubscription) as UCManageSubscription
+  (Start Checkout\nSession) as UCCheckout
+  (Create or Update\nStripe Customer) as UCCustomer
+  (Open Billing\nPortal) as UCPortal
+  (Change Plan) as UCChangePlan
+  (Update Add-ons) as UCUpdateAddons
+  (Sync Subscription\nfrom Stripe) as UCSync
+  (Use Stripe Billing\nProvider) as UCProviderOps
+
+  (Accept Stripe\nWebhook) as UCWebhook
+  (Run Billing\nMaintenance) as UCMaintenance
+  (Process Billing\nWebhook Event) as UCProcessWebhook
+  (Replay Failed or\nStale Webhooks) as UCReplay
+  (Sync Local Billing\nLifecycle) as UCLifecycle
+  (Repair Workspace\nBilling State) as UCRepair
+
+  (Enforce Billing\nLimits) as UCEnforce
+}
+
+WorkspaceManager --> UCViewState
+WorkspaceManager --> UCManageSubscription
+
+WorkspaceMember --> UCEnforce
+
+BillingProvider --> UCProviderOps
+BillingProvider --> UCWebhook
+
+Scheduler --> UCMaintenance
+
+UCViewState ..> UCFoundation : <<include>>
+UCFoundation ..> UCRecompute : <<include>>
+UCRecompute ..> UCTrackUsage : <<include>>
+
+UCManageSubscription ..> UCCheckout : <<include>>
+UCManageSubscription ..> UCPortal : <<include>>
+UCManageSubscription ..> UCChangePlan : <<include>>
+UCManageSubscription ..> UCUpdateAddons : <<include>>
+
+UCProviderOps ..> UCCustomer : <<include>>
+UCProviderOps ..> UCCheckout : <<include>>
+UCProviderOps ..> UCPortal : <<include>>
+UCProviderOps ..> UCSync : <<include>>
+
+UCCheckout ..> UCCustomer : <<include>>
+UCCheckout ..> UCFoundation : <<include>>
+UCPortal ..> UCFoundation : <<include>>
+UCChangePlan ..> UCSync : <<include>>
+UCUpdateAddons ..> UCSync : <<include>>
+UCSync ..> UCRecompute : <<include>>
+
+UCMaintenance ..> UCProcessWebhook : <<include>>
+UCMaintenance ..> UCReplay : <<include>>
+UCMaintenance ..> UCLifecycle : <<include>>
+UCMaintenance ..> UCRepair : <<include>>
+
+UCWebhook ..> UCProcessWebhook : <<extend>>
+UCProcessWebhook ..> UCSync : <<include>>
+UCReplay ..> UCProcessWebhook : <<include>>
+UCLifecycle ..> UCRecompute : <<include>>
+UCRepair ..> UCFoundation : <<include>>
+UCRepair ..> UCRecompute : <<include>>
+
+UCEnforce ..> UCFoundation : <<include>>
+
+@enduml

@@ -1,6 +1,6 @@
 # CRM Support SaaS Backend - Current State Report
 
-Generated on: 2026-04-08  
+Generated on: 2026-05-11
 Repository: `crm-support-saas-backend`
 
 ## 1) Report Purpose
@@ -203,8 +203,10 @@ Current effective permissions by feature:
 3. Frontend loads `GET /api/billing/summary` to bootstrap current subscription, entitlements, usage, and trial/grace flags.
 4. Frontend can start first paid setup with `POST /api/billing/checkout-session`.
 5. Existing paying workspaces can open Stripe Billing Portal with `POST /api/billing/portal-session`.
-6. Stripe webhooks land on `POST /api/billing/webhooks/stripe`, are persisted idempotently, and are processed through billing workers.
-7. The backend auto-syncs the fixed catalog and auto-creates missing workspace billing foundation records on demand.
+6. Owner/Admin can change the app-managed plan with `POST /api/billing/change-plan`.
+7. Owner/Admin can update app-managed add-on quantities with `POST /api/billing/update-addons`.
+8. Stripe webhooks land on `POST /api/billing/webhooks/stripe`, are persisted idempotently, and are processed through billing workers.
+9. The backend auto-syncs the fixed catalog and auto-creates missing workspace billing foundation records on demand.
 
 ### 2.4 Business State Summary
 
@@ -228,7 +230,7 @@ Foundation-only slices:
 - Users API stub.
 - Inbox/Integrations routes mounted but empty.
 - SLA v1 next-response/jobs/reporting/holiday/cycle-history additions beyond the active runtime surface.
-- Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, Stripe webhook intake, and lifecycle sync foundations; automations/notifications remain model-only.
+- Billing runtime now covers catalog sync, workspace billing reads, checkout/portal entrypoints, app-managed plan/add-on changes, Stripe webhook intake, and lifecycle sync foundations; automations/notifications remain model-only.
 - Widget public realtime is now implemented on top of the shared Redis-backed Socket.IO foundation, but typing/presence, SSE, and multi-conversation browsing remain out of scope.
 
 ## 3) Technical Side
@@ -539,6 +541,7 @@ Mailbox notes:
 | `POST`  | `/widgets/:id/deactivate`              | Deactivate widget                             | `owner/admin`                                                         |
 | `GET`   | `/widgets/public/:publicKey/bootstrap` | Public safe bootstrap read for widget clients | Public                                                                |
 | `POST`  | `/widgets/public/:publicKey/session`   | Initialize/resume public widget browser session | Public                                                              |
+| `POST`  | `/widgets/public/:publicKey/files`     | Upload a visitor file for the current widget session | Public                                                          |
 | `POST`  | `/widgets/public/:publicKey/messages`  | Create first/follow-up public widget customer message | Public                                                         |
 | `POST`  | `/widgets/public/:publicKey/recovery/request` | Request widget recovery verification challenge | Public                                                         |
 | `POST`  | `/widgets/public/:publicKey/recovery/verify` | Verify widget recovery challenge and resolve candidate | Public                                                   |
@@ -604,7 +607,6 @@ Mounted but currently empty routers:
 
 - `/inbox`
 - `/integrations`
-- `/admin`
 
 Any request under those paths currently falls through to 404.
 
@@ -624,9 +626,9 @@ Any request under those paths currently falls through to 404.
 | `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                                                                          | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests                                  |
 | `inbox`         | Yes            | Empty router                                                                                                                                       | Placeholder                                                                                                                                                                                                                    |
 | `integrations`  | Yes            | Empty router                                                                                                                                       | Models implemented, API not implemented                                                                                                                                                                                        |
-| `admin`         | Yes            | Empty router                                                                                                                                       | Placeholder                                                                                                                                                                                                                    |
+| `admin`         | Yes            | Platform admin auth, analytics, billing overview, workspace inspection, and workspace action APIs                                                  | Platform admin sessions/tokens, isolated platform auth, workspace analytics snapshots, and suspend/reactivate/extend-trial runtime actions                                                                                     |
 | `automations`   | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
-| `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, billing webhook inbox persistence, and worker-backed lifecycle sync |
+| `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `change-plan`, `update-addons`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, app-managed plan/add-on changes, billing webhook inbox persistence, and worker-backed lifecycle sync |
 | `notifications` | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
 | `platform`      | No             | No API                                                                                                                                             | Models implemented only                                                                                                                                                                                                        |
 | `roles`         | No             | No API                                                                                                                                             | No schema content yet                                                                                                                                                                                                          |
@@ -857,6 +859,7 @@ Covered areas:
 - Ticket category/tag CRUD-like dictionary behavior, RBAC, and anti-enumeration.
 - Ticket assignment/lifecycle/participant actions and their guardrails.
 - Billing catalog sync, workspace billing reads, checkout/portal RBAC and validation, webhook verification/idempotency, and provider lifecycle sync behavior.
+- Platform admin auth, analytics, workspace inspection, and workspace action flows.
 - Realtime foundation, business events, and collaboration flows through real `socket.io-client` connections and REST-triggered writes.
 - Validation key existence in i18n for key modules.
 - Storage provider config fail-fast behavior.
@@ -872,7 +875,7 @@ Realtime test runtime modes:
 
 Not fully covered by runtime tests:
 
-- Empty route modules (`inbox/integrations/admin`) because no behavior yet.
+- Empty route modules (`inbox/integrations`) because no behavior yet.
 - SLA jobs/reminders/reporting/holiday behavior because the active runtime surface still stops at first-response/resolution without background processing.
 - Automations/notifications/platform modules because they still have no runtime APIs.
 
@@ -973,6 +976,7 @@ This section is an explicit endpoint inventory from mounted route code.
 - `POST /api/widgets/:id/deactivate`
 - `GET /api/widgets/public/:publicKey/bootstrap`
 - `POST /api/widgets/public/:publicKey/session`
+- `POST /api/widgets/public/:publicKey/files`
 - `POST /api/widgets/public/:publicKey/messages`
 - `POST /api/widgets/public/:publicKey/recovery/request`
 - `POST /api/widgets/public/:publicKey/recovery/verify`
@@ -1063,6 +1067,8 @@ This section is an explicit endpoint inventory from mounted route code.
 - `GET /api/billing/summary`
 - `POST /api/billing/checkout-session`
 - `POST /api/billing/portal-session`
+- `POST /api/billing/change-plan`
+- `POST /api/billing/update-addons`
 - `POST /api/billing/webhooks/stripe`
 
 ### Reports

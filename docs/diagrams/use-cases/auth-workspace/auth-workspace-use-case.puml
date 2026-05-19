@@ -1,0 +1,103 @@
+@startuml
+title System Use Case Diagram - Auth and Workspace Access (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Visitor /\nUnauthenticated User" as Visitor
+actor "Invited User" as InvitedUser
+actor "Workspace Member" as Member
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Workspace Owner" as Owner
+actor "Workspace Admin" as Admin
+actor "Email Provider\n(Hostinger SMTP)" as EmailProvider
+
+Owner --|> WorkspaceManager
+Admin --|> WorkspaceManager
+WorkspaceManager --|> Member
+InvitedUser --|> Visitor
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (Sign Up) as UCSignup
+  (Send Email\nVerification OTP) as UCSendVerifyOtp
+  (Resend OTP) as UCResendOtp
+  (Verify Email) as UCVerifyEmail
+  (Log In) as UCLogin
+  (Refresh Access\nToken) as UCRefresh
+  (View Current\nUser Context) as UCMe
+  (Update Profile) as UCProfile
+  (Change Password) as UCChangePassword
+  (Request Password\nReset OTP) as UCForgotPassword
+  (Reset Password) as UCResetPassword
+  (Log Out Current\nSession) as UCLogout
+  (Log Out All\nSessions) as UCLogoutAll
+  (List My\nWorkspaces) as UCListMine
+  (Switch Active\nWorkspace) as UCSwitch
+  (Create Workspace\nInvite) as UCCreateInvite
+  (List Workspace\nInvites) as UCListInvites
+  (View Workspace\nInvite) as UCViewInvite
+  (Resend Workspace\nInvite) as UCResendInvite
+  (Revoke Workspace\nInvite) as UCRevokeInvite
+  (Accept Workspace\nInvite) as UCAcceptInvite
+}
+
+Visitor -right-> UCSignup
+Visitor -right-> UCResendOtp
+Visitor -right-> UCVerifyEmail
+Visitor -right-> UCLogin
+Visitor -right-> UCForgotPassword
+Visitor -right-> UCResetPassword
+
+InvitedUser -right-> UCAcceptInvite
+InvitedUser -right-> UCVerifyEmail
+
+Member -right-> UCRefresh
+Member -right-> UCMe
+Member -right-> UCProfile
+Member -right-> UCChangePassword
+Member -right-> UCLogout
+Member -right-> UCLogoutAll
+Member -right-> UCListMine
+Member -right-> UCSwitch
+
+WorkspaceManager -left-> UCCreateInvite
+WorkspaceManager -left-> UCListInvites
+WorkspaceManager -left-> UCViewInvite
+WorkspaceManager -left-> UCResendInvite
+WorkspaceManager -left-> UCRevokeInvite
+
+EmailProvider -left-> UCSendVerifyOtp
+EmailProvider -left-> UCResendOtp
+EmailProvider -left-> UCForgotPassword
+EmailProvider -left-> UCCreateInvite
+EmailProvider -left-> UCResendInvite
+EmailProvider -left-> UCAcceptInvite
+
+UCSignup .right.> UCSendVerifyOtp : <<include>>
+UCResendOtp .up.> UCSendVerifyOtp : <<extend>>
+
+note right of UCSwitch
+Only this use case changes the
+active workspace for a session
+and returns a fresh access token.
+end note
+
+note bottom of UCAcceptInvite
+Invite acceptance creates or activates
+membership but does not auto-switch
+an existing active workspace session.
+end note
+
+@enduml

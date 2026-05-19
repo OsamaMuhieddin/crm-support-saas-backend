@@ -1,0 +1,68 @@
+@startuml ticket-message-reply-note-attachments
+title Ticket Message, Reply, Note, Attachments, and SLA Side Effects
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Agent" as Agent
+participant "Ticket UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Message\nController" as Controller
+participant "Ticket Message\nService" as MessageService
+participant "Ticket + Conversation\nModels" as TicketModels
+participant "Message\nModel" as MessageModel
+participant "File + Link\nServices/Models" as FileServices
+participant "SLA Runtime\nService" as SlaRuntime
+participant "Live Event\nService" as Events
+
+== 1. Submit message ==
+Agent -> UI: Compose message, reply,\nor internal note
+UI -> Routes: POST /api/tickets/:id/messages
+Routes -> Guards: auth, active user/member,\nowner/admin/agent role
+Routes -> Routes: validate type, body,\nattachmentFileIds
+Routes -> Controller: createTicketMessageController(req)
+Controller -> MessageService: createTicketMessage(workspaceId,\nticketId, userId, payload)
+
+== 2. Validate ticket and attachments ==
+MessageService -> TicketModels: load ticket and conversation\nfor workspace
+MessageService -> MessageService: enforce closed-ticket rule
+MessageService -> FileServices: if attachment ids supplied,\nload ready same-workspace files\nand check not already linked
+
+== 3. Apply message and status side effects ==
+alt public_reply
+  MessageService -> MessageModel: create public reply message
+  MessageService -> SlaRuntime: set firstResponseAt and\npause resolution SLA
+  MessageService -> TicketModels: status = waiting_on_customer
+else customer_message
+  MessageService -> MessageModel: create customer message
+  MessageService -> SlaRuntime: resume active resolution SLA\nwhen previously paused
+  MessageService -> TicketModels: status = open
+else internal_note
+  MessageService -> MessageModel: create internal note
+  MessageService -> TicketModels: keep current ticket status
+end
+
+== 4. Link attachments ==
+MessageService -> FileServices: create message attachment links
+MessageService -> FileServices: create ticket reverse links
+
+== 5. Publish message event ==
+MessageService -> TicketModels: update ticket/conversation\nmessage counters and summaries
+MessageService -> Events: publish message.created\nand conversation.updated
+MessageService --> Controller: message, conversation,\nticketSummary
+Controller --> UI: success.ticket.messageCreated
+UI --> Agent: Show updated thread
+
+@enduml

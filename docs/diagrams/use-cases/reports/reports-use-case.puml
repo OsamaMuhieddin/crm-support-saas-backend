@@ -1,0 +1,67 @@
+@startuml
+title System Use Case Diagram - Reports and Analytics (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View Reports\nOverview) as UCOverview
+  (View Ticket\nReports) as UCTickets
+  (View SLA\nReports) as UCSla
+  (View Team\nWorkload Report) as UCTeam
+
+  (Customize Report\nFilters) as UCFilters
+  (Select Reporting\nPeriod) as UCPeriod
+  (Choose Report\nGranularity) as UCGranularity
+  (Filter by Ticket\nAttributes) as UCAttributes
+
+  (Review Workspace\nKPIs and Usage) as UCOverviewKpis
+  (Review Ticket Volume\nand Breakdowns) as UCTicketMetrics
+  (Review SLA\nCompliance) as UCSlaMetrics
+  (Review Assignee\nWorkload) as UCTeamMetrics
+}
+
+WorkspaceMember --> UCOverview
+WorkspaceMember --> UCTickets
+WorkspaceMember --> UCSla
+Agent --> UCTickets
+Viewer --> UCOverview
+
+WorkspaceManager --> UCTeam
+
+UCOverview ..> UCFilters : <<include>>
+UCTickets ..> UCFilters : <<include>>
+UCSla ..> UCFilters : <<include>>
+UCTeam ..> UCFilters : <<include>>
+
+UCFilters ..> UCPeriod : <<include>>
+UCFilters ..> UCGranularity : <<include>>
+UCFilters ..> UCAttributes : <<include>>
+
+UCOverview ..> UCOverviewKpis : <<include>>
+UCTickets ..> UCTicketMetrics : <<include>>
+UCSla ..> UCSlaMetrics : <<include>>
+UCTeam ..> UCTeamMetrics : <<include>>
+
+@enduml

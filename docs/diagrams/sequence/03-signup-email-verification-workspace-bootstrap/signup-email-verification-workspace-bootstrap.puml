@@ -1,0 +1,79 @@
+@startuml signup-email-verification-workspace-bootstrap
+title Signup, Email Verification, and Workspace Bootstrap
+
+hide footbox
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantFontColor #111111
+  ParticipantFontSize 16
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  ActorFontSize 16
+  GroupBorderColor #111111
+  GroupBackgroundColor #FFFFFF
+}
+
+actor "New User" as User
+participant "Signup UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth\nController" as Controller
+participant "Auth\nService" as AuthService
+participant "OTP + Email" as OtpEmail
+participant "User/OTP\nmodels" as UserModels
+participant "Workspace\nService" as WorkspaceService
+participant "Workspace/Membership/\nMailbox/Billing models" as WorkspaceModels
+participant "Session\nService" as SessionService
+participant "Session model" as SessionModel
+
+== 1. Signup request ==
+
+User -> UI: Submit signup form
+UI -> Routes: POST /api/auth/signup
+Routes -> Controller: validated email/password/name
+Controller -> AuthService: signup(email, password, name)
+AuthService -> UserModels: create unverified user\nor reuse existing unverified user
+
+== 2. Send verification OTP ==
+
+AuthService -> OtpEmail: create verifyEmail OTP\nand send email fire-and-forget
+OtpEmail -> UserModels: store hashed OTP with expiry
+AuthService --> UI: success.auth.otpSent\n(no tokens yet)
+
+== 3. Verify email ==
+
+User -> UI: Submit OTP code
+UI -> Routes: POST /api/auth/verify-email
+Routes -> Controller: validated email/code/inviteToken?
+Controller -> AuthService: verifyEmailAndLogin(email, code, inviteToken?)
+AuthService -> OtpEmail: verify latest verifyEmail OTP
+AuthService -> UserModels: mark email verified
+
+== 4. Bootstrap workspace ==
+
+alt Normal signup verification
+  AuthService -> WorkspaceService: ensureWorkspaceForVerifiedUser(user)
+  WorkspaceService -> WorkspaceModels: create owner workspace,\nowner membership, default mailbox
+  WorkspaceService -> WorkspaceModels: create initial billing foundation\n(best effort)
+else Verify with inviteToken
+  AuthService -> WorkspaceService: ensureWorkspaceForVerifiedUser(user, inviteToken)
+  WorkspaceService -> WorkspaceModels: validate invite, activate membership,\nmark invite accepted
+  WorkspaceService -> WorkspaceModels: bootstrap default workspace\nonly if user has none
+end
+
+== 5. Create session tokens ==
+
+WorkspaceService --> AuthService: active workspace context\n+ optional invite workspace context
+AuthService -> SessionService: createSessionWithTokens(user, active workspace, role)
+SessionService -> SessionModel: create session with refresh token hash
+SessionService --> AuthService: accessToken + refreshToken
+AuthService -> UserModels: update lastLoginAt
+AuthService --> UI: success.auth.verified\nuser + tokens + workspace context
+
+@enduml

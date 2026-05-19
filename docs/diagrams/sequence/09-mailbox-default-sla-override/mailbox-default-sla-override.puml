@@ -1,0 +1,62 @@
+@startuml mailbox-default-sla-override
+title Mailbox Create, Default Mailbox, and SLA Override
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Workspace\nOwner/Admin" as Admin
+participant "Mailbox UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Mailbox\nController" as Controller
+participant "Mailbox\nService" as MailboxService
+participant "Billing\nEnforcement" as Billing
+participant "Mailbox\nModel" as MailboxModel
+participant "Workspace\nModel" as WorkspaceModel
+participant "SLA Policy\nModel/Service" as Sla
+
+== 1. Create mailbox ==
+Admin -> UI: Enter mailbox settings\nand optional slaPolicyId
+UI -> Routes: POST /api/mailboxes
+Routes -> Guards: auth, active member,\nowner/admin role
+Routes -> Controller: validated mailbox body
+Controller -> MailboxService: createMailbox(workspace, payload)
+
+== 2. Validate workspace and permissions ==
+MailboxService -> WorkspaceModel: find workspace
+MailboxService -> Billing: assert mailbox write allowed
+opt SLA override supplied
+  MailboxService -> Billing: assert SLA feature allowed
+  MailboxService -> Sla: find active same-workspace policy
+end
+
+== 3. Apply mailbox settings ==
+MailboxService -> MailboxModel: create active mailbox\nwith resolved SLA policy or null
+MailboxService -> MailboxModel: handle duplicate email/default conflicts
+
+== 4. Set default mailbox ==
+MailboxService -> MailboxService: ensureWorkspaceDefaultMailbox()
+MailboxService -> MailboxModel: ensure exactly one default\nand keep it active
+MailboxService -> WorkspaceModel: update workspace.defaultMailboxId
+MailboxService --> UI: success.mailbox.created
+
+== 5. Link SLA override ==
+UI -> Routes: PATCH /api/mailboxes/:id\nor POST /:id/set-default
+Routes -> Controller: validated update/action
+Controller -> MailboxService: updateMailbox() or setDefaultMailbox()
+MailboxService -> Sla: validate active SLA override\nwhen set
+MailboxService -> WorkspaceModel: sync default pointer\nwhen set-default
+MailboxService --> UI: updated mailbox or compact action response
+
+@enduml

@@ -1,0 +1,67 @@
+@startuml billing-checkout-portal
+title Billing Checkout and Customer Portal
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Workspace\nOwner/Admin" as Admin
+participant "Billing UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Billing\nController" as Controller
+participant "Billing\nService" as BillingService
+participant "Billing Sync\nService" as SyncService
+participant "Billing Models\nPlan/Subscription/Entitlement" as BillingModels
+participant "Workspace/User\nModels" as WorkspaceModels
+participant "Stripe Billing\nProvider" as Stripe
+
+== 1. Request checkout ==
+Admin -> UI: Choose plan/add-ons
+UI -> Routes: POST /api/billing/checkout-session
+Routes -> Guards: auth, active user/member,\nowner/admin role
+Routes -> Controller: validated planKey, URLs, add-ons
+Controller -> BillingService: createBillingCheckoutSession()
+
+== 2. Verify billing authority ==
+BillingService -> SyncService: createWorkspaceCheckoutSession()
+SyncService -> BillingModels: sync catalog, resolve plan/add-ons,\nensure billing foundation
+SyncService -> BillingModels: reject active managed subscription\nunless canceled/expired
+
+== 3. Create or reuse billing customer ==
+SyncService -> WorkspaceModels: load workspace owner/contact
+SyncService -> Stripe: create/update Stripe customer
+Stripe --> SyncService: customer id
+SyncService -> BillingModels: store stripeCustomerId
+
+== 4. Create checkout session ==
+SyncService -> Stripe: create subscription checkout session
+Stripe --> SyncService: checkout session id + URL
+SyncService --> UI: success.billing.checkoutSessionCreated\ncheckoutSession URL
+note over UI,SyncService
+Subscription activation is not completed here.
+Stripe webhooks sync local subscription state in Diagram 07.
+end note
+
+== 5. Open portal session ==
+UI -> Routes: POST /api/billing/portal-session
+Routes -> Guards: auth, active user/member,\nowner/admin role
+Routes -> Controller: validated returnUrl
+Controller -> BillingService: createBillingPortalSession()
+BillingService -> SyncService: createWorkspacePortalSession()
+SyncService -> BillingModels: verify portal feature and\nmanaged Stripe subscription
+SyncService -> Stripe: create billing portal session
+Stripe --> SyncService: portal URL
+SyncService --> UI: success.billing.portalSessionCreated
+
+@enduml

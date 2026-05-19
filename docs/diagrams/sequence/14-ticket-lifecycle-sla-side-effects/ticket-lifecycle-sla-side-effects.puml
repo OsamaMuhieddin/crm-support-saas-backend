@@ -1,0 +1,61 @@
+@startuml ticket-lifecycle-sla-side-effects
+title Ticket Solve, Close, Reopen, and SLA Lifecycle Side Effects
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Agent" as Agent
+participant "Ticket UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Ticket\nController" as Controller
+participant "Ticket\nService" as TicketService
+participant "Ticket + Conversation\nModels" as TicketModels
+participant "SLA Runtime\nService" as SlaRuntime
+participant "Live Event\nService" as Events
+
+== 1. Submit lifecycle action ==
+Agent -> UI: Solve, close, reopen,\nor set status
+UI -> Routes: POST /api/tickets/:id/solve\nPOST /api/tickets/:id/close\nPOST /api/tickets/:id/reopen\nPOST /api/tickets/:id/status
+Routes -> Guards: auth, active user/member,\nowner/admin/agent role
+Routes -> Routes: validate id and status body
+Routes -> Controller: lifecycle controller
+Controller -> TicketService: solveTicket, closeTicket,\nreopenTicket, or updateTicketStatus
+
+== 2. Authorize and validate transition ==
+TicketService -> TicketModels: load ticket in active workspace
+TicketService -> TicketService: enforce explicit transition rules
+
+== 3. Apply status change ==
+alt solve or close path
+  TicketService -> SlaRuntime: solve/status solved marks\nresolution SLA at event time
+  TicketService -> TicketModels: status = solved or closed;\nclosedAt only for closed
+else reopen path
+  TicketService -> SlaRuntime: clear resolvedAt and resume\nremaining resolution time
+  TicketService -> TicketModels: status = open;\nclosedAt cleared by model
+end
+
+== 4. Apply SLA side effects ==
+SlaRuntime -> SlaRuntime: pause/resume/resolve resolution SLA\nbased on next status
+SlaRuntime --> TicketService: updated stored SLA fields
+TicketService -> TicketModels: save ticket status and SLA
+
+== 5. Publish lifecycle event ==
+TicketService -> Events: publish ticket.status_changed,\nticket.solved, ticket.closed,\nor ticket.reopened
+Events -> Events: update internal rooms and\nwidget conversation when linked
+TicketService --> Controller: compact lifecycle response
+Controller --> UI: success.ticket.statusUpdated,\nsolved, closed, or reopened
+UI --> Agent: Show lifecycle state
+
+@enduml

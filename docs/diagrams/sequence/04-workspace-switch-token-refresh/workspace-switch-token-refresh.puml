@@ -1,0 +1,74 @@
+@startuml workspace-switch-token-refresh
+title Workspace Switch and Token Refresh
+
+hide footbox
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantFontColor #111111
+  ParticipantFontSize 16
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  ActorFontSize 16
+  GroupBorderColor #111111
+  GroupBackgroundColor #FFFFFF
+}
+
+actor "Workspace User" as User
+participant "App UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + User\nGuards" as Guards
+participant "Workspace\nController" as WorkspaceController
+participant "Workspace\nService" as WorkspaceService
+participant "Auth\nController" as AuthController
+participant "Auth\nService" as AuthService
+participant "Session/Token\nService" as SessionService
+participant "Domain Models\nUser/Session/Workspace/Member" as Models
+participant "Realtime\nRuntime" as Realtime
+
+== 1. Request workspace switch ==
+
+User -> UI: Select target workspace
+UI -> Routes: POST /api/workspaces/switch
+Routes -> Guards: requireAuth + active user
+Routes -> WorkspaceController: validated workspaceId
+WorkspaceController -> WorkspaceService: switchWorkspaceForSession(user, session, workspace)
+
+== 2. Validate membership and workspace ==
+
+WorkspaceService -> Models: find target workspace
+WorkspaceService -> Models: verify active membership\nand role in target workspace
+
+== 3. Update session workspace ==
+
+WorkspaceService -> Models: update Session.workspaceId
+WorkspaceService -> Models: update User.lastWorkspaceId
+
+== 4. Mint replacement access token ==
+
+WorkspaceService -> SessionService: mintAccessTokenForSession(new workspace, role)
+SessionService -> Models: verify session is active
+SessionService --> WorkspaceService: replacement access token
+WorkspaceService -> Realtime: disconnect sockets for session
+WorkspaceService --> UI: switched workspace + role + accessToken
+
+== 5. Refresh uses session workspace ==
+
+UI -> Routes: POST /api/auth/refresh
+Routes -> AuthController: validated refreshToken
+AuthController -> AuthService: refresh(refreshToken)
+AuthService -> SessionService: validate refresh token and session hash
+SessionService -> Models: load active session\nwith current workspaceId
+AuthService -> WorkspaceService: resolve active workspace context\nfrom session.workspaceId
+WorkspaceService -> Models: verify active workspace + membership
+AuthService -> SessionService: rotate refresh/access tokens
+SessionService -> Models: update refreshTokenHash\nand keep session workspace
+AuthService --> UI: refreshed accessToken + refreshToken
+
+@enduml

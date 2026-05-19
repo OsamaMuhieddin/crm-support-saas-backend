@@ -1,0 +1,60 @@
+@startuml ticket-assignment-self-assignment
+title Ticket Assignment, Unassignment, and Self-Assignment
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Owner/Admin\nor Agent" as User
+participant "Ticket UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "Ticket\nController" as Controller
+participant "Ticket\nService" as TicketService
+participant "Member/User\nReference Models" as MemberModels
+participant "Ticket\nModel" as TicketModel
+participant "Live Event\nService" as Events
+
+== 1. Submit assignment action ==
+User -> UI: Assign, unassign,\nor take ticket
+UI -> Routes: POST /api/tickets/:id/assign\nPOST /api/tickets/:id/unassign\nPOST /api/tickets/:id/self-assign
+Routes -> Guards: auth, active user/member,\nrole gate for action
+Routes -> Routes: validate id and body
+Routes -> Controller: assignment controller
+Controller -> TicketService: assignTicket,\nunassignTicket, or selfAssignTicket
+
+== 2. Authorize assignment mode ==
+TicketService -> TicketModel: load ticket in active workspace
+alt owner/admin assign or unassign
+  TicketService -> TicketService: elevated role may assign\nor clear any assignee
+else agent self-assignment path
+  TicketService -> TicketService: current user only;\nno stealing another assignee
+end
+
+== 3. Validate assignee or self-assignment ==
+TicketService -> MemberModels: resolve active operational member\n(owner/admin/agent) and active user
+MemberModels --> TicketService: eligible assignee summary
+
+== 4. Update ticket assignment ==
+TicketService -> TicketModel: set assigneeId or clear it
+TicketService -> TicketModel: new assigned ticket moves to open
+TicketModel --> TicketService: assignedAt synced by model
+
+== 5. Publish assignment event ==
+TicketService -> Events: publish ticket.assigned\nor ticket.unassigned
+Events -> Events: emit user.notice for current\nand previous assignee when needed
+TicketService --> Controller: compact assignment response
+Controller --> UI: success.ticket.assigned,\nunassigned, or selfAssigned
+UI --> User: Show assignment state
+
+@enduml

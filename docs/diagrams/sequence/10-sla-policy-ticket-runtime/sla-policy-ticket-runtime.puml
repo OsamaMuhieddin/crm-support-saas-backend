@@ -1,0 +1,64 @@
+@startuml sla-policy-ticket-runtime
+title SLA Policy Setup and Ticket Runtime SLA Snapshot
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Workspace\nOwner/Admin" as Admin
+participant "SLA / Ticket UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Auth + Workspace\nGuards" as Guards
+participant "SLA\nController/Service" as SlaService
+participant "Billing\nEnforcement" as Billing
+participant "SLA Models\nBusinessHours/Policy" as SlaModels
+participant "Mailbox +\nWorkspace Models" as ConfigModels
+participant "Ticket\nController/Service" as TicketService
+participant "Ticket\nModel" as TicketModel
+
+== 1. Configure SLA policy ==
+Admin -> UI: Create business hours\nand policy targets
+UI -> Routes: POST /api/sla/business-hours\nPOST /api/sla/policies
+Routes -> Guards: auth, active member,\nowner/admin role
+Routes -> SlaService: validated SLA payload
+
+== 2. Validate business hours and targets ==
+SlaService -> Billing: assert SLA feature allowed
+SlaService -> SlaService: validate timezone, weekly schedule,\nrules by priority
+SlaService -> SlaModels: find business hours\nfor policy
+
+== 3. Save policy ==
+SlaService -> SlaModels: create active SLA policy
+UI -> Routes: POST /api/sla/policies/:id/set-default\nor mailbox slaPolicyId update
+Routes -> SlaService: set workspace default\nor mailbox override
+SlaService -> ConfigModels: sync defaultSlaPolicyId\nor mailbox.slaPolicyId
+
+== 4. Create ticket ==
+UI -> Routes: POST /api/tickets\nor widget message creates ticket
+Routes -> TicketService: validated ticket payload
+TicketService -> ConfigModels: resolve mailbox\nand workspace default
+
+== 5. Resolve and snapshot SLA ==
+alt Mailbox override exists
+  TicketService -> SlaService: resolveTicketSlaSnapshot(mailbox policy)
+else Workspace default exists
+  TicketService -> SlaService: resolveTicketSlaSnapshot(default policy)
+else No effective SLA
+  TicketService -> SlaService: return empty SLA snapshot
+end
+SlaService -> SlaModels: load active policy\nand business hours
+SlaService --> TicketService: due dates, targets,\nbusiness-hours snapshot
+TicketService -> TicketModel: create ticket with stored sla snapshot
+TicketService --> UI: ticket response with derived SLA state
+
+@enduml

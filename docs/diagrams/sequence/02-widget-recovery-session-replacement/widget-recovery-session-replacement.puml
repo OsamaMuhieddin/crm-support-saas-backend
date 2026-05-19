@@ -1,0 +1,85 @@
+@startuml widget-recovery-session-replacement
+title Widget Recovery and Session Replacement
+
+hide footbox
+
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ParticipantFontColor #111111
+  ParticipantFontSize 16
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  ActorFontSize 16
+  GroupBorderColor #111111
+  GroupBackgroundColor #FFFFFF
+}
+
+actor "Visitor" as Visitor
+participant "Widget UI" as UI
+participant "Routes +\nValidation" as Routes
+participant "Recovery\nController" as Controller
+participant "Recovery\nService" as RecoveryService
+participant "OTP + Email" as OtpEmail
+participant "Domain Models\nWidget/Recovery/Session/Contact/Ticket" as Models
+participant "WidgetPublic\nService" as PublicService
+participant "Realtime\nRuntime" as Realtime
+
+== 1. Request recovery ==
+
+Visitor -> UI: Enters recovery email
+UI -> Routes: POST recovery/request
+Routes -> Controller: validated email request
+Controller -> RecoveryService: requestWidgetRecovery(publicKey, email)
+RecoveryService -> Models: verify active widget/mailbox\nand find recoverable contact/ticket
+RecoveryService -> OtpEmail: create widgetRecovery OTP\nand send email when candidate exists
+RecoveryService --> UI: generic recoveryRequested response
+
+== 2. Verify OTP ==
+
+Visitor -> UI: Enters OTP code
+UI -> Routes: POST recovery/verify
+Routes -> Controller: validated email + code
+Controller -> RecoveryService: verifyWidgetRecovery(publicKey, email, code)
+RecoveryService -> OtpEmail: verify widget-scoped OTP
+RecoveryService -> Models: reload recovery candidate\nand create wgr_* recovery record
+RecoveryService --> UI: recovery token + candidate options
+
+== 3. Continue or start new ==
+
+Visitor -> UI: Chooses recovery action
+
+alt Continue recovered conversation
+  UI -> Routes: POST recovery/continue
+  Routes -> Controller: validated recoveryToken
+  Controller -> RecoveryService: continueRecoveredWidgetConversation(wgr_*)
+  RecoveryService -> Models: load valid recovery record\nand recoverable ticket
+  RecoveryService -> Models: ensure verified contact/identity
+  RecoveryService -> PublicService: create fresh wgs_* session\nbound to candidate ticket
+else Start new conversation
+  UI -> Routes: POST recovery/start-new
+  Routes -> Controller: validated recoveryToken
+  Controller -> RecoveryService: startNewRecoveredWidgetConversation(wgr_*)
+  RecoveryService -> Models: load valid recovery record
+  RecoveryService -> Models: ensure verified contact/identity
+  RecoveryService -> PublicService: create fresh wgs_* session\nwithout ticket binding
+end
+
+== 4. Replace session ==
+
+RecoveryService -> Models: invalidate superseded widget sessions\nand clear old publicSessionKeyHash
+RecoveryService -> Realtime: disconnect replaced widget sockets
+RecoveryService -> Models: consume recovery record
+
+== 5. Return recovered session ==
+
+RecoveryService -> PublicService: initializePublicWidgetSession(new wgs_*)
+PublicService -> Models: load recovered session snapshot
+PublicService --> UI: recovered session + conversation + realtime metadata
+
+@enduml

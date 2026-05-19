@@ -1,0 +1,69 @@
+@startuml stripe-webhook-subscription-sync
+title Stripe Webhook Subscription Sync
+hide footbox
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 16
+skinparam sequence {
+  ArrowColor #111111
+  LifeLineBorderColor #111111
+  LifeLineBackgroundColor #FFFFFF
+  ParticipantBorderColor #111111
+  ParticipantBackgroundColor #FFFFFF
+  ActorBorderColor #111111
+  ActorBackgroundColor #FFFFFF
+  GroupBorderColor #111111
+  GroupBackgroundColor #EEEEEE
+}
+
+actor "Stripe" as Stripe
+participant "Webhook Route\nRaw Body" as Route
+participant "Billing\nController" as Controller
+participant "Webhook\nService" as WebhookService
+participant "Stripe Billing\nProvider" as Provider
+participant "Webhook Event\nModel" as EventModel
+participant "Billing Queue\nRuntime" as Queue
+participant "Billing Sync\nWorker/Service" as SyncService
+participant "Subscription +\nEntitlement Models" as Models
+
+== 1. Receive webhook ==
+Stripe -> Route: POST /api/billing/webhooks/stripe
+Route -> Controller: raw application/json body\n+ stripe-signature
+Controller -> WebhookService: acceptStripeWebhookEvent()
+
+== 2. Verify and dedupe event ==
+WebhookService -> Provider: verify Stripe signature
+Provider --> WebhookService: verified event
+WebhookService -> EventModel: persist by provider + eventId\nwith payload hash
+alt Duplicate event
+  EventModel --> WebhookService: existing webhook event
+  WebhookService --> Stripe: accepted duplicate response
+else New event
+  EventModel --> WebhookService: pending webhook event
+  WebhookService -> Queue: enqueue processing job
+  WebhookService --> Stripe: accepted + queued flag
+end
+
+== 3. Resolve subscription/customer ==
+Queue -> SyncService: processBillingWebhookEventById()
+SyncService -> EventModel: load pending event
+SyncService -> Models: resolve workspace from metadata,\nsubscription, or customer
+SyncService -> Models: ensure subscription foundation
+
+== 4. Apply subscription status ==
+alt Active/success lifecycle
+  SyncService -> Provider: retrieve/list Stripe subscription\nwhen payload needs sync
+  SyncService -> Models: map plan/add-ons,\nstatus active/trialing
+  SyncService -> Models: recompute entitlements
+else Failure/status-change lifecycle
+  SyncService -> Models: apply past_due/canceled/\nincomplete lifecycle fields
+  SyncService -> Models: recompute entitlement flags
+end
+SyncService -> EventModel: mark processed or failed
+
+== 5. Return webhook acknowledgement ==
+note over WebhookService,SyncService
+The HTTP request acknowledges persistence/enqueueing.
+Subscription state is applied by the worker or replay processor.
+end note
+
+@enduml

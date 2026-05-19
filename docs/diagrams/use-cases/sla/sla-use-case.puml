@@ -1,0 +1,77 @@
+@startuml
+title System Use Case Diagram - SLA Management and Runtime (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View SLA\nConfiguration) as UCViewConfig
+  (View SLA\nSummary) as UCViewSummary
+
+  (Manage Business\nHours) as UCManageHours
+  (Manage SLA\nPolicies) as UCManagePolicies
+  (Set Workspace\nDefault SLA Policy) as UCSetDefault
+  (Assign Mailbox\nSLA Override) as UCMailboxOverride
+  (Handle SLA Policy\nDeactivation Effects) as UCDeactivateEffects
+
+  (Apply SLA Policy\nto Ticket) as UCApplyTicket
+  (Calculate First\nResponse Target) as UCFirstTarget
+  (Calculate Resolution\nTarget) as UCResolutionTarget
+  (Track First\nResponse SLA) as UCTrackFirst
+  (Track Resolution\nSLA) as UCTrackResolution
+  (Recalculate SLA on\nAllowed Ticket Changes) as UCRecalculate
+  (View Ticket\nSLA Status) as UCViewTicketStatus
+}
+
+WorkspaceMember --> UCViewConfig
+WorkspaceMember --> UCViewSummary
+WorkspaceMember --> UCViewTicketStatus
+Viewer --> UCViewConfig
+Viewer --> UCViewSummary
+Viewer --> UCViewTicketStatus
+
+WorkspaceManager --> UCManageHours
+WorkspaceManager --> UCManagePolicies
+WorkspaceManager --> UCSetDefault
+WorkspaceManager --> UCMailboxOverride
+WorkspaceManager --> UCDeactivateEffects
+
+Agent --> UCApplyTicket
+Agent --> UCTrackFirst
+Agent --> UCTrackResolution
+Agent --> UCRecalculate
+Agent --> UCViewTicketStatus
+WorkspaceManager --> UCApplyTicket
+WorkspaceManager --> UCTrackFirst
+WorkspaceManager --> UCTrackResolution
+WorkspaceManager --> UCRecalculate
+
+UCManagePolicies ..> UCSetDefault : <<include>>
+UCManagePolicies ..> UCDeactivateEffects : <<extend>>
+UCMailboxOverride ..> UCApplyTicket : <<extend>>
+UCApplyTicket ..> UCFirstTarget : <<include>>
+UCApplyTicket ..> UCResolutionTarget : <<include>>
+UCTrackResolution ..> UCRecalculate : <<extend>>
+
+@enduml

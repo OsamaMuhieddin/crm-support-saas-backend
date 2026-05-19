@@ -1,0 +1,35 @@
+@startuml
+title System Use Case Diagram - Final Cross-Check and Index (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #94A3B8
+}
+
+actor "Academic\nReviewer" as Reviewer
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (Review Diagram\nPackage) as UCReview
+  (Verify Implemented\nModule Coverage) as UCCoverage
+  (Check Style\nConsistency) as UCStyle
+  (Confirm Merged or\nNotes-Only Decisions) as UCMerged
+  (Review Generated\nArtifact Status) as UCArtifacts
+}
+
+Reviewer --> UCReview
+UCReview ..> UCCoverage : <<include>>
+UCReview ..> UCStyle : <<include>>
+UCReview ..> UCMerged : <<include>>
+UCReview ..> UCArtifacts : <<include>>
+
+@enduml

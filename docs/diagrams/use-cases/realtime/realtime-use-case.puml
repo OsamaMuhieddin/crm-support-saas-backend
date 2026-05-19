@@ -1,0 +1,103 @@
+@startuml
+title System Use Case Diagram - Realtime Collaboration (Masar)
+
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam actorStyle awesome
+skinparam defaultFontName Arial
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  ArrowColor #2D3748
+}
+
+actor "Workspace Member" as WorkspaceMember <<abstract>>
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+actor "Customer /\nWidget Visitor" as WidgetVisitor
+
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
+Viewer --|> WorkspaceMember
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (Get Realtime\nBootstrap) as UCBootstrap
+  (Connect to\nRealtime Socket) as UCConnect
+  (Authenticate\nRealtime Session) as UCAuth
+  (Disconnect Revoked\nor Invalid Sessions) as UCDisconnect
+
+  (Subscribe to\nWorkspace Room) as UCWorkspaceSub
+  (Unsubscribe from\nWorkspace Room) as UCWorkspaceUnsub
+  (Subscribe to\nTicket Room) as UCTicketSub
+  (Unsubscribe from\nTicket Room) as UCTicketUnsub
+
+  (Receive Ticket\nBusiness Events) as UCBusinessEvents
+  (Receive Conversation\nUpdates) as UCConversation
+  (Receive User\nNotices) as UCNotices
+
+  (View Ticket\nCollaboration Snapshot) as UCSnapshot
+  (Receive Collaboration\nState Updates) as UCCollabUpdates
+  (Set Ticket\nPresence) as UCPresence
+  (Start/Stop\nTyping Signal) as UCTyping
+  (Set/Clear Advisory\nSoft Claim) as UCSoftClaim
+  (Clear Collaboration\nState on Disconnect\nor Unsubscribe) as UCClearState
+
+  (Subscribe to Public\nWidget Realtime Updates) as UCWidgetSub
+  (Unsubscribe from Public\nWidget Realtime Updates) as UCWidgetUnsub
+  (Receive Public Widget\nMessage/Conversation\nUpdates) as UCWidgetEvents
+}
+
+WorkspaceMember --> UCBootstrap
+WorkspaceMember --> UCConnect
+WorkspaceMember --> UCWorkspaceSub
+WorkspaceMember --> UCWorkspaceUnsub
+WorkspaceMember --> UCTicketSub
+WorkspaceMember --> UCTicketUnsub
+WorkspaceMember --> UCBusinessEvents
+WorkspaceMember --> UCConversation
+WorkspaceMember --> UCNotices
+WorkspaceMember --> UCSnapshot
+WorkspaceMember --> UCCollabUpdates
+
+WorkspaceManager --> UCPresence
+WorkspaceManager --> UCTyping
+WorkspaceManager --> UCSoftClaim
+Agent --> UCPresence
+Agent --> UCTyping
+Agent --> UCSoftClaim
+Viewer --> UCPresence
+Viewer --> UCTyping
+Viewer --> UCSoftClaim
+
+WidgetVisitor --> UCConnect
+WidgetVisitor --> UCWidgetSub
+WidgetVisitor --> UCWidgetUnsub
+WidgetVisitor --> UCWidgetEvents
+
+UCConnect ..> UCAuth : <<include>>
+UCConnect ..> UCDisconnect : <<extend>>
+
+UCWorkspaceSub ..> UCBusinessEvents : <<include>>
+UCWorkspaceSub ..> UCConversation : <<include>>
+UCWorkspaceSub ..> UCWorkspaceUnsub : <<extend>>
+
+UCTicketSub ..> UCSnapshot : <<include>>
+UCTicketSub ..> UCCollabUpdates : <<include>>
+UCTicketSub ..> UCBusinessEvents : <<include>>
+UCTicketSub ..> UCConversation : <<include>>
+UCTicketSub ..> UCTicketUnsub : <<extend>>
+
+UCTicketUnsub ..> UCClearState : <<include>>
+UCDisconnect ..> UCClearState : <<include>>
+
+UCWidgetSub ..> UCAuth : <<include>>
+UCWidgetSub ..> UCWidgetEvents : <<include>>
+UCWidgetSub ..> UCWidgetUnsub : <<extend>>
+
+@enduml
