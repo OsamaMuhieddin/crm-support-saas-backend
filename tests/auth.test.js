@@ -130,6 +130,42 @@ describe('Auth + OTP flows', () => {
   );
 
   maybeDbTest(
+    'signup for existing unverified user within cooldown returns resendTooSoon',
+    async () => {
+      const email = 'existing-unverified-cooldown@example.com';
+
+      const firstSignup = await signupAndCaptureOtp({
+        email,
+        password: 'Password123!',
+      });
+
+      expect(firstSignup.response.status).toBe(200);
+
+      const secondSignup = await request(app).post('/api/auth/signup').send({
+        email,
+        password: 'Password123!',
+      });
+
+      expect(secondSignup.status).toBe(429);
+      expect(secondSignup.body.messageKey).toBe('errors.otp.resendTooSoon');
+    }
+  );
+
+  maybeDbTest('signup for verified user returns emailAlreadyUsed', async () => {
+    const email = 'existing-verified@example.com';
+
+    await createVerifiedUser({ email });
+
+    const response = await request(app).post('/api/auth/signup').send({
+      email,
+      password: 'Password123!',
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.messageKey).toBe('errors.auth.emailAlreadyUsed');
+  });
+
+  maybeDbTest(
     'verify-email creates workspace + membership + tokens',
     async () => {
       const email = 'verify-flow@example.com';

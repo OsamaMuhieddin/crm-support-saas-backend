@@ -515,6 +515,15 @@ Do not publicly expose:
 
 The Compose stack binds the backend only to `127.0.0.1:5000`, so NGINX is the public entrypoint.
 
+Scanner probes for common secret, PHP, and framework debug paths are expected on public IPs/domains.
+`deploy/nginx.dev.conf` blocks common dotfile, env, PHP, phpinfo, and debug probes at NGINX with `404` before they reach Node.
+After changing the live NGINX site config on the VM, validate and reload it:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
 ### Azure env file
 
 Keep `.env.example` for local development.
