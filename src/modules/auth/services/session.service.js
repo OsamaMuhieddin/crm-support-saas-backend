@@ -6,7 +6,7 @@ import {
   getTokenExpiryDate,
   signAccessToken,
   signRefreshToken,
-  verifyRefreshToken
+  verifyRefreshToken,
 } from './token.service.js';
 
 const nowDate = () => new Date();
@@ -24,12 +24,17 @@ const listActiveSessionIds = async (query = {}) => {
 
 const buildTokenPair = ({ userId, sessionId, workspaceId, roleKey }) => {
   const refreshToken = signRefreshToken({ userId, sessionId });
-  const accessToken = signAccessToken({ userId, sessionId, workspaceId, roleKey });
+  const accessToken = signAccessToken({
+    userId,
+    sessionId,
+    workspaceId,
+    roleKey,
+  });
 
   return {
     accessToken,
     refreshToken,
-    refreshExpiresAt: getTokenExpiryDate(refreshToken)
+    refreshExpiresAt: getTokenExpiryDate(refreshToken),
   };
 };
 
@@ -38,7 +43,7 @@ export const createSessionWithTokens = async ({
   workspaceId,
   roleKey,
   ip,
-  userAgent
+  userAgent,
 }) => {
   const sessionId = new mongoose.Types.ObjectId();
   const tokens = buildTokenPair({ userId, sessionId, workspaceId, roleKey });
@@ -50,15 +55,15 @@ export const createSessionWithTokens = async ({
     refreshTokenHash: hashValue(tokens.refreshToken),
     userAgent: userAgent || null,
     ip: ip || null,
-    expiresAt: tokens.refreshExpiresAt
+    expiresAt: tokens.refreshExpiresAt,
   });
 
   return {
     session,
     tokens: {
       accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken
-    }
+      refreshToken: tokens.refreshToken,
+    },
   };
 };
 
@@ -66,13 +71,13 @@ export const mintAccessTokenForSession = async ({
   sessionId,
   userId,
   workspaceId,
-  roleKey
+  roleKey,
 }) => {
   const session = await Session.findOne({
     _id: sessionId,
     userId,
     revokedAt: null,
-    expiresAt: { $gt: nowDate() }
+    expiresAt: { $gt: nowDate() },
   })
     .select('_id')
     .lean();
@@ -85,7 +90,7 @@ export const mintAccessTokenForSession = async ({
     userId,
     sessionId,
     workspaceId,
-    roleKey
+    roleKey,
   });
 };
 
@@ -98,7 +103,7 @@ export const validateRefreshSession = async (refreshToken) => {
 
   const session = await Session.findOne({
     _id: payload.sid,
-    userId: payload.sub
+    userId: payload.sub,
   });
   if (!session) {
     throw createError('errors.auth.sessionRevoked', 401);
@@ -120,7 +125,7 @@ export const validateRefreshSession = async (refreshToken) => {
 
   return {
     payload,
-    session
+    session,
   };
 };
 
@@ -128,7 +133,7 @@ export const rotateSessionTokens = async ({
   session,
   userId,
   workspaceId,
-  roleKey
+  roleKey,
 }) => {
   const sessionId = session._id;
   const tokens = buildTokenPair({ userId, sessionId, workspaceId, roleKey });
@@ -141,7 +146,7 @@ export const rotateSessionTokens = async ({
 
   return {
     accessToken: tokens.accessToken,
-    refreshToken: tokens.refreshToken
+    refreshToken: tokens.refreshToken,
   };
 };
 
@@ -159,12 +164,12 @@ export const revokeSessionById = async (sessionId) => {
       _id: {
         $in: revokedSessionIds,
       },
-      revokedAt: null
+      revokedAt: null,
     },
     {
       $set: {
-        revokedAt: nowDate()
-      }
+        revokedAt: nowDate(),
+      },
     }
   );
 
@@ -185,12 +190,39 @@ export const revokeAllUserSessions = async (userId) => {
       _id: {
         $in: revokedSessionIds,
       },
-      revokedAt: null
+      revokedAt: null,
     },
     {
       $set: {
-        revokedAt: nowDate()
-      }
+        revokedAt: nowDate(),
+      },
+    }
+  );
+
+  return revokedSessionIds;
+};
+
+export const revokeUserWorkspaceSessions = async ({ userId, workspaceId }) => {
+  const revokedSessionIds = await listActiveSessionIds({
+    userId,
+    workspaceId,
+  });
+
+  if (revokedSessionIds.length === 0) {
+    return [];
+  }
+
+  await Session.updateMany(
+    {
+      _id: {
+        $in: revokedSessionIds,
+      },
+      revokedAt: null,
+    },
+    {
+      $set: {
+        revokedAt: nowDate(),
+      },
     }
   );
 

@@ -33,7 +33,11 @@
       "acceptRequiresVerification": "تم إرسال رمز التحقق. تحقّق من البريد لإكمال قبول الدعوة."
     },
     "workspace": {
-      "switched": "تم تبديل مساحة العمل بنجاح."
+      "switched": "تم تبديل مساحة العمل بنجاح.",
+      "memberUpdated": "تم تحديث عضو مساحة العمل.",
+      "memberSuspended": "تم تعليق عضو مساحة العمل.",
+      "memberActivated": "تم تفعيل عضو مساحة العمل.",
+      "memberRemoved": "تمت إزالة عضو مساحة العمل."
     },
     "file": {
       "uploaded": "تم رفع الملف بنجاح.",
@@ -168,6 +172,11 @@
     },
     "workspace": {
       "notFound": "لم يتم العثور على مساحة العمل.",
+      "memberNotFound": "لم يتم العثور على عضو مساحة العمل.",
+      "cannotManageSelf": "لا يمكنك إدارة عضويتك في مساحة العمل.",
+      "cannotManageRole": "دورك لا يسمح بإدارة هذا العضو أو الدور المطلوب.",
+      "lastOwnerRequired": "يجب أن يبقى مالك نشط واحد على الأقل في مساحة العمل.",
+      "memberRemoved": "يجب استعادة أعضاء مساحة العمل المزالين عبر دعوة.",
       "notMember": "أنت لست عضوًا في مساحة العمل هذه.",
       "inactiveMember": "حالة عضويتك في مساحة العمل غير نشطة.",
       "suspended": "مساحة العمل هذه معلّقة."
@@ -286,6 +295,7 @@
       "closeNotAllowed": "لا يمكن إغلاق هذه التذكرة من الحالة {{from}}. يجب أن تكون {{requiredFrom}} أولًا.",
       "reopenNotAllowed": "لا يمكن إعادة فتح هذه التذكرة من الحالة {{from}}. يُسمح بإعادة الفتح فقط من حالتي {{allowedFromOne}} أو {{allowedFromTwo}}.",
       "participantUserNotFound": "المستخدم المراد إضافته كمشارك غير متاح في مساحة العمل هذه.",
+      "participantCollaboratorRoleNotAllowed": "يمكن إضافة المالك أو المشرف أو الوكيل فقط كمتعاون.",
       "mailboxChangeNotAllowed": "لا يمكن تغيير صندوق البريد بعد وجود رسائل على التذكرة. عدد الرسائل الحالي: {{messageCount}}.",
       "attachmentsNotSupportedYet": "مرفقات الرسالة الأولى غير مدعومة بعد.",
       "conversationInvariantFailed": "محادثة التذكرة مفقودة أو غير متسقة.",

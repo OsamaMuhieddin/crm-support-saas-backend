@@ -14,6 +14,7 @@ import {
 import { BILLING_SUBSCRIPTION_STATUS_VALUES } from '../../constants/billing-subscription-status.js';
 import { INVITE_STATUS_VALUES } from '../../constants/invite-status.js';
 import { MAILBOX_TYPE } from '../../constants/mailbox-type.js';
+import { MEMBER_STATUS_VALUES } from '../../constants/member-status.js';
 import { OTP_PURPOSE_VALUES } from '../../constants/otp-purpose.js';
 import { PLATFORM_ROLE_VALUES } from '../../constants/platform-roles.js';
 import { TICKET_CHANNEL_VALUES } from '../../constants/ticket-channel.js';
@@ -202,6 +203,107 @@ export const sharedOpenApiComponents = {
         invitedByUserId: nullableId('Inviting user id.'),
         expiresAt: dateTimeSchema(),
         ...timestampFields,
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberUserSummary: objectSchema(
+      {
+        ...idField,
+        email: stringSchema({
+          format: 'email',
+          description:
+            'Present for owner, admin, and agent; omitted for viewer.',
+        }),
+        name: nullableString(),
+        avatar: nullableString({ maxLength: 2048 }),
+        status: stringSchema({ enum: ['active', 'suspended'] }),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberSummary: objectSchema(
+      {
+        ...idField,
+        workspaceId: idSchema(),
+        userId: idSchema(),
+        roleKey: stringSchema({ enum: WORKSPACE_ROLE_VALUES }),
+        memberStatus: stringSchema({ enum: MEMBER_STATUS_VALUES }),
+        joinedAt: dateTimeSchema(),
+        removedAt: { ...dateTimeSchema(), nullable: true },
+        user: ref('WorkspaceMemberUserSummary'),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberOption: objectSchema(
+      {
+        userId: idSchema(),
+        roleKey: stringSchema({ enum: WORKSPACE_ROLE_VALUES }),
+        memberStatus: stringSchema({ enum: MEMBER_STATUS_VALUES }),
+        name: nullableString(),
+        email: stringSchema({
+          format: 'email',
+          description:
+            'Present for owner, admin, and agent; omitted for viewer.',
+        }),
+        avatar: nullableString({ maxLength: 2048 }),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberListResponse: objectSchema(
+      {
+        messageKey: stringSchema({ example: 'success.ok' }),
+        message: stringSchema({ example: 'OK' }),
+        page: integerSchema({ minimum: 1 }),
+        limit: integerSchema({ minimum: 1, maximum: 100 }),
+        total: integerSchema({ minimum: 0 }),
+        results: integerSchema({ minimum: 0 }),
+        members: arrayOf(ref('WorkspaceMemberSummary')),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberOptionsResponse: objectSchema(
+      {
+        messageKey: stringSchema({ example: 'success.ok' }),
+        message: stringSchema({ example: 'OK' }),
+        results: integerSchema({ minimum: 0 }),
+        members: arrayOf(ref('WorkspaceMemberOption')),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberDetailResponse: objectSchema(
+      {
+        messageKey: stringSchema({ example: 'success.ok' }),
+        message: stringSchema({ example: 'OK' }),
+        member: ref('WorkspaceMemberSummary'),
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberRoleChangeRequest: objectSchema(
+      {
+        roleKey: stringSchema({ enum: WORKSPACE_ROLE_VALUES }),
+      },
+      { required: ['roleKey'], additionalProperties: false }
+    ),
+    WorkspaceMemberAction: objectSchema(
+      {
+        userId: idSchema(),
+        roleKey: stringSchema({ enum: WORKSPACE_ROLE_VALUES }),
+        memberStatus: stringSchema({ enum: MEMBER_STATUS_VALUES }),
+        removedAt: { ...dateTimeSchema(), nullable: true },
+      },
+      { additionalProperties: true }
+    ),
+    WorkspaceMemberActionResponse: objectSchema(
+      {
+        messageKey: stringSchema({
+          enum: [
+            'success.workspace.memberUpdated',
+            'success.workspace.memberSuspended',
+            'success.workspace.memberActivated',
+            'success.workspace.memberRemoved',
+          ],
+        }),
+        message: stringSchema(),
+        member: ref('WorkspaceMemberAction'),
       },
       { additionalProperties: true }
     ),
@@ -418,7 +520,11 @@ export const sharedOpenApiComponents = {
         workspaceId: idSchema(),
         ticketId: idSchema(),
         userId: idSchema(),
-        type: stringSchema({ enum: TICKET_PARTICIPANT_TYPE_VALUES }),
+        type: stringSchema({
+          enum: TICKET_PARTICIPANT_TYPE_VALUES,
+          description:
+            'Participant metadata type. Viewers may be watcher only; collaborators require owner/admin/agent.',
+        }),
         user: ref('UserSummary'),
         ...timestampFields,
       },

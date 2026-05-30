@@ -1,6 +1,6 @@
 # CRM Support SaaS Backend - Current State Report
 
-Generated on: 2026-05-11
+Generated on: 2026-05-28
 Repository: `crm-support-saas-backend`
 
 ## 1) Report Purpose
@@ -17,12 +17,13 @@ It is intended to be export-ready onboarding/context material for product, engin
 
 ### 2.1 Product Positioning (Current State)
 
-The backend currently delivers the multi-tenant foundation for a support CRM/helpdesk with strong identity, workspace membership, invites, file handling, mailbox queue management, widget management/public messaging/recovery foundations, and the first SLA runtime behavior.
+The backend currently delivers the multi-tenant foundation for a support CRM/helpdesk with strong identity, workspace membership and member management, invites, file handling, mailbox queue management, widget management/public messaging/recovery foundations, and the first SLA runtime behavior.
 
 Implemented business pillars:
 
 - Account lifecycle with OTP verification and password recovery.
 - Workspace-based tenancy and explicit active-workspace switching.
+- Workspace member management with list/search/options/detail, role change, suspend, activate, remove, invite role restrictions, and removed-member re-invite restoration.
 - Workspace invite lifecycle (create, resend, revoke, accept, finalize).
 - Internal realtime collaboration for authenticated workspace clients, including Socket.IO bootstrap/auth/rooms, ticket/message/participant live business events, and ephemeral ticket presence/typing/soft-claim coordination.
 - Billing v1 runtime with fixed catalog sync, workspace billing reads, Stripe checkout/portal entrypoints, Stripe webhook intake, and worker-backed lifecycle sync foundations.
@@ -45,7 +46,7 @@ Partially implemented business pillars:
 - Customers v1 currently covers workspace-scoped organizations, contacts, and a minimal ContactIdentity surface, while richer customer workflows are still pending.
 - Widget now covers configuration, public bootstrap, public browser-session continuity, widget customer-message creation on top of normal contact/ticket/message records, widget-scoped verified recovery, public session-scoped realtime, and the final hardening pass around session replacement/reconnect safety.
 - SLA v1 now covers first-response and resolution runtime behavior on tickets, while next-response, jobs, holidays, reminders/escalations, cycle-history, and historical reporting remain postponed.
-- Users API surface is still a list stub.
+- Global Users API surface is still a list stub for identity/platform needs; workspace member management is implemented under the Workspaces module instead of global user search.
 
 Planned business pillars with data models but no live API flows yet:
 
@@ -66,34 +67,36 @@ Workspace roles:
 
 Current effective permissions by feature:
 
-| Feature                                                  | Owner           | Admin           | Agent                        | Viewer                       |
-| -------------------------------------------------------- | --------------- | --------------- | ---------------------------- | ---------------------------- |
-| Auth lifecycle (`signup/login/refresh/...`)              | Yes             | Yes             | Yes                          | Yes                          |
-| List memberships (`GET /workspaces/mine`)                | Yes             | Yes             | Yes                          | Yes                          |
-| Switch workspace (`POST /workspaces/switch`)             | Yes (if member) | Yes (if member) | Yes (if member)              | Yes (if member)              |
-| Manage invites in workspace                              | Yes             | Yes             | No                           | No                           |
-| Accept invite (token-based, no auth)                     | Yes             | Yes             | Yes                          | Yes                          |
-| Upload files                                             | Yes             | Yes             | Yes                          | No                           |
-| List/get/download files                                  | Yes             | Yes             | Yes                          | Yes                          |
-| Delete files                                             | Yes             | Yes             | No                           | No                           |
-| Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes             | No                           | No                           |
-| Read mailbox lists/options/details                       | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
-| Create/update/activate/deactivate widgets                | Yes             | Yes             | No                           | No                           |
-| Read widget lists/options/details                        | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
-| Create/update business hours                             | Yes             | Yes             | No                           | No                           |
-| Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes             | No                           | No                           |
-| Read SLA summary/business hours/policies                 | Yes             | Yes             | Yes (inactive policy hidden) | Yes (inactive policy hidden) |
-| Create/update ticket records                             | Yes             | Yes             | Yes                          | No                           |
-| Read ticket lists/details                                | Yes             | Yes             | Yes                          | Yes                          |
-| Read ticket conversations/messages                       | Yes             | Yes             | Yes                          | Yes                          |
-| Create ticket messages                                   | Yes             | Yes             | Yes                          | No                           |
-| Assign tickets                                           | Yes             | Yes             | No                           | No                           |
-| Unassign/self-assign tickets                             | Yes             | Yes             | Yes                          | No                           |
-| Change ticket lifecycle/status                           | Yes             | Yes             | Yes                          | No                           |
-| Read ticket participants                                 | Yes             | Yes             | Yes                          | Yes                          |
-| Add/remove ticket participants                           | Yes             | Yes             | Yes                          | No                           |
-| Create/update/activate/deactivate ticket categories/tags | Yes             | Yes             | No                           | No                           |
-| Read ticket category/tag lists/options/details           | Yes             | Yes             | Yes (inactive hidden)        | Yes (inactive hidden)        |
+| Feature                                                  | Owner           | Admin             | Agent                        | Viewer                       |
+| -------------------------------------------------------- | --------------- | ----------------- | ---------------------------- | ---------------------------- |
+| Auth lifecycle (`signup/login/refresh/...`)              | Yes             | Yes               | Yes                          | Yes                          |
+| List memberships (`GET /workspaces/mine`)                | Yes             | Yes               | Yes                          | Yes                          |
+| Switch workspace (`POST /workspaces/switch`)             | Yes (if member) | Yes (if member)   | Yes (if member)              | Yes (if member)              |
+| Search/read workspace members                            | Yes             | Yes               | Active only                  | Active only, no email        |
+| Manage workspace members                                 | Yes             | Agent/viewer only | No                           | No                           |
+| Manage invites in workspace                              | Yes             | Yes               | No                           | No                           |
+| Accept invite (token-based, no auth)                     | Yes             | Yes               | Yes                          | Yes                          |
+| Upload files                                             | Yes             | Yes               | Yes                          | No                           |
+| List/get/download files                                  | Yes             | Yes               | Yes                          | Yes                          |
+| Delete files                                             | Yes             | Yes               | No                           | No                           |
+| Create/update/activate/deactivate/set-default mailbox    | Yes             | Yes               | No                           | No                           |
+| Read mailbox lists/options/details                       | Yes             | Yes               | Yes (inactive hidden)        | Yes (inactive hidden)        |
+| Create/update/activate/deactivate widgets                | Yes             | Yes               | No                           | No                           |
+| Read widget lists/options/details                        | Yes             | Yes               | Yes (inactive hidden)        | Yes (inactive hidden)        |
+| Create/update business hours                             | Yes             | Yes               | No                           | No                           |
+| Create/update/activate/deactivate/set-default SLA policy | Yes             | Yes               | No                           | No                           |
+| Read SLA summary/business hours/policies                 | Yes             | Yes               | Yes (inactive policy hidden) | Yes (inactive policy hidden) |
+| Create/update ticket records                             | Yes             | Yes               | Yes                          | No                           |
+| Read ticket lists/details                                | Yes             | Yes               | Yes                          | Yes                          |
+| Read ticket conversations/messages                       | Yes             | Yes               | Yes                          | Yes                          |
+| Create ticket messages                                   | Yes             | Yes               | Yes                          | No                           |
+| Assign tickets                                           | Yes             | Yes               | No                           | No                           |
+| Unassign/self-assign tickets                             | Yes             | Yes               | Yes                          | No                           |
+| Change ticket lifecycle/status                           | Yes             | Yes               | Yes                          | No                           |
+| Read ticket participants                                 | Yes             | Yes               | Yes                          | Yes                          |
+| Add/remove ticket participants                           | Yes             | Yes               | Yes                          | No                           |
+| Create/update/activate/deactivate ticket categories/tags | Yes             | Yes               | No                           | No                           |
+| Read ticket category/tag lists/options/details           | Yes             | Yes               | Yes (inactive hidden)        | Yes (inactive hidden)        |
 
 ### 2.3 Quick Start Flows (Implemented)
 
@@ -115,11 +118,13 @@ Current effective permissions by feature:
 #### Flow C: Invite Lifecycle
 
 1. Owner/Admin creates invite for workspace.
+   - Owners may invite `owner|admin|agent|viewer`; admins may invite only `agent|viewer`.
 2. Invite can be listed/read/resend/revoke.
 3. Invitee accepts token via `/api/workspaces/invites/accept`.
 4. If already verified: membership becomes active immediately.
 5. If unverified/new: OTP verification is required to finalize acceptance.
 6. Finalization occurs in `/api/auth/verify-email` when `inviteToken` is supplied.
+7. Removed members can be restored through re-invite; acceptance reuses the existing membership record and clears removed markers.
 
 #### Flow D: Explicit Workspace Switch
 
@@ -182,7 +187,7 @@ Current effective permissions by feature:
 6. Manual message writes populate `from/to` parties from the contact and mailbox, update ticket/conversation counters, and apply message-driven status rules (`customer_message -> open`, `public_reply -> waiting_on_customer`, `internal_note -> no status change`).
 7. Explicit assignment actions manage a single active `assigneeId`, `assignedAt`, and safe self-assignment rules.
 8. Explicit lifecycle actions manage `status`, `statusChangedAt`, `closedAt`, and live resolution markers.
-9. Participant endpoints manage internal watcher/collaborator metadata and keep `participantCount` synchronized.
+9. Participant endpoints manage internal watcher/collaborator metadata and keep `participantCount` synchronized; viewers can be watchers only, while collaborators require `owner|admin|agent`.
 10. Ticket patch updates editable record fields only, and mailbox changes stop once the ticket has messages while preserving the one-conversation mailbox invariant.
 
 #### Flow J: SLA v1 Active Surface
@@ -360,6 +365,7 @@ Guards used:
 Tenant enforcement:
 
 - For workspace-scoped invite management routes, `:workspaceId` must match token workspace.
+- For workspace member management routes, `:workspaceId` must match token workspace.
 - Cross-workspace resource lookup typically resolves to `404` for anti-enumeration.
 
 ### 3.4 API Surface Inventory
@@ -446,18 +452,26 @@ Tickets notes:
 - Assignment and lifecycle action endpoints return action-scoped ticket summaries instead of the full hydrated ticket detail payload.
 - Participant rows omit redundant `workspaceId` and `ticketId` fields because the route is already ticket-scoped.
 - `POST /api/tickets/:id/assign` is `owner|admin` only; agents use `POST /api/tickets/:id/self-assign` and cannot steal assigned tickets.
+- Ticket participants do not grant access; viewers may be added only as `watcher`, and `collaborator` requires an operational workspace role.
 
 #### Workspace Context and Invite Management Endpoints
 
-| Method | Path                                                | Purpose                                        | Role requirements                                            |
-| ------ | --------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
-| `GET`  | `/workspaces/mine`                                  | List active memberships + current workspace id | Any authenticated active user                                |
-| `POST` | `/workspaces/switch`                                | Explicitly switch active workspace for session | Any authenticated active user who is active member in target |
-| `POST` | `/workspaces/:workspaceId/invites`                  | Create invite                                  | `owner/admin` in token workspace + tenant match              |
-| `GET`  | `/workspaces/:workspaceId/invites`                  | List invites                                   | `owner/admin` in token workspace + tenant match              |
-| `GET`  | `/workspaces/:workspaceId/invites/:inviteId`        | Get invite                                     | `owner/admin` in token workspace + tenant match              |
-| `POST` | `/workspaces/:workspaceId/invites/:inviteId/resend` | Resend invite token/email                      | `owner/admin` in token workspace + tenant match              |
-| `POST` | `/workspaces/:workspaceId/invites/:inviteId/revoke` | Revoke invite                                  | `owner/admin` in token workspace + tenant match              |
+| Method  | Path                                                | Purpose                                        | Role requirements                                            |
+| ------- | --------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------ |
+| `GET`   | `/workspaces/mine`                                  | List active memberships + current workspace id | Any authenticated active user                                |
+| `POST`  | `/workspaces/switch`                                | Explicitly switch active workspace for session | Any authenticated active user who is active member in target |
+| `GET`   | `/workspaces/:workspaceId/members`                  | List/search workspace members                  | Any active member + tenant match                             |
+| `GET`   | `/workspaces/:workspaceId/members/options`          | Compact member selector options                | Any active member + tenant match                             |
+| `GET`   | `/workspaces/:workspaceId/members/:userId`          | Get workspace member detail                    | Any active member + tenant match                             |
+| `PATCH` | `/workspaces/:workspaceId/members/:userId`          | Change member role                             | `owner/admin` authority rules + tenant match                 |
+| `POST`  | `/workspaces/:workspaceId/members/:userId/suspend`  | Suspend workspace member                       | `owner/admin` authority rules + tenant match                 |
+| `POST`  | `/workspaces/:workspaceId/members/:userId/activate` | Reactivate suspended member                    | `owner/admin` authority rules + billing seat check           |
+| `POST`  | `/workspaces/:workspaceId/members/:userId/remove`   | Soft-remove workspace member                   | `owner/admin` authority rules + tenant match                 |
+| `POST`  | `/workspaces/:workspaceId/invites`                  | Create invite                                  | `owner/admin` in token workspace + tenant match              |
+| `GET`   | `/workspaces/:workspaceId/invites`                  | List invites                                   | `owner/admin` in token workspace + tenant match              |
+| `GET`   | `/workspaces/:workspaceId/invites/:inviteId`        | Get invite                                     | `owner/admin` in token workspace + tenant match              |
+| `POST`  | `/workspaces/:workspaceId/invites/:inviteId/resend` | Resend invite token/email                      | `owner/admin` in token workspace + tenant match              |
+| `POST`  | `/workspaces/:workspaceId/invites/:inviteId/revoke` | Revoke invite                                  | `owner/admin` in token workspace + tenant match              |
 
 #### Files v1 Endpoints
 
@@ -530,23 +544,23 @@ Mailbox notes:
 
 #### Widget Foundations Endpoints
 
-| Method  | Path                                   | Purpose                                       | Role requirements                                                     |
-| ------- | -------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------- |
-| `GET`   | `/widgets`                             | List widgets (pagination/filter/search/sort)  | Any active member; inactive visibility restricted for non-admin roles |
-| `GET`   | `/widgets/options`                     | Lightweight widget options list               | Any active member; inactive visibility restricted for non-admin roles |
-| `GET`   | `/widgets/:id`                         | Get widget details                            | Any active member; inactive hidden for non-admin roles                |
-| `POST`  | `/widgets`                             | Create widget                                 | `owner/admin`                                                         |
-| `PATCH` | `/widgets/:id`                         | Update widget                                 | `owner/admin`                                                         |
-| `POST`  | `/widgets/:id/activate`                | Activate widget                               | `owner/admin`                                                         |
-| `POST`  | `/widgets/:id/deactivate`              | Deactivate widget                             | `owner/admin`                                                         |
-| `GET`   | `/widgets/public/:publicKey/bootstrap` | Public safe bootstrap read for widget clients | Public                                                                |
-| `POST`  | `/widgets/public/:publicKey/session`   | Initialize/resume public widget browser session | Public                                                              |
-| `POST`  | `/widgets/public/:publicKey/files`     | Upload a visitor file for the current widget session | Public                                                          |
-| `POST`  | `/widgets/public/:publicKey/messages`  | Create first/follow-up public widget customer message | Public                                                         |
-| `POST`  | `/widgets/public/:publicKey/recovery/request` | Request widget recovery verification challenge | Public                                                         |
-| `POST`  | `/widgets/public/:publicKey/recovery/verify` | Verify widget recovery challenge and resolve candidate | Public                                                   |
-| `POST`  | `/widgets/public/:publicKey/recovery/continue` | Continue the latest eligible recovered widget conversation | Public                                               |
-| `POST`  | `/widgets/public/:publicKey/recovery/start-new` | Start a new verified widget session after recovery | Public                                                     |
+| Method  | Path                                            | Purpose                                                    | Role requirements                                                     |
+| ------- | ----------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/widgets`                                      | List widgets (pagination/filter/search/sort)               | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/widgets/options`                              | Lightweight widget options list                            | Any active member; inactive visibility restricted for non-admin roles |
+| `GET`   | `/widgets/:id`                                  | Get widget details                                         | Any active member; inactive hidden for non-admin roles                |
+| `POST`  | `/widgets`                                      | Create widget                                              | `owner/admin`                                                         |
+| `PATCH` | `/widgets/:id`                                  | Update widget                                              | `owner/admin`                                                         |
+| `POST`  | `/widgets/:id/activate`                         | Activate widget                                            | `owner/admin`                                                         |
+| `POST`  | `/widgets/:id/deactivate`                       | Deactivate widget                                          | `owner/admin`                                                         |
+| `GET`   | `/widgets/public/:publicKey/bootstrap`          | Public safe bootstrap read for widget clients              | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/session`            | Initialize/resume public widget browser session            | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/files`              | Upload a visitor file for the current widget session       | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/messages`           | Create first/follow-up public widget customer message      | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/recovery/request`   | Request widget recovery verification challenge             | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/recovery/verify`    | Verify widget recovery challenge and resolve candidate     | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/recovery/continue`  | Continue the latest eligible recovered widget conversation | Public                                                                |
+| `POST`  | `/widgets/public/:publicKey/recovery/start-new` | Start a new verified widget session after recovery         | Public                                                                |
 
 Widget notes:
 
@@ -612,26 +626,26 @@ Any request under those paths currently falls through to 404.
 
 ### 3.5 Module Implementation Status
 
-| Module          | Router Mounted | Runtime API Behavior                                                                                                                               | Service/Model State                                                                                                                                                                                                            |
-| --------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `health`        | Yes            | Implemented                                                                                                                                        | Simple health service                                                                                                                                                                                                          |
-| `auth`          | Yes            | Implemented                                                                                                                                        | Full OTP/JWT/session lifecycle                                                                                                                                                                                                 |
-| `workspaces`    | Yes            | Implemented                                                                                                                                        | Membership resolution, switch, invite lifecycle                                                                                                                                                                                |
-| `files`         | Yes            | Implemented                                                                                                                                        | Upload/list/get/download/delete + storage abstraction                                                                                                                                                                          |
-| `mailboxes`     | Yes            | Implemented                                                                                                                                        | CRUD-like v1 + default invariants + backfill                                                                                                                                                                                   |
-| `widget`        | Yes            | Internal management + public bootstrap/session/message/recovery flow plus public realtime and hardening              | Widget config persistence, dedicated public-key bootstrap reads, opaque widget-session continuity, widget-scoped verified recovery, same-workspace mailbox invariants, CRM contact/ticket/message linkage, session-scoped public realtime, session invalidation/disconnect hardening, RBAC, and focused integration coverage |
-| `users`         | Yes            | Stub (`GET /users`)                                                                                                                                | Model implemented, service placeholder                                                                                                                                                                                         |
-| `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                                                                        | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows                           |
-| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries                                             | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                                            |
-| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                                                                          | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests                                  |
-| `inbox`         | Yes            | Empty router                                                                                                                                       | Placeholder                                                                                                                                                                                                                    |
-| `integrations`  | Yes            | Empty router                                                                                                                                       | Models implemented, API not implemented                                                                                                                                                                                        |
-| `admin`         | Yes            | Platform admin auth, analytics, billing overview, workspace inspection, and workspace action APIs                                                  | Platform admin sessions/tokens, isolated platform auth, workspace analytics snapshots, and suspend/reactivate/extend-trial runtime actions                                                                                     |
-| `automations`   | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
-| `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `change-plan`, `update-addons`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, app-managed plan/add-on changes, billing webhook inbox persistence, and worker-backed lifecycle sync |
-| `notifications` | No             | No API                                                                                                                                             | Model implemented only                                                                                                                                                                                                         |
-| `platform`      | No             | No API                                                                                                                                             | Models implemented only                                                                                                                                                                                                        |
-| `roles`         | No             | No API                                                                                                                                             | No schema content yet                                                                                                                                                                                                          |
+| Module          | Router Mounted | Runtime API Behavior                                                                                                                                                               | Service/Model State                                                                                                                                                                                                                                                                                                          |
+| --------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `health`        | Yes            | Implemented                                                                                                                                                                        | Simple health service                                                                                                                                                                                                                                                                                                        |
+| `auth`          | Yes            | Implemented                                                                                                                                                                        | Full OTP/JWT/session lifecycle                                                                                                                                                                                                                                                                                               |
+| `workspaces`    | Yes            | Implemented                                                                                                                                                                        | Membership resolution, switch, invite lifecycle                                                                                                                                                                                                                                                                              |
+| `files`         | Yes            | Implemented                                                                                                                                                                        | Upload/list/get/download/delete + storage abstraction                                                                                                                                                                                                                                                                        |
+| `mailboxes`     | Yes            | Implemented                                                                                                                                                                        | CRUD-like v1 + default invariants + backfill                                                                                                                                                                                                                                                                                 |
+| `widget`        | Yes            | Internal management + public bootstrap/session/message/recovery flow plus public realtime and hardening                                                                            | Widget config persistence, dedicated public-key bootstrap reads, opaque widget-session continuity, widget-scoped verified recovery, same-workspace mailbox invariants, CRM contact/ticket/message linkage, session-scoped public realtime, session invalidation/disconnect hardening, RBAC, and focused integration coverage |
+| `users`         | Yes            | Stub (`GET /users`)                                                                                                                                                                | Model implemented, service placeholder                                                                                                                                                                                                                                                                                       |
+| `customers`     | Yes            | Organizations v1 + Contacts v1 + minimal ContactIdentity v1                                                                                                                        | Organization list/options/detail/create/update implemented; contact list/options/detail/create/update implemented; contact identity list/create implemented without verification/update/delete flows                                                                                                                         |
+| `tickets`       | Yes            | Core tickets + message timeline + assignment/lifecycle/participants + ticket category/tag dictionaries                                                                             | Real ticket create/list/detail/update/message flows plus assignment/lifecycle/participant runtime flows and category/tag validator/controller/service/runtime flows                                                                                                                                                          |
+| `sla`           | Yes            | SLA v1 active surface with management APIs and ticket runtime integration                                                                                                          | Business-hours CRUD-like flows, SLA policy CRUD-like flows, workspace default pointer, mailbox override references, ticket snapshot/runtime shaping, summary endpoint, runtime helpers, tests                                                                                                                                |
+| `inbox`         | Yes            | Empty router                                                                                                                                                                       | Placeholder                                                                                                                                                                                                                                                                                                                  |
+| `integrations`  | Yes            | Empty router                                                                                                                                                                       | Models implemented, API not implemented                                                                                                                                                                                                                                                                                      |
+| `admin`         | Yes            | Platform admin auth, analytics, billing overview, workspace inspection, and workspace action APIs                                                                                  | Platform admin sessions/tokens, isolated platform auth, workspace analytics snapshots, and suspend/reactivate/extend-trial runtime actions                                                                                                                                                                                   |
+| `automations`   | No             | No API                                                                                                                                                                             | Model implemented only                                                                                                                                                                                                                                                                                                       |
+| `billing`       | Yes            | Workspace billing runtime (`catalog`, `subscription`, `entitlements`, `usage`, `summary`, `checkout-session`, `portal-session`, `change-plan`, `update-addons`, `webhooks/stripe`) | Fixed catalog sync, subscription foundation bootstrap, entitlement snapshot recompute, monthly usage meter foundation, Stripe checkout/portal entrypoints, app-managed plan/add-on changes, billing webhook inbox persistence, and worker-backed lifecycle sync                                                              |
+| `notifications` | No             | No API                                                                                                                                                                             | Model implemented only                                                                                                                                                                                                                                                                                                       |
+| `platform`      | No             | No API                                                                                                                                                                             | Models implemented only                                                                                                                                                                                                                                                                                                      |
+| `roles`         | No             | No API                                                                                                                                                                             | No schema content yet                                                                                                                                                                                                                                                                                                        |
 
 ### 3.6 Database Design (Mongoose)
 
@@ -656,13 +670,13 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.3 Mailbox Domain Collections
 
-| Model           | Purpose                                  | Key Fields                                                                                                                                   | Important Indexes/Constraints                                                                                                                                                           |
-| --------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Mailbox`       | Workspace support queue mailbox          | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive`                                              | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
-| `MailboxAlias`  | Additional alias emails per mailbox      | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                                                                               | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
-| `Widget`        | Widget configuration record              | `workspaceId`, `mailboxId`, `publicKey`, `name`, `branding`, `behavior`, `isActive`                                                          | Unique `publicKey`; workspace-scoped indexes for active-state, name search, and mailbox lookup                                                                                          |
-| `WidgetSession` | Widget public browser-session continuity | `workspaceId`, `widgetId`, `publicSessionKeyHash`, `contactId`, `organizationId`, `ticketId`, `lastSeenAt`, `invalidatedAt`, `invalidationReason`, `recoveryVerifiedAt`, `recoveredFromSessionId`, `closedAt` | Unique partial `publicSessionKeyHash`; workspace-scoped indexes by widget, ticket, contact, and recovered-session lineage                                                               |
-| `WidgetRecovery` | Widget verified recovery handoff         | `workspaceId`, `widgetId`, `emailNormalized`, `contactId`, `candidateSessionId`, `candidateTicketId`, `recoveryTokenHash`, `verifiedAt`, `expiresAt`, `consumedAt`, `consumedAction` | Unique partial `recoveryTokenHash`; widget/email lookup index; TTL on `expiresAt`                                                                                                         |
+| Model            | Purpose                                  | Key Fields                                                                                                                                                                                                    | Important Indexes/Constraints                                                                                                                                                           |
+| ---------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Mailbox`        | Workspace support queue mailbox          | `workspaceId`, `name`, `type`, `emailAddressNormalized`, `slaPolicyId`, `isDefault`, `isActive`                                                                                                               | Unique partial (`workspaceId`, `isDefault`) where default+not deleted; unique partial (`workspaceId`, `emailAddressNormalized`) for non-deleted docs; multiple list-performance indexes |
+| `MailboxAlias`   | Additional alias emails per mailbox      | `workspaceId`, `mailboxId`, `aliasEmailNormalized`, `isActive`                                                                                                                                                | Unique partial (`workspaceId`, `aliasEmailNormalized`) where not deleted; index (`workspaceId`, `mailboxId`)                                                                            |
+| `Widget`         | Widget configuration record              | `workspaceId`, `mailboxId`, `publicKey`, `name`, `branding`, `behavior`, `isActive`                                                                                                                           | Unique `publicKey`; workspace-scoped indexes for active-state, name search, and mailbox lookup                                                                                          |
+| `WidgetSession`  | Widget public browser-session continuity | `workspaceId`, `widgetId`, `publicSessionKeyHash`, `contactId`, `organizationId`, `ticketId`, `lastSeenAt`, `invalidatedAt`, `invalidationReason`, `recoveryVerifiedAt`, `recoveredFromSessionId`, `closedAt` | Unique partial `publicSessionKeyHash`; workspace-scoped indexes by widget, ticket, contact, and recovered-session lineage                                                               |
+| `WidgetRecovery` | Widget verified recovery handoff         | `workspaceId`, `widgetId`, `emailNormalized`, `contactId`, `candidateSessionId`, `candidateTicketId`, `recoveryTokenHash`, `verifiedAt`, `expiresAt`, `consumedAt`, `consumedAction`                          | Unique partial `recoveryTokenHash`; widget/email lookup index; TTL on `expiresAt`                                                                                                       |
 
 #### 3.6.4 Files Domain Collections
 
@@ -681,15 +695,15 @@ Any request under those paths currently falls through to 404.
 
 #### 3.6.6 Tickets Domain Collections
 
-| Model               | Purpose                                   | Key Fields                                                                                                                                                                                                 | Important Indexes/Constraints                                                                                                     |
-| ------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `TicketCategory`    | Ticket category tree                      | `workspaceId`, `name`, `slug`, `parentId`, `path`, `order`, `isActive`                                                                                                                                     | Unique partial (`workspaceId`,`slug`); indexes (`workspaceId`,`parentId`) and partial (`workspaceId`,`path`)                      |
-| `TicketTag`         | Workspace tag dictionary                  | `workspaceId`, `name`, `nameNormalized`, `isActive`                                                                                                                                                        | Unique partial (`workspaceId`,`nameNormalized`) when not deleted                                                                  |
-| `TicketCounter`     | Atomic sequence source for ticket numbers | `workspaceId`, `seq`                                                                                                                                                                                       | Unique (`workspaceId`); static allocator increments sequence                                                                      |
+| Model               | Purpose                                   | Key Fields                                                                                                                                                                                                                                                  | Important Indexes/Constraints                                                                                                                                |
+| ------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `TicketCategory`    | Ticket category tree                      | `workspaceId`, `name`, `slug`, `parentId`, `path`, `order`, `isActive`                                                                                                                                                                                      | Unique partial (`workspaceId`,`slug`); indexes (`workspaceId`,`parentId`) and partial (`workspaceId`,`path`)                                                 |
+| `TicketTag`         | Workspace tag dictionary                  | `workspaceId`, `name`, `nameNormalized`, `isActive`                                                                                                                                                                                                         | Unique partial (`workspaceId`,`nameNormalized`) when not deleted                                                                                             |
+| `TicketCounter`     | Atomic sequence source for ticket numbers | `workspaceId`, `seq`                                                                                                                                                                                                                                        | Unique (`workspaceId`); static allocator increments sequence                                                                                                 |
 | `Ticket`            | Core support ticket                       | `workspaceId`, `mailboxId`, `number`, `subjectNormalized`, `status`, `priority`, `channel`, `contactId`, `organizationId`, `assigneeId`, `conversationId`, optional `widgetId`, optional `widgetSessionId`, `tagIds`, summary/count/timestamp fields, `sla` | Unique (`workspaceId`,`number`); operational indexes by status/assignee/category/tag/channel/mailbox/contact/organization/recency plus widget-session lookup |
-| `Conversation`      | Ticket conversation channel metadata      | `workspaceId`, `ticketId`, `mailboxId`, `channel`, `lastMessageAt`, `messageCount`, message summary/count fields                                                                                           | Unique (`workspaceId`,`ticketId`); indexes by mailbox and recency                                                                 |
-| `Message`           | Message records within conversations      | `workspaceId`, `conversationId`, `ticketId`, `type`, transport `direction`, `from`, `to`, `bodyText`, `attachmentFileIds`                                                                                  | Workspace-scoped indexes by conversation/ticket/mailbox/type/direction + createdAt                                                |
-| `TicketParticipant` | Watchers/collaborators on tickets         | `workspaceId`, `ticketId`, `userId`, `type`                                                                                                                                                                | Unique partial (`workspaceId`,`ticketId`,`userId`) when not deleted                                                               |
+| `Conversation`      | Ticket conversation channel metadata      | `workspaceId`, `ticketId`, `mailboxId`, `channel`, `lastMessageAt`, `messageCount`, message summary/count fields                                                                                                                                            | Unique (`workspaceId`,`ticketId`); indexes by mailbox and recency                                                                                            |
+| `Message`           | Message records within conversations      | `workspaceId`, `conversationId`, `ticketId`, `type`, transport `direction`, `from`, `to`, `bodyText`, `attachmentFileIds`                                                                                                                                   | Workspace-scoped indexes by conversation/ticket/mailbox/type/direction + createdAt                                                                           |
+| `TicketParticipant` | Watchers/collaborators on tickets         | `workspaceId`, `ticketId`, `userId`, `type`                                                                                                                                                                                                                 | Unique partial (`workspaceId`,`ticketId`,`userId`) when not deleted                                                                                          |
 
 #### 3.6.7 SLA Domain Collections
 
@@ -939,6 +953,13 @@ This section is an explicit endpoint inventory from mounted route code.
 
 - `GET /api/workspaces/mine`
 - `POST /api/workspaces/switch`
+- `GET /api/workspaces/:workspaceId/members`
+- `GET /api/workspaces/:workspaceId/members/options`
+- `GET /api/workspaces/:workspaceId/members/:userId`
+- `PATCH /api/workspaces/:workspaceId/members/:userId`
+- `POST /api/workspaces/:workspaceId/members/:userId/suspend`
+- `POST /api/workspaces/:workspaceId/members/:userId/activate`
+- `POST /api/workspaces/:workspaceId/members/:userId/remove`
 - `POST /api/workspaces/:workspaceId/invites`
 - `GET /api/workspaces/:workspaceId/invites`
 - `GET /api/workspaces/:workspaceId/invites/:inviteId`

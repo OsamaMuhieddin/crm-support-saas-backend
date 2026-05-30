@@ -1,5 +1,6 @@
 import { jest } from '@jest/globals';
 import {
+  assertWorkspaceInviteRoleAuthority,
   createWorkspaceInvite,
   ensureWorkspaceForVerifiedUser,
 } from '../src/modules/workspaces/services/workspaces.service.js';
@@ -8,11 +9,12 @@ import { User } from '../src/modules/users/models/user.model.js';
 import { WorkspaceMember } from '../src/modules/workspaces/models/workspace-member.model.js';
 import { WorkspaceInvite } from '../src/modules/workspaces/models/workspace-invite.model.js';
 import { authConfig } from '../src/config/auth.config.js';
+import { WORKSPACE_ROLES } from '../src/constants/workspace-roles.js';
 
 const createQuery = (value) => {
   const query = {
     select: jest.fn(),
-    lean: jest.fn()
+    lean: jest.fn(),
   };
 
   query.select.mockReturnValue(query);
@@ -37,9 +39,11 @@ describe('workspaces.service createWorkspaceInvite', () => {
   });
 
   test('invite email link uses FRONTEND_BASE_URL', async () => {
-    jest.spyOn(Workspace, 'findOne').mockReturnValue(
-      createQuery({ _id: workspaceId, name: 'Acme Workspace' })
-    );
+    jest
+      .spyOn(Workspace, 'findOne')
+      .mockReturnValue(
+        createQuery({ _id: workspaceId, name: 'Acme Workspace' })
+      );
     jest.spyOn(User, 'findOne').mockReturnValue(createQuery(null));
 
     jest.spyOn(WorkspaceInvite, 'create').mockImplementation(async (doc) => ({
@@ -52,7 +56,7 @@ describe('workspaces.service createWorkspaceInvite', () => {
       acceptedAt: null,
       invitedByUserId: doc.invitedByUserId,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z')
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     }));
 
     const logs = [];
@@ -65,13 +69,15 @@ describe('workspaces.service createWorkspaceInvite', () => {
       email: 'invitee@example.com',
       roleKey: 'agent',
       invitedByUserId: 'owner-1',
-      invitedByName: 'Owner'
+      invitedByName: 'Owner',
+      actorRoleKey: WORKSPACE_ROLES.OWNER,
     });
 
     logSpy.mockRestore();
 
     const emailLog = logs.find(
-      (entry) => entry?.[0] === '[email:fallback]' && entry?.[1]?.inviteLinkOrToken
+      (entry) =>
+        entry?.[0] === '[email:fallback]' && entry?.[1]?.inviteLinkOrToken
     );
 
     expect(emailLog).toBeTruthy();
@@ -84,13 +90,13 @@ describe('workspaces.service createWorkspaceInvite', () => {
   });
 
   test('fails with alreadyMember when email belongs to existing non-removed member', async () => {
-    jest.spyOn(Workspace, 'findOne').mockReturnValue(
-      createQuery({ name: 'Acme Workspace' })
-    );
+    jest
+      .spyOn(Workspace, 'findOne')
+      .mockReturnValue(createQuery({ name: 'Acme Workspace' }));
     jest.spyOn(User, 'findOne').mockReturnValue(createQuery({ _id: 'user-1' }));
-    jest.spyOn(WorkspaceMember, 'findOne').mockReturnValue(
-      createQuery({ _id: 'member-1' })
-    );
+    jest
+      .spyOn(WorkspaceMember, 'findOne')
+      .mockReturnValue(createQuery({ _id: 'member-1' }));
 
     const createInviteSpy = jest.spyOn(WorkspaceInvite, 'create');
     await expect(
@@ -98,14 +104,98 @@ describe('workspaces.service createWorkspaceInvite', () => {
         workspaceId: 'workspace-1',
         email: 'member@example.com',
         roleKey: 'agent',
-        invitedByUserId: 'owner-1'
+        invitedByUserId: 'owner-1',
+        actorRoleKey: WORKSPACE_ROLES.OWNER,
       })
     ).rejects.toMatchObject({
       messageKey: 'errors.invite.alreadyMember',
-      statusCode: 409
+      statusCode: 409,
     });
 
     expect(createInviteSpy).not.toHaveBeenCalled();
+  });
+
+  test('fails closed when createWorkspaceInvite is called without actor role', async () => {
+    const createInviteSpy = jest.spyOn(WorkspaceInvite, 'create');
+
+    await expect(
+      createWorkspaceInvite({
+        workspaceId,
+        email: 'missing-actor@example.com',
+        roleKey: 'agent',
+        invitedByUserId: 'owner-1',
+      })
+    ).rejects.toMatchObject({
+      messageKey: 'errors.auth.forbiddenRole',
+      statusCode: 403,
+    });
+
+    expect(createInviteSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('workspaces.service assertWorkspaceInviteRoleAuthority', () => {
+  test('fails closed when actor role is missing unless system bypass is explicit', () => {
+    expect(() =>
+      assertWorkspaceInviteRoleAuthority({
+        actorRoleKey: null,
+        targetRoleKey: WORKSPACE_ROLES.AGENT,
+      })
+    ).toThrow(
+      expect.objectContaining({
+        messageKey: 'errors.auth.forbiddenRole',
+        statusCode: 403,
+      })
+    );
+
+    expect(() =>
+      assertWorkspaceInviteRoleAuthority({
+        actorRoleKey: null,
+        targetRoleKey: WORKSPACE_ROLES.AGENT,
+        allowSystemInvite: true,
+      })
+    ).not.toThrow();
+  });
+
+  test('allows owners to invite any workspace role', () => {
+    for (const roleKey of Object.values(WORKSPACE_ROLES)) {
+      expect(() =>
+        assertWorkspaceInviteRoleAuthority({
+          actorRoleKey: WORKSPACE_ROLES.OWNER,
+          targetRoleKey: roleKey,
+        })
+      ).not.toThrow();
+    }
+  });
+
+  test('allows admins to invite agent/viewer and blocks owner/admin', () => {
+    expect(() =>
+      assertWorkspaceInviteRoleAuthority({
+        actorRoleKey: WORKSPACE_ROLES.ADMIN,
+        targetRoleKey: WORKSPACE_ROLES.AGENT,
+      })
+    ).not.toThrow();
+    expect(() =>
+      assertWorkspaceInviteRoleAuthority({
+        actorRoleKey: WORKSPACE_ROLES.ADMIN,
+        targetRoleKey: WORKSPACE_ROLES.VIEWER,
+      })
+    ).not.toThrow();
+
+    for (const roleKey of [WORKSPACE_ROLES.OWNER, WORKSPACE_ROLES.ADMIN]) {
+      try {
+        assertWorkspaceInviteRoleAuthority({
+          actorRoleKey: WORKSPACE_ROLES.ADMIN,
+          targetRoleKey: roleKey,
+        });
+        throw new Error('Expected invite role authority to fail');
+      } catch (error) {
+        expect(error).toMatchObject({
+          messageKey: 'errors.workspace.cannotManageRole',
+          statusCode: 403,
+        });
+      }
+    }
   });
 });
 
@@ -131,9 +221,7 @@ describe('workspaces.service ensureWorkspaceForVerifiedUser', () => {
     jest.spyOn(WorkspaceMember, 'create').mockResolvedValue({
       _id: 'member-1',
     });
-    jest.spyOn(Workspace, 'findOne').mockReturnValue(
-      createQuery(null)
-    );
+    jest.spyOn(Workspace, 'findOne').mockReturnValue(createQuery(null));
 
     await expect(
       ensureWorkspaceForVerifiedUser({

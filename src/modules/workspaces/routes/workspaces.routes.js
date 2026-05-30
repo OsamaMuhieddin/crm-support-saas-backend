@@ -5,6 +5,7 @@ import requireActiveUser from '../../../shared/middlewares/requireActiveUser.js'
 import requireActiveMember from '../../../shared/middlewares/requireActiveMember.js';
 import requireWorkspaceRole from '../../../shared/middlewares/requireWorkspaceRole.js';
 import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
+import workspaceMembersRouter from './workspace-members.routes.js';
 import {
   acceptInviteController,
   createInviteController,
@@ -13,14 +14,14 @@ import {
   listInvitesController,
   resendInviteController,
   revokeInviteController,
-  switchWorkspaceController
+  switchWorkspaceController,
 } from '../controllers/workspaces.controller.js';
 import {
   acceptInviteValidator,
   createInviteValidator,
   inviteByIdValidator,
   listInvitesValidator,
-  switchWorkspaceValidator
+  switchWorkspaceValidator,
 } from '../validators/workspaces.validators.js';
 
 const router = Router();
@@ -33,6 +34,14 @@ router.post(
   requireActiveUser,
   validate(switchWorkspaceValidator),
   switchWorkspaceController
+);
+
+router.use(
+  '/:workspaceId/members',
+  requireAuth,
+  requireActiveUser,
+  requireActiveMember,
+  workspaceMembersRouter
 );
 
 router.post(
@@ -85,6 +94,10 @@ router.post(
   revokeInviteController
 );
 
-router.post('/invites/accept', validate(acceptInviteValidator), acceptInviteController);
+router.post(
+  '/invites/accept',
+  validate(acceptInviteValidator),
+  acceptInviteController
+);
 
 export default router;

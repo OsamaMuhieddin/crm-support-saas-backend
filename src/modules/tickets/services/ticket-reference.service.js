@@ -1,5 +1,6 @@
 import { WORKSPACE_ROLES } from '../../../constants/workspace-roles.js';
 import { MEMBER_STATUS } from '../../../constants/member-status.js';
+import { TICKET_PARTICIPANT_TYPE } from '../../../constants/ticket-participant-type.js';
 import { createError } from '../../../shared/errors/createError.js';
 import { Workspace } from '../../workspaces/models/workspace.model.js';
 import { WorkspaceMember } from '../../workspaces/models/workspace-member.model.js';
@@ -25,6 +26,11 @@ import {
 import { toValidationError } from '../utils/ticket-validation.js';
 
 const OPERATIONAL_ASSIGNEE_ROLES = Object.freeze([
+  WORKSPACE_ROLES.OWNER,
+  WORKSPACE_ROLES.ADMIN,
+  WORKSPACE_ROLES.AGENT,
+]);
+const OPERATIONAL_PARTICIPANT_ROLES = Object.freeze([
   WORKSPACE_ROLES.OWNER,
   WORKSPACE_ROLES.ADMIN,
   WORKSPACE_ROLES.AGENT,
@@ -306,6 +312,7 @@ export const resolveTicketAssigneeForWrite = async ({
 export const resolveTicketParticipantUserForWrite = async ({
   workspaceId,
   userId = null,
+  participantType = null,
 }) => {
   if (!userId) {
     return null;
@@ -335,6 +342,16 @@ export const resolveTicketParticipantUserForWrite = async ({
 
   if (!user) {
     throw createError('errors.ticket.participantUserNotFound', 404);
+  }
+
+  if (
+    participantType === TICKET_PARTICIPANT_TYPE.COLLABORATOR &&
+    !OPERATIONAL_PARTICIPANT_ROLES.includes(member.roleKey)
+  ) {
+    throw createError(
+      'errors.ticket.participantCollaboratorRoleNotAllowed',
+      409
+    );
   }
 
   return {

@@ -149,6 +149,7 @@ export const openApiDocument = {
     { name: 'Health' },
     { name: 'Auth' },
     { name: 'Workspaces' },
+    { name: 'Workspace Members' },
     { name: 'Workspace Invites' },
     { name: 'Users' },
     { name: 'Customer Contacts' },

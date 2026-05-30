@@ -33,7 +33,11 @@
       "acceptRequiresVerification": "Verification code sent. Verify your email to complete invitation acceptance."
     },
     "workspace": {
-      "switched": "Workspace switched successfully."
+      "switched": "Workspace switched successfully.",
+      "memberUpdated": "Workspace member updated.",
+      "memberSuspended": "Workspace member suspended.",
+      "memberActivated": "Workspace member activated.",
+      "memberRemoved": "Workspace member removed."
     },
     "file": {
       "uploaded": "File uploaded successfully.",
@@ -168,6 +172,11 @@
     },
     "workspace": {
       "notFound": "Workspace not found.",
+      "memberNotFound": "Workspace member not found.",
+      "cannotManageSelf": "You cannot manage your own workspace membership.",
+      "cannotManageRole": "Your role cannot manage this workspace member or target role.",
+      "lastOwnerRequired": "At least one active owner is required in this workspace.",
+      "memberRemoved": "Removed workspace members must be restored by invitation.",
       "notMember": "You are not a member of this workspace.",
       "inactiveMember": "Your workspace membership is inactive.",
       "suspended": "This workspace is suspended."
@@ -286,6 +295,7 @@
       "closeNotAllowed": "This ticket cannot be closed from {{from}}. It must be {{requiredFrom}} first.",
       "reopenNotAllowed": "This ticket cannot be reopened from {{from}}. Only {{allowedFromOne}} or {{allowedFromTwo}} tickets can be reopened.",
       "participantUserNotFound": "Participant user is not available in this workspace.",
+      "participantCollaboratorRoleNotAllowed": "Only owner, admin, or agent members can be added as collaborators.",
       "mailboxChangeNotAllowed": "Mailbox cannot be changed after messages already exist on the ticket. Current message count: {{messageCount}}.",
       "attachmentsNotSupportedYet": "Initial message attachments are not supported yet.",
       "conversationInvariantFailed": "Ticket conversation is missing or inconsistent.",

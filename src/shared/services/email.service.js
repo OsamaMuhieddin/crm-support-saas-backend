@@ -35,6 +35,19 @@ const sendMail = async ({ to, subject, text, html, debugPayload }) => {
 
   const transporter = getSmtpTransporter();
   if (transporter) {
+    if (
+      authConfig.environment !== 'production' &&
+      debugPayload?.inviteLinkOrToken
+    ) {
+      console.info('[email:invite:debug]', {
+        to,
+        subject,
+        inviteLinkOrToken: debugPayload.inviteLinkOrToken,
+        roleKey: debugPayload.roleKey,
+        expiresAt: debugPayload.expiresAt
+      });
+    }
+
     await transporter.sendMail({
       to,
       from: from || authConfig.email.smtp.user,

@@ -52,6 +52,7 @@ export const createInviteController = async (req, res, next) => {
       email: req.body.email,
       roleKey: req.body.roleKey,
       invitedByUserId: req.auth.userId,
+      actorRoleKey: req.member.roleKey,
     });
 
     return res.json({

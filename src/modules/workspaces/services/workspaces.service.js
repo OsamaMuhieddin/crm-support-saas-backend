@@ -90,6 +90,33 @@ const buildInviteView = (invite) => ({
   updatedAt: invite.updatedAt,
 });
 
+export const assertWorkspaceInviteRoleAuthority = ({
+  actorRoleKey,
+  targetRoleKey,
+  allowSystemInvite = false,
+}) => {
+  if (allowSystemInvite) {
+    return true;
+  }
+
+  if (!actorRoleKey) {
+    throw createError('errors.auth.forbiddenRole', 403);
+  }
+
+  if (actorRoleKey === WORKSPACE_ROLES.OWNER) {
+    return true;
+  }
+
+  if (
+    actorRoleKey === WORKSPACE_ROLES.ADMIN &&
+    [WORKSPACE_ROLES.AGENT, WORKSPACE_ROLES.VIEWER].includes(targetRoleKey)
+  ) {
+    return true;
+  }
+
+  throw createError('errors.workspace.cannotManageRole', 403);
+};
+
 const buildWorkspaceView = (workspace) => ({
   _id: String(workspace._id),
   name: workspace.name,
@@ -122,10 +149,7 @@ const findWorkspaceById = async (workspaceId) =>
     .lean();
 
 const isWorkspaceOperational = (workspace) =>
-  Boolean(
-    workspace &&
-      workspace.status !== WORKSPACE_STATUS.SUSPENDED
-  );
+  Boolean(workspace && workspace.status !== WORKSPACE_STATUS.SUSPENDED);
 
 const findActiveMemberForWorkspace = async ({ userId, workspaceId }) =>
   WorkspaceMember.findOne({
@@ -301,6 +325,15 @@ const createOrActivateMember = async ({
   const existing = await WorkspaceMember.findOne({ workspaceId, userId });
 
   if (existing) {
+    const alreadyActive =
+      existing.status === MEMBER_STATUS.ACTIVE &&
+      existing.deletedAt == null &&
+      existing.removedAt == null;
+
+    if (alreadyActive) {
+      throw createError('errors.invite.alreadyMember', 409);
+    }
+
     const needsSeatActivation =
       existing.status !== MEMBER_STATUS.ACTIVE ||
       existing.deletedAt !== null ||
@@ -580,7 +613,13 @@ export const createWorkspaceInvite = async ({
   roleKey,
   invitedByUserId,
   invitedByName,
+  actorRoleKey = null,
 }) => {
+  assertWorkspaceInviteRoleAuthority({
+    actorRoleKey,
+    targetRoleKey: roleKey,
+  });
+
   const workspace = await Workspace.findOne({
     _id: workspaceId,
     deletedAt: null,

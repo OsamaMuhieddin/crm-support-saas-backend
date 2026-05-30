@@ -85,7 +85,9 @@ const createInviteWithToken = async ({
 };
 
 const ensureWorkspaceCanInviteMembers = async (workspaceId) => {
-  const businessPlan = await Plan.findOne({ key: 'business' }).select('_id key').lean();
+  const businessPlan = await Plan.findOne({ key: 'business' })
+    .select('_id key')
+    .lean();
 
   await Subscription.updateOne(
     { workspaceId, deletedAt: null },
@@ -189,6 +191,10 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       const viewer = await createWorkspaceScopedTokenForRole({
         owner,
         roleKey: WORKSPACE_ROLES.VIEWER,
+      });
+      const agent = await createWorkspaceScopedTokenForRole({
+        owner,
+        roleKey: WORKSPACE_ROLES.AGENT,
       });
       const contact = await createContactRecord({
         workspaceId: owner.workspaceId,
@@ -498,6 +504,10 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
         owner,
         roleKey: WORKSPACE_ROLES.VIEWER,
       });
+      const agent = await createWorkspaceScopedTokenForRole({
+        owner,
+        roleKey: WORKSPACE_ROLES.AGENT,
+      });
       const contact = await createContactRecord({
         workspaceId: owner.workspaceId,
       });
@@ -537,7 +547,7 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       );
       expect(addViewer.body.ticketSummary.participantCount).toBe(1);
 
-      const upsertViewer = await request(app)
+      const blockedViewerCollaborator = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/participants`)
         .set('Authorization', `Bearer ${owner.accessToken}`)
         .send({
@@ -545,23 +555,45 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
           type: TICKET_PARTICIPANT_TYPE.COLLABORATOR,
         });
 
-      expect(upsertViewer.status).toBe(200);
-      expect(upsertViewer.body.participant.type).toBe(
+      expect(blockedViewerCollaborator.status).toBe(409);
+      expect(blockedViewerCollaborator.body.messageKey).toBe(
+        'errors.ticket.participantCollaboratorRoleNotAllowed'
+      );
+
+      const addAgentCollaborator = await request(app)
+        .post(`/api/tickets/${created.body.ticket._id}/participants`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({
+          userId: agent.userId,
+          type: TICKET_PARTICIPANT_TYPE.COLLABORATOR,
+        });
+
+      expect(addAgentCollaborator.status).toBe(200);
+      expect(addAgentCollaborator.body.participant.type).toBe(
         TICKET_PARTICIPANT_TYPE.COLLABORATOR
       );
-      expect(upsertViewer.body.ticketSummary.participantCount).toBe(1);
+      expect(addAgentCollaborator.body.participant.user.roleKey).toBe(
+        WORKSPACE_ROLES.AGENT
+      );
+      expect(addAgentCollaborator.body.ticketSummary.participantCount).toBe(2);
 
       const listAfterUpsert = await request(app)
         .get(`/api/tickets/${created.body.ticket._id}/participants`)
         .set('Authorization', `Bearer ${viewer.accessToken}`);
 
       expect(listAfterUpsert.status).toBe(200);
-      expect(listAfterUpsert.body.participants).toHaveLength(1);
-      expect(listAfterUpsert.body.participants[0]).toEqual(
-        expect.objectContaining({
-          userId: viewer.userId,
-          type: TICKET_PARTICIPANT_TYPE.COLLABORATOR,
-        })
+      expect(listAfterUpsert.body.participants).toHaveLength(2);
+      expect(listAfterUpsert.body.participants).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            userId: agent.userId,
+            type: TICKET_PARTICIPANT_TYPE.COLLABORATOR,
+          }),
+          expect.objectContaining({
+            userId: viewer.userId,
+            type: TICKET_PARTICIPANT_TYPE.WATCHER,
+          }),
+        ])
       );
       expect(listAfterUpsert.body.participants[0]).not.toHaveProperty(
         'workspaceId'
@@ -580,14 +612,15 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       expect(removeViewer.body.messageKey).toBe(
         'success.ticket.participantRemoved'
       );
-      expect(removeViewer.body.ticketSummary.participantCount).toBe(0);
+      expect(removeViewer.body.ticketSummary.participantCount).toBe(1);
 
       const finalList = await request(app)
         .get(`/api/tickets/${created.body.ticket._id}/participants`)
         .set('Authorization', `Bearer ${viewer.accessToken}`);
 
       expect(finalList.status).toBe(200);
-      expect(finalList.body.participants).toEqual([]);
+      expect(finalList.body.participants).toHaveLength(1);
+      expect(finalList.body.participants[0].userId).toBe(agent.userId);
     }
   );
 
@@ -606,6 +639,14 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       const viewer = await createWorkspaceScopedTokenForRole({
         owner,
         roleKey: WORKSPACE_ROLES.VIEWER,
+      });
+      const suspendedParticipant = await createWorkspaceScopedTokenForRole({
+        owner,
+        roleKey: WORKSPACE_ROLES.AGENT,
+      });
+      const removedParticipant = await createWorkspaceScopedTokenForRole({
+        owner,
+        roleKey: WORKSPACE_ROLES.AGENT,
       });
       const outsider = await createVerifiedUser();
 
@@ -743,6 +784,40 @@ describe('Ticket assignment, lifecycle, and participants endpoints', () => {
       expect(foreignParticipantUser.body.messageKey).toBe(
         'errors.ticket.participantUserNotFound'
       );
+
+      const suspendParticipant = await request(app)
+        .post(
+          `/api/workspaces/${owner.workspaceId}/members/${suspendedParticipant.userId}/suspend`
+        )
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({});
+      expect(suspendParticipant.status).toBe(200);
+
+      const removeParticipant = await request(app)
+        .post(
+          `/api/workspaces/${owner.workspaceId}/members/${removedParticipant.userId}/remove`
+        )
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({});
+      expect(removeParticipant.status).toBe(200);
+
+      for (const blockedUserId of [
+        suspendedParticipant.userId,
+        removedParticipant.userId,
+      ]) {
+        const blockedParticipant = await request(app)
+          .post(`/api/tickets/${created.body.ticket._id}/participants`)
+          .set('Authorization', `Bearer ${owner.accessToken}`)
+          .send({
+            userId: blockedUserId,
+            type: TICKET_PARTICIPANT_TYPE.WATCHER,
+          });
+
+        expect(blockedParticipant.status).toBe(404);
+        expect(blockedParticipant.body.messageKey).toBe(
+          'errors.ticket.participantUserNotFound'
+        );
+      }
 
       const assignAdmin = await request(app)
         .post(`/api/tickets/${created.body.ticket._id}/assign`)

@@ -8,8 +8,8 @@ Current module inventory under `src/modules` falls into three practical groups.
 
 - Health: operational health endpoint
 - Auth: authentication, sessions, password and account access flows
-- Workspaces: tenant root, memberships, invitations, and active workspace context
-- Users: workspace user and member management
+- Workspaces: tenant root, memberships, member management, invitations, and active workspace context
+- Users: identity/self-profile surface and global user placeholder routes
 - Customers: contacts, organizations, and contact identities
 - Mailboxes: workspace-scoped mailbox dictionaries and defaults
 - Widget: workspace-scoped widget configuration plus public bootstrap/session/message/recovery/realtime foundations
@@ -86,8 +86,11 @@ utils/ (optional, module-local pure helpers only)
 - Workspaces are the tenant root for protected business routes; most workspace-scoped access is derived from the active workspace stored on the current session.
 - `GET /api/workspaces/mine` lists the current user's active memberships with workspace basics and role context for workspace selection.
 - `POST /api/workspaces/switch` is the only supported way to change the active workspace for a session; it updates `session.workspaceId`, returns a fresh access token, and forces existing realtime sockets for that session to reconnect under the new workspace context.
+- Workspace member management lives under `/api/workspaces/:workspaceId/members` and owns member list/search/options/detail plus role change, suspend, activate, and remove actions.
+- Member role/status changes revoke the affected user's sessions for the affected workspace and best-effort disconnect realtime sockets so stale role/status tokens stop authorizing further protected workspace actions.
 - Invite acceptance creates or re-activates membership but does not auto-switch the active workspace as a side effect.
-- Invite management is workspace-scoped and restricted to `owner|admin` inside the currently active workspace.
+- Invite management is workspace-scoped and restricted to `owner|admin` inside the currently active workspace; only owners may invite `owner|admin`, while admins may invite `agent|viewer`.
+- Removed workspace members are restored through re-invite acceptance, which reuses the existing membership record instead of creating duplicates.
 
 ## Auth module notes
 
@@ -203,6 +206,7 @@ utils/ (optional, module-local pure helpers only)
 - Ticket detail may still hydrate already-linked inactive category and tag references for historical integrity.
 - Message flow is manual-first in v1, with message-owned file attachments and reverse ticket-level file links.
 - Assignment is single-assignee; participants are separate internal metadata and do not grant access.
+- Viewers may be ticket participants only as `watcher`; `collaborator` participant writes require an active `owner|admin|agent` membership.
 
 ## Billing v1 runtime notes
 

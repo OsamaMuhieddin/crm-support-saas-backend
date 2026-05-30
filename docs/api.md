@@ -15,6 +15,7 @@ Frontend handoff note:
 - [Realtime / Live Collaboration](#realtime)
 - [Auth endpoints](#auth-endpoints)
 - [Workspace context](#workspace-context)
+- [Workspace members](#workspace-members)
 - [Workspace invites](#workspace-invites)
 - [Files](#files)
 - [Customers](#customers)
@@ -28,6 +29,7 @@ Frontend handoff note:
 - [Backend / dev / runtime notes](#local-billing-runtime-notes)
 
 <a id="generated-docs"></a>
+
 ## Generated docs
 
 The backend also serves generated machine-readable docs for implementation reference:
@@ -42,6 +44,7 @@ OpenAPI documents the HTTP request/response API. AsyncAPI documents the Socket.I
 These docs are read-only reference surfaces and do not change API behavior.
 
 <a id="frontend-integration-guide"></a>
+
 ## Frontend Integration Guide
 
 - Success envelope: successful object responses return `messageKey`, localized `message`, and route-specific payload fields.
@@ -57,6 +60,7 @@ These docs are read-only reference surfaces and do not change API behavior.
 - Anti-enumeration: many public/cross-tenant/inactive-resource cases intentionally resolve as generic `404` responses. Frontend should not infer existence from those outcomes.
 
 <a id="overview"></a>
+
 ## 1) Overview
 
 ### Base URL
@@ -135,6 +139,7 @@ Session-context endpoints:
   - `APP_BASE_URL` is still backend runtime base URL.
 
 <a id="local-billing-runtime-notes"></a>
+
 ## 2) Local Billing v1 Dev/Test Setup
 
 This section is for local Billing v1 integration and manual Stripe testing. It documents local runtime setup, not the public API contract itself.
@@ -226,6 +231,7 @@ After changing the manifest locally, rerun:
 - `npm run billing:migrate-v1`
 
 <a id="auth-model"></a>
+
 ## 3) Auth model & authorization model
 
 - Users can belong to multiple workspaces through workspace memberships.
@@ -254,6 +260,7 @@ Platform admin auth model:
 - Revenue-sensitive platform analytics currently use stricter role checks than general platform overview access.
 
 <a id="quick-start-flows"></a>
+
 ## 4) Quick Start Flows
 
 The flows in this section are product-wide entry points. Billing keeps its own quick-start block immediately before the billing endpoint reference so checkout, portal, and webhook-driven sync stay documented next to the billing APIs.
@@ -445,9 +452,11 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 14. Current public widget live events are intentionally small: `widget.message.created` and `widget.conversation.updated`.
 15. Public multi-conversation browsing, typing/presence, and SSE remain intentionally deferred.
 16. Frontend integration note:
-   - Do not assume widget session reuse if a stale public token is rejected; restart from public bootstrap/session and continue from the latest returned session token.
+
+- Do not assume widget session reuse if a stale public token is rejected; restart from public bootstrap/session and continue from the latest returned session token.
 
 <a id="common-frontend-recipes"></a>
+
 ## Common frontend recipes
 
 - Login -> store tokens -> call `GET /api/auth/me` -> hydrate workspace/role/UI gates.
@@ -460,6 +469,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
 - Platform-admin login -> store platform tokens separately from workspace-user tokens -> call `GET /api/admin/auth/me` -> fetch admin overview/metrics/workspaces as needed.
 
 <a id="realtime"></a>
+
 ## Realtime / Live Collaboration
 
 ### Purpose and scope
@@ -1132,6 +1142,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     - Recommended posture is: fetch canonical REST data, connect socket, subscribe, patch UI from events, and re-fetch REST whenever ordering or completeness is uncertain.
 
 <a id="auth-endpoints"></a>
+
 ## 5) Auth Endpoints Reference
 
 ### POST `/api/auth/signup`
@@ -1495,6 +1506,7 @@ The flows in this section are product-wide entry points. Billing keeps its own q
     - Treat this as a forced re-auth event and clear stored tokens.
 
 <a id="workspace-context"></a>
+
 ## 6) Workspace Context Endpoints
 
 ### GET `/api/workspaces/mine`
@@ -1592,8 +1604,308 @@ The flows in this section are product-wide entry points. Billing keeps its own q
   - Frontend note:
     - After replacing the token, call `GET /api/auth/me`, then reconnect and resubscribe any workspace-authenticated realtime client.
 
+<a id="workspace-members"></a>
+
+## 7) Workspace Member Endpoints Reference
+
+### Shared requirements and visibility
+
+Applies to:
+
+- `GET /api/workspaces/:workspaceId/members`
+- `GET /api/workspaces/:workspaceId/members/options`
+- `GET /api/workspaces/:workspaceId/members/:userId`
+
+Requirements:
+
+- requires Authorization header
+- user must be active
+- must be an active member of the token workspace
+- `:workspaceId` must match token workspace id (`wid`)
+
+Visibility rules:
+
+- `owner|admin`: can request active, suspended, and removed members and can see email.
+- `agent`: receives active members only and can see email.
+- `viewer`: receives active members only, with minimal profile data and no email.
+- Suspended/removed member email is visible only to `owner|admin` when those statuses are visible.
+- Viewer `sort=email` and `sort=-email` requests are accepted but fall back to safe name ordering without email tie-breaks.
+- Non-admin access to suspended/removed members is collapsed out of list/options results; detail returns not found.
+
+Search and filter notes:
+
+- `q` and `search` are aliases.
+- Viewer search does not match email, so hidden emails are not exposed through match/no-match behavior.
+- `assignable=true` means active membership, active non-deleted user, and role `owner|admin|agent`.
+- `participantEligible=true` means active membership and active non-deleted user who can be added as at least one participant type.
+- Participant picker note: viewers may be added as `watcher` only; `collaborator` is limited to `owner|admin|agent`.
+- `includeRemoved=true` and `status=suspended|removed` are effective only for `owner|admin`; non-admin users still receive active members only.
+
+### GET `/api/workspaces/:workspaceId/members`
+
+- Purpose: full workspace member list and search for member pages, assignment pickers, participant pickers, invite duplicate warnings, and future autocomplete.
+- Query parameters:
+  - `page`: optional integer >= 1
+  - `limit`: optional integer 1..100
+  - `q` / `search`: optional string 1..120
+  - `roleKey`: optional `owner|admin|agent|viewer`
+  - `status`: optional `active|suspended|removed`
+  - `assignable`: optional boolean
+  - `participantEligible`: optional boolean
+  - `includeRemoved`: optional boolean
+  - `sort`: optional `name|-name|email|-email|createdAt|-createdAt|joinedAt|-joinedAt`
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "page": 1,
+  "limit": 20,
+  "total": 1,
+  "results": 1,
+  "members": [
+    {
+      "_id": "65f1...",
+      "workspaceId": "65f9...",
+      "userId": "65fa...",
+      "roleKey": "agent",
+      "memberStatus": "active",
+      "joinedAt": "2026-05-27T00:00:00.000Z",
+      "user": {
+        "_id": "65fa...",
+        "email": "agent@example.com",
+        "name": "Agent Name",
+        "avatar": null,
+        "status": "active"
+      }
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Anti-enumeration notes:
+  - Cross-workspace `:workspaceId` returns tenant denial.
+  - Viewer responses omit `user.email` and viewer search does not match email.
+
+### GET `/api/workspaces/:workspaceId/members/options`
+
+- Purpose: compact selector/autocomplete endpoint for ticket assignment, ticket participants, invite duplicate warning, and future mentions.
+- Query parameters: `q`, `search`, `roleKey`, `status`, `assignable`, `participantEligible`, `includeRemoved`, `limit`, `sort`.
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "results": 1,
+  "members": [
+    {
+      "userId": "65fa...",
+      "roleKey": "agent",
+      "memberStatus": "active",
+      "name": "Agent Name",
+      "email": "agent@example.com",
+      "avatar": null
+    }
+  ]
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+- Frontend notes:
+  - Use `assignable=true` for assignment pickers.
+  - Use `participantEligible=true` for participant pickers.
+  - The member endpoint does not accept `participantType`; frontend role options should enforce viewer-as-watcher-only and `owner|admin|agent` for collaborator.
+
+### GET `/api/workspaces/:workspaceId/members/:userId`
+
+- Purpose: member detail for drawer/detail screens and direct member resolution.
+- Request schema: path params `workspaceId` and `userId` must be Mongo ObjectIds.
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.ok",
+  "message": "Request completed successfully.",
+  "member": {
+    "_id": "65f1...",
+    "workspaceId": "65f9...",
+    "userId": "65fa...",
+    "roleKey": "agent",
+    "memberStatus": "active",
+    "joinedAt": "2026-05-27T00:00:00.000Z",
+    "user": {
+      "_id": "65fa...",
+      "email": "agent@example.com",
+      "name": "Agent Name",
+      "avatar": null,
+      "status": "active"
+    }
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.userSuspended | errors.auth.forbiddenTenant`
+  - `404` `errors.workspace.memberNotFound`
+- Anti-enumeration notes:
+  - Cross-workspace access is denied by tenant check.
+  - `agent|viewer` detail lookups for suspended or removed members return not found.
+
+### PATCH `/api/workspaces/:workspaceId/members/:userId`
+
+- Purpose: change one workspace member role.
+- Requirements:
+  - requires Authorization header
+  - user must be active
+  - actor must be an active member of the token workspace
+  - `:workspaceId` must match token workspace id
+  - `owner` can manage any other member when last-owner safety is preserved
+  - `admin` can manage only `agent|viewer` members and assign only `agent|viewer`
+  - self role changes are blocked
+- Request body:
+
+```json
+{
+  "roleKey": "agent"
+}
+```
+
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.workspace.memberUpdated",
+  "message": "Workspace member updated.",
+  "member": {
+    "userId": "65fa...",
+    "roleKey": "agent",
+    "memberStatus": "active"
+  }
+}
+```
+
+- Common errors:
+  - `422` `errors.validation.failed`
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.forbiddenTenant | errors.workspace.cannotManageSelf | errors.workspace.cannotManageRole`
+  - `404` `errors.workspace.memberNotFound`
+  - `409` `errors.workspace.lastOwnerRequired | errors.workspace.memberRemoved`
+- Frontend notes:
+  - Same-role requests are idempotent and return the compact member action shape.
+  - Successful role changes revoke the affected user's sessions for this workspace and disconnect realtime sockets on a best-effort basis.
+  - Role changes do not auto-unassign or reassign existing tickets. If an `agent` is changed to `viewer` while they still own unresolved tickets, those ticket `assigneeId` values remain for history. Owner/admin users should explicitly unassign and assign a new eligible `owner|admin|agent` when operational ownership needs to move.
+
+### POST `/api/workspaces/:workspaceId/members/:userId/suspend`
+
+- Purpose: suspend a workspace member without deleting historical attribution.
+- Requirements:
+  - `owner` can suspend any other role when at least one active owner remains
+  - `admin` can suspend only `agent|viewer`
+  - self suspend is blocked
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.workspace.memberSuspended",
+  "message": "Workspace member suspended.",
+  "member": {
+    "userId": "65fa...",
+    "roleKey": "agent",
+    "memberStatus": "suspended"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.forbiddenTenant | errors.workspace.cannotManageSelf | errors.workspace.cannotManageRole`
+  - `404` `errors.workspace.memberNotFound`
+  - `409` `errors.workspace.lastOwnerRequired | errors.workspace.memberRemoved`
+- Frontend notes:
+  - Already-suspended members return idempotent success.
+  - Suspended members no longer appear in `assignable=true` or `participantEligible=true`.
+  - Existing ticket assignments are preserved; clients should not assume suspension clears ownership history.
+  - Successful suspension revokes affected workspace sessions and disconnects realtime sockets best-effort.
+
+### POST `/api/workspaces/:workspaceId/members/:userId/activate`
+
+- Purpose: reactivate a suspended workspace member.
+- Requirements:
+  - `owner` can reactivate any other suspended member
+  - `admin` can reactivate only suspended `agent|viewer`
+  - removed members cannot be activated directly in this phase
+  - billing seat capacity is checked before activation
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.workspace.memberActivated",
+  "message": "Workspace member activated.",
+  "member": {
+    "userId": "65fa...",
+    "roleKey": "agent",
+    "memberStatus": "active"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.forbiddenTenant | errors.workspace.cannotManageSelf | errors.workspace.cannotManageRole`
+  - `404` `errors.workspace.memberNotFound`
+  - `409` `errors.billing.seatLimitExceeded | errors.workspace.memberRemoved`
+- Frontend notes:
+  - Already-active members return idempotent success.
+  - Successful activation revokes affected workspace sessions and disconnects realtime sockets best-effort, so the user should refresh or log in again.
+
+### POST `/api/workspaces/:workspaceId/members/:userId/remove`
+
+- Purpose: soft-remove a workspace member while preserving user, ticket, message, file, report, and audit attribution.
+- Requirements:
+  - `owner` can remove any other role when at least one active owner remains
+  - `admin` can remove only `agent|viewer`
+  - self remove is blocked
+  - removed members are restored through re-invite and cannot be activated directly
+- Success `200`:
+
+```json
+{
+  "messageKey": "success.workspace.memberRemoved",
+  "message": "Workspace member removed.",
+  "member": {
+    "userId": "65fa...",
+    "roleKey": "agent",
+    "memberStatus": "removed",
+    "removedAt": "2026-05-27T00:00:00.000Z"
+  }
+}
+```
+
+- Common errors:
+  - `401` `errors.auth.invalidToken | errors.auth.sessionRevoked`
+  - `403` `errors.auth.forbiddenTenant | errors.workspace.cannotManageSelf | errors.workspace.cannotManageRole`
+  - `404` `errors.workspace.memberNotFound`
+  - `409` `errors.workspace.lastOwnerRequired`
+- Frontend notes:
+  - Already-removed members return idempotent success.
+  - Removed members no longer appear in active-only, `assignable=true`, or `participantEligible=true` results.
+  - Owner/admin can still retrieve removed members with removed filters.
+  - Successful removal revokes affected workspace sessions and disconnects realtime sockets best-effort.
+
 <a id="workspace-invites"></a>
-## 7) Workspace Invite Endpoints Reference
+
+## 8) Workspace Invite Endpoints Reference
 
 ### Shared requirements for protected invite management routes
 
@@ -1618,6 +1930,10 @@ Requirements:
 - Purpose: create a workspace invite.
 - Requirements:
   - same shared protected invite-management requirements as above
+  - `owner` can invite `owner|admin|agent|viewer`
+  - `admin` can invite only `agent|viewer`
+  - active and suspended existing members block a new invite for the same email
+  - removed existing members may be invited again and are restored on acceptance
 - Request body:
 
 ```json
@@ -1646,12 +1962,14 @@ Requirements:
 
 - Common errors:
   - `422` `errors.validation.failed`
-  - `403` `errors.auth.forbiddenTenant`
+  - `403` `errors.auth.forbiddenTenant | errors.workspace.cannotManageRole`
   - `404` `errors.workspace.notFound`
   - `409` `errors.invite.alreadyPending | errors.invite.alreadyMember`
 - Notes:
   - Invite email link uses `FRONTEND_BASE_URL`.
-  - Existing non-removed membership in same workspace blocks new invite for that email.
+  - Existing active or suspended membership in the same workspace blocks a new invite for that email.
+  - Removed memberships can be restored only by re-invite; acceptance reuses the existing `WorkspaceMember` record, sets status to `active`, applies the invited `roleKey`, and clears `removedAt`, `deletedAt`, and `deletedByUserId`.
+  - If a removed-member invite becomes stale because the membership is already active again before acceptance/finalization, acceptance fails with `errors.invite.alreadyMember` and does not overwrite the active role.
 
 ### GET `/api/workspaces/:workspaceId/invites`
 
@@ -1810,6 +2128,8 @@ Requirements:
 - Notes:
   - This endpoint does not return auth tokens.
   - Response includes invited `workspaceId` so client can switch context explicitly later.
+  - If the invited email belongs to a removed member, acceptance restores the original membership record instead of creating a duplicate.
+  - If that removed-member invite is stale and the membership is already active again, the API returns `409 errors.invite.alreadyMember` and keeps the current active role unchanged.
   - Client should call `POST /api/workspaces/switch` with this returned `workspaceId` when switching into the invited workspace context.
   - For unverified invitees, finalization happens only after `POST /api/auth/verify-email` with `inviteToken`.
   - Invite acceptance does not auto-switch active workspace.
@@ -1825,6 +2145,7 @@ Requirements:
 - `errors.otp.rateLimited` or `errors.otp.resendTooSoon`: show cooldown timer before allowing resend.
 
 <a id="files"></a>
+
 ## 9) Files Endpoints Reference (Files v1)
 
 ### Auth + authorization requirements
@@ -2029,6 +2350,7 @@ Requirements:
   - Deleting a physical file is explicit; relation records are soft-deleted for consistency.
 
 <a id="customers"></a>
+
 ## 10) Customers Endpoints Reference (Organizations v1 + Contacts v1 + ContactIdentity v1)
 
 ### Auth model + authorization rules
@@ -2637,6 +2959,7 @@ Requirements:
   - Cross-workspace parent contact ids resolve as `404 errors.contact.notFound`.
 
 <a id="mailboxes"></a>
+
 ## 11) Mailboxes Endpoints Reference (Mailbox v1)
 
 ### Auth model + authorization rules
@@ -2994,6 +3317,7 @@ npm run mailboxes:backfill-default
   - does not create duplicate default mailboxes when rerun
 
 <a id="widgets"></a>
+
 ## 13) Widget Endpoints Reference
 
 ### Auth model & authorization model
@@ -3731,6 +4055,7 @@ npm run mailboxes:backfill-default
   - starting new after recovery invalidates superseded widget sessions tied to the recovered candidate session or ticket so the fresh `wgs_*` token is the only active public session for that recovered browser context.
 
 <a id="sla"></a>
+
 ## 14) SLA Endpoints Reference (SLA v1 Active Surface)
 
 ### Auth model & authorization model
@@ -4398,6 +4723,7 @@ npm run mailboxes:backfill-default
   - `workspace.defaultSlaPolicyId` is canonical, and the denormalized policy `isDefault` flags are repaired to match it in the same operation.
 
 <a id="tickets"></a>
+
 ## 15) Tickets Endpoints Reference
 
 ### Auth model + authorization rules
@@ -4431,6 +4757,7 @@ npm run mailboxes:backfill-default
 - Ticket message attachments are linked to the message as the semantic owner and to the root ticket for reverse lookup.
 - Ticket list excludes `closed` tickets by default unless `includeClosed=true` is requested or an explicit `status` filter is supplied.
 - `assigneeId` lives on the ticket itself; assignment actions update `assignedAt` and move `new` tickets to `open`.
+- Assignment is single-assignee only. Member role/status changes preserve historical assignment data and do not automatically clear or transfer `assigneeId`; owner/admin users must explicitly unassign and assign a new eligible member when a former assignee becomes ineligible.
 - `PATCH /api/tickets/:id` returns the full hydrated ticket detail shape after applying a partial edit.
 - Assignment and lifecycle action endpoints return action-scoped ticket summaries instead of the full hydrated ticket detail payload.
 - Ticket participants are internal-only metadata (`watcher|collaborator`) and do not grant or revoke access.
@@ -5124,6 +5451,8 @@ npm run mailboxes:backfill-default
   - `viewer` cannot be assigned
   - `owner|admin` can assign any eligible assignee
   - agents should use `POST /api/tickets/:id/self-assign`
+  - assignment is single-assignee only; use `POST /api/tickets/:id/unassign` before assigning a replacement when needed
+  - changing or suspending/removing a member does not automatically change existing ticket assignments
 - Success `200`:
 
 ```json
@@ -5451,7 +5780,9 @@ npm run mailboxes:backfill-default
   - `userId` required mongo id
   - `type` required enum: `watcher|collaborator`
   - target user must be an active same-workspace member
-  - participants are metadata only and may include viewers
+  - participants are metadata only and do not grant ticket access
+  - viewers may be added as `watcher` only
+  - `collaborator` is restricted to `owner|admin|agent`
 - Success `200`:
 
 ```json
@@ -5466,11 +5797,11 @@ npm run mailboxes:backfill-default
     "updatedAt": "2026-03-13T12:40:00.000Z",
     "user": {
       "_id": "65fa...",
-      "email": "viewer@example.com",
-      "name": "Viewer User",
+      "email": "agent@example.com",
+      "name": "Agent User",
       "avatar": null,
       "status": "active",
-      "roleKey": "viewer"
+      "roleKey": "agent"
     }
   },
   "ticketSummary": {
@@ -5484,10 +5815,12 @@ npm run mailboxes:backfill-default
   - `422` `errors.validation.failed`
   - `403` `errors.auth.forbiddenRole`
   - `404` `errors.ticket.notFound | errors.ticket.participantUserNotFound`
+  - `409` `errors.ticket.participantCollaboratorRoleNotAllowed`
 - Anti-enumeration note:
   - missing or cross-workspace ticket/user ids resolve through workspace-scoped `404` responses.
 - Notes:
   - re-posting the same `userId` updates the participant `type` instead of creating a duplicate active row.
+  - Existing historical rows are listed as stored; the collaborator role restriction is enforced for new writes and upserts.
 
 ### DELETE `/api/tickets/:id/participants/:userId`
 
@@ -6015,6 +6348,7 @@ npm run mailboxes:backfill-default
   - the operation is idempotent.
 
 <a id="billing"></a>
+
 ## 16) Billing Quick Start Flows
 
 ### Flow A: Open Billing Summary
@@ -6697,6 +7031,7 @@ npm run mailboxes:backfill-default
     - This webhook route is called by Stripe or Stripe CLI forwarding, not by normal frontend clients.
 
 <a id="reports"></a>
+
 ## 18) Reporting and Platform Admin Endpoints Reference
 
 ### PATCH `/api/auth/profile`
@@ -6927,10 +7262,20 @@ npm run mailboxes:backfill-default
   },
   "breakdowns": {
     "byPriority": [
-      { "key": "urgent", "label": "urgent", "applicableTickets": 1, "breachedTickets": 1 }
+      {
+        "key": "urgent",
+        "label": "urgent",
+        "applicableTickets": 1,
+        "breachedTickets": 1
+      }
     ],
     "byMailbox": [
-      { "key": "65f2...", "label": "Escalations", "applicableTickets": 2, "breachedTickets": 1 }
+      {
+        "key": "65f2...",
+        "label": "Escalations",
+        "applicableTickets": 2,
+        "breachedTickets": 1
+      }
     ]
   }
 }
@@ -6996,6 +7341,7 @@ npm run mailboxes:backfill-default
   - `422` `errors.validation.failed`
 
 <a id="platform-admin"></a>
+
 ### Platform Admin Auth
 
 #### POST `/api/admin/auth/login`
@@ -7293,9 +7639,7 @@ npm run mailboxes:backfill-default
         "trialing": 1,
         "past_due": 1
       },
-      "distribution": [
-        { "key": "active", "label": "active", "count": 1 }
-      ]
+      "distribution": [{ "key": "active", "label": "active", "count": 1 }]
     },
     "plans": {
       "distribution": [

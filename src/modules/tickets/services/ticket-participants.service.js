@@ -98,6 +98,7 @@ export const saveTicketParticipant = async ({
   const participantTarget = await resolveTicketParticipantUserForWrite({
     workspaceId: workspaceObjectId,
     userId: participantUserId,
+    participantType: payload.type,
   });
 
   let participant = await TicketParticipant.findOne({

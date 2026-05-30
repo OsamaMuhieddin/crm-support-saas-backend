@@ -521,7 +521,7 @@ export const ticketsOpenApiPaths = {
       operationId: 'assignTicket',
       security: 'workspaceOwnerAdmin',
       description:
-        'Purpose: assign a ticket to an active operational member. Authorization: owner or admin roleKey required. Action response is compact.',
+        'Purpose: assign a ticket to an active operational member. Authorization: owner or admin roleKey required. Tickets are single-assignee only; use unassign before assigning a replacement when needed. Member role/status changes preserve historical assignments and do not automatically clear or transfer assigneeId. Action response is compact.',
       parameters: [ticketIdParam],
       requestBody: jsonRequest(
         objectSchema(
@@ -730,7 +730,7 @@ export const ticketsOpenApiPaths = {
       operationId: 'saveTicketParticipant',
       security: 'workspaceOwnerAdminAgent',
       description:
-        'Purpose: create or update an internal participant as watcher or collaborator. Authorization: owner, admin, or agent roleKey required.',
+        'Purpose: create or update an internal participant as watcher or collaborator. Authorization: owner, admin, or agent roleKey required. Participants are metadata only and do not grant access. Viewers may be watchers only; collaborators require owner/admin/agent membership.',
       parameters: [ticketIdParam],
       requestBody: jsonRequest(
         objectSchema(
