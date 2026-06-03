@@ -4,8 +4,9 @@ title System Context Use Case Diagram - CRM Support SaaS (Masar)
 left to right direction
 skinparam shadowing false
 skinparam packageStyle rectangle
-skinparam actorStyle awesome
+skinparam actorStyle stickman
 skinparam defaultFontName Arial
+skinparam linetype ortho
 skinparam rectangle {
   BackgroundColor #F8FAFC
   BorderColor #2D3748
@@ -16,97 +17,105 @@ skinparam usecase {
   ArrowColor #2D3748
 }
 
-actor "Platform Admin" as PlatformAdmin
 actor "Workspace Member" as WorkspaceMember <<abstract>>
-actor "Operational Member\n(Owner/Admin/Agent)" as OperationalMember <<abstract>>
 actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager <<abstract>>
-actor "Workspace Owner" as Owner
-actor "Workspace Admin" as Admin
 actor "Agent" as Agent
 actor "Viewer" as Viewer
-actor "Customer /\nWidget Visitor" as Customer
-actor "Billing Provider\n(Stripe)" as BillingProvider
-actor "Email Provider\n(Hostinger SMTP)" as EmailProvider
+actor "Platform Admin" as PlatformAdmin
 actor "System /\nScheduler" as Scheduler
 
-Owner --|> WorkspaceManager
-Admin --|> WorkspaceManager
-WorkspaceManager --|> OperationalMember
-Agent --|> OperationalMember
-OperationalMember --|> WorkspaceMember
+WorkspaceManager --|> WorkspaceMember
+Agent --|> WorkspaceMember
 Viewer --|> WorkspaceMember
+
+WorkspaceMember -[hidden]down-> WorkspaceManager
+WorkspaceManager -[hidden]down-> Agent
+Agent -[hidden]down-> Viewer
+Viewer -[hidden]down-> PlatformAdmin
+PlatformAdmin -[hidden]down-> Scheduler
 
 rectangle "Masar - CRM Support SaaS" as System {
   (Authenticate and\nManage Session) as UCAuth
   (Manage Workspace\nContext) as UCWorkspace
   (Switch Active\nWorkspace) as UCSwitch
-  (Manage Invites and\nMemberships) as UCInvites
+  (Manage Workspace\nUsers and Invites) as UCWorkspaceUsers
+
   (Manage Mailboxes) as UCMailboxes
   (Manage Customers\nand Contacts) as UCCustomers
   (Manage Ticket\nCategories and Tags) as UCDictionaries
+  (Manage SLA\nConfiguration) as UCSla
+  (Apply Ticket\nSLA Runtime) as UCSlaRuntime
+  (View Workspace\nReports) as UCReports
+
   (Manage Tickets) as UCTickets
   (Handle Ticket\nConversation) as UCConversation
   (Use Files and\nAttachments) as UCFiles
-  (Manage SLA\nConfiguration) as UCSla
-  (Apply Ticket\nSLA Runtime) as UCSlaRuntime
   (Use Realtime\nCollaboration) as UCRealtime
   (Manage Support\nWidgets) as UCWidgetAdmin
   (Use Public\nSupport Widget) as UCWidgetPublic
+
   (Manage Billing) as UCBilling
   (Process Billing\nWebhooks and\nJob Workers) as UCBillingEvents
-  (View Workspace\nReports) as UCReports
   (Manage Platform\nAdministration) as UCPlatform
   (Monitor API\nHealth) as UCHealth
 }
 
+together {
+  actor "Customer /\nWidget Visitor" as Customer
+  actor "Email Provider\n(Hostinger SMTP)" as EmailProvider
+  actor "Billing Provider\n(Stripe)" as BillingProvider
+}
+
+Customer -[hidden]down- EmailProvider
+EmailProvider -[hidden]down- BillingProvider
+
+WorkspaceMember -[hidden]right- UCAuth
+WorkspaceManager -[hidden]right- UCWorkspaceUsers
+Agent -[hidden]right- UCTickets
+Viewer -[hidden]right- UCReports
+PlatformAdmin -[hidden]right- UCPlatform
+Scheduler -[hidden]right- UCHealth
+
+UCWidgetPublic -[hidden]right-> Customer
+UCAuth -[hidden]right-> EmailProvider
+UCBilling -[hidden]right-> BillingProvider
+
 WorkspaceMember --> UCAuth
 WorkspaceMember --> UCWorkspace
-WorkspaceMember --> UCRealtime
 WorkspaceMember --> UCReports
 
-WorkspaceManager --> UCInvites
+WorkspaceManager --> UCWorkspaceUsers
 WorkspaceManager --> UCMailboxes
-WorkspaceManager --> UCDictionaries
 WorkspaceManager --> UCSla
 WorkspaceManager --> UCWidgetAdmin
 WorkspaceManager --> UCBilling
 
-Owner --> UCInvites
-Owner --> UCBilling
-Admin --> UCMailboxes
-Admin --> UCSla
 Agent --> UCTickets
-Agent --> UCConversation
+Agent --> UCRealtime
 
-OperationalMember --> UCCustomers
-OperationalMember --> UCTickets
-OperationalMember --> UCConversation
-OperationalMember --> UCFiles
-Viewer --> UCFiles
+Viewer --> UCReports
 
-Customer --> UCWidgetPublic
+UCWidgetPublic <-- Customer
 PlatformAdmin --> UCPlatform
 
-BillingProvider --> UCBilling
-BillingProvider --> UCBillingEvents
-
-EmailProvider --> UCAuth
-EmailProvider --> UCInvites
-EmailProvider --> UCWidgetPublic
-
+UCBilling <-- BillingProvider
+UCBillingEvents <-- BillingProvider
+UCAuth <-- EmailProvider
+UCWorkspaceUsers <-- EmailProvider
+UCWidgetPublic <-- EmailProvider
 Scheduler --> UCBillingEvents
 Scheduler --> UCSlaRuntime
 Scheduler --> UCHealth
 
 UCWorkspace ..> UCSwitch : <<include>>
+UCWorkspaceUsers ..> UCMailboxes : <<include>>
+UCWorkspaceUsers ..> UCCustomers : <<include>>
+UCWorkspaceUsers ..> UCDictionaries : <<include>>
 UCTickets ..> UCConversation : <<include>>
+UCTickets ..> UCFiles : <<include>>
+UCTickets ..> UCRealtime : <<include>>
 UCSla ..> UCSlaRuntime : <<include>>
-UCBilling ..> UCBillingEvents : <<extend>>
-
-note right of UCPlatform
-Admin auth, analytics, billing overview,
-workspace list/detail, suspend/reactivate,
-and trial extension.
-end note
+UCWidgetAdmin ..> UCWidgetPublic : <<include>>
+UCBillingEvents ..> UCBilling : <<extend>>
 
 @enduml

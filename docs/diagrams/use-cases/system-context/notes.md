@@ -26,7 +26,7 @@ This diagram is the top-level academic system context use case diagram for Masar
 - Authenticate and Manage Session
 - Manage Workspace Context
 - Switch Active Workspace
-- Manage Invites and Memberships
+- Manage Workspace Users and Invites
 - Manage Mailboxes
 - Manage Customers and Contacts
 - Manage Ticket Categories and Tags
@@ -46,7 +46,7 @@ This diagram is the top-level academic system context use case diagram for Masar
 
 ## Grouping Decisions
 
-- User and role management is represented as "Manage Invites and Memberships" because the implemented workspace surface is invite/membership-oriented. The `/api/users` route is a public placeholder list endpoint, and there are no full role-management routes in this snapshot.
+- Workspace user and role management is represented as "Manage Workspace Users and Invites" because the implemented surface is workspace-scoped member management under workspaces, not global user administration. The `/api/users` route remains identity/self-profile oriented and is not the workspace member search surface.
 - Ticket category/tag CRUD is grouped as "Manage Ticket Categories and Tags" to avoid crowding the context diagram.
 - File upload, metadata, download, delete, ticket attachments, and public widget file uploads are grouped as "Use Files and Attachments".
 - SLA business hours, policies, activation/deactivation, default policy, summary, and ticket runtime snapshots are split into configuration and runtime use cases because both are meaningful project scope.

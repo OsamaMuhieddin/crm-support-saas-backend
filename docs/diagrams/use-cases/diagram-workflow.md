@@ -8,7 +8,7 @@ Create the use case diagrams as a split set, not as one huge diagram. The target
 
 1. System Context Diagram.
 2. Auth, Sessions & Workspace Diagram.
-3. Users, Roles & Memberships Diagram.
+3. Workspace User Management Diagram.
 4. Ticket Operations Diagram.
 5. Ticket Messages, Participants & Attachments Diagram.
 6. Customers & Contacts Diagram.
@@ -30,7 +30,7 @@ Use this as the starting inspection checklist for each diagram. Add extra files 
 
 1. System context: inspect `src/routes/index.js`, all `src/modules/*/routes`, all `src/modules/*/controllers`, all `src/modules/*/docs/openapi.js`, `docs/api.md`, and a broad inventory of `tests/`.
 2. Auth, Sessions & Workspace: inspect auth routes/controllers/services/docs, workspace routes/controllers/services/docs, session and OTP services, shared email service, and auth/workspace/invite tests.
-3. Users, Roles & Memberships: inspect users routes/controllers/services/docs, workspace membership and invite behavior, role checks, auth/workspace tests, and placeholder status for user management.
+3. Workspace User Management: inspect workspace member routes/controllers/services/docs, workspace invite behavior, role checks, auth/workspace tests, and placeholder status for global user management.
 4. Ticket Operations: inspect ticket routes/controllers/services/docs, ticket models/schemas/validators where needed, ticket lifecycle/assignment/category/tag behavior, and ticket operation tests.
 5. Ticket Messages, Participants & Attachments: inspect ticket message/conversation controllers/services/docs, participant behavior, file-link behavior for message attachments, and message/participant/attachment tests.
 6. Customers & Contacts: inspect customer organization/contact/contact-identity routes/controllers/services/docs and customer-domain tests.
@@ -76,7 +76,7 @@ Recommended folder names:
 
 - `system-context/`
 - `auth-workspace/`
-- `users-roles-memberships/`
+- `workspace-user-management/`
 - `ticket-operations/`
 - `ticket-messages-attachments/`
 - `customers-contacts/`

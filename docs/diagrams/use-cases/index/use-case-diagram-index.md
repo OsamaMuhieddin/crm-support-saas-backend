@@ -8,7 +8,7 @@ This index is the final cross-check for the Masar - CRM Support SaaS academic UM
 |---|---|---|---|---|
 | 1 | System Context | `system-context/` | Context | Whole implemented app scope at a high level |
 | 2 | Auth and Workspace Access | `auth-workspace/` | Detailed domain | Auth, sessions, OTP, workspace context, workspace switch, invites |
-| 3 | Users, Roles, and Memberships | Merged/notes-only | Decision | Covered by `auth-workspace/` plus platform/admin role notes because user management routes are placeholder-level |
+| 3 | Workspace User Management | `workspace-user-management/` | Detailed domain | Workspace member list/search/options/detail, role/status actions, invite role restrictions, removed-member re-invite restoration |
 | 4 | Ticket Operations | `ticket-operations/` | Detailed domain | Ticket creation, list/detail, lifecycle, assignment, dictionaries |
 | 5 | Ticket Messages, Participants, and Attachments | `ticket-messages-attachments/` | Detailed domain | Ticket conversation, messages, participants, semantic attachments |
 | 6 | Customers and Contacts | `customers-contacts/` | Detailed domain | Organizations, contacts, contact identities |
@@ -28,7 +28,7 @@ The package covers all implemented business-facing route modules mounted by `src
 
 The following mounted or present modules are intentionally not represented as separate detailed diagrams:
 
-- `users`: only exposes a placeholder list route; user identity/session behavior is covered in `auth-workspace/`.
+- `users`: global identity/self-profile behavior is covered in `auth-workspace/`; workspace-scoped user/member management is covered by `workspace-user-management/`.
 - `roles`: model/index placeholder only; role behavior is represented through actors and authorization rules in the relevant diagrams.
 - `inbox`: mounted placeholder/reserved module with no implemented business routes.
 - `integrations`: models exist, but no meaningful implemented integration routes/services were found for a detailed use case diagram.
@@ -50,7 +50,7 @@ The following mounted or present modules are intentionally not represented as se
 - The source diagram boundary title is consistent across all existing `.puml` files.
 - The rendered diagrams were manually adjusted for several crowded domains because PlantUML auto-layout produced overlapping or noisy association routing.
 - The final package standardizes only the system boundary title wording and placement style; diagram layout, use cases, and association routing should not be changed during this consistency pass.
-- Users/Roles/Memberships was not created as a standalone detailed diagram because the implemented `users` module is placeholder-level and role/membership behavior is already covered by auth, workspace, ticket, billing, report, and platform-admin diagrams.
+- Workspace User Management now has a focused standalone diagram because workspace member management is implemented under the workspaces module. Global identity/session behavior remains in the auth/workspace diagram.
 - Visual Paradigm native `.vpp`/`.vpdx` export remains unavailable in this environment; PlantUML and best-effort XMI files are the practical interchange artifacts where generated.
 
 ## Generated Artifact Status

@@ -25,6 +25,13 @@ docs/diagrams/use-cases/auth-workspace/*.xmi
 docs/diagrams/use-cases/auth-workspace/*.vpp
 docs/diagrams/use-cases/auth-workspace/*.vpdx
 docs/diagrams/use-cases/auth-workspace/*.log
+docs/diagrams/use-cases/workspace-user-management/*.png
+docs/diagrams/use-cases/workspace-user-management/*.svg
+docs/diagrams/use-cases/workspace-user-management/*.pdf
+docs/diagrams/use-cases/workspace-user-management/*.xmi
+docs/diagrams/use-cases/workspace-user-management/*.vpp
+docs/diagrams/use-cases/workspace-user-management/*.vpdx
+docs/diagrams/use-cases/workspace-user-management/*.log
 docs/diagrams/use-cases/ticket-operations/*.png
 docs/diagrams/use-cases/ticket-operations/*.pdf
 docs/diagrams/use-cases/ticket-operations/*.svg

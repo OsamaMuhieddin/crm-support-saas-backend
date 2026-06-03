@@ -54,7 +54,15 @@ WorkspaceService -> Models: validate raw token,\nstatus, expiry, email match
 == 4. Accept or finalize invite ==
 alt Existing verified user
   WorkspaceService -> Billing: assert member activation allowed
-  WorkspaceService -> Models: create/activate member\nand mark invite accepted
+  WorkspaceService -> Models: find existing membership
+  alt Removed membership exists
+    WorkspaceService -> Models: restore same member record\nstatus active, invited role,\nclear removal markers
+  else Already active membership
+    WorkspaceService --> InviteUI: errors.invite.alreadyMember\nwithout role overwrite
+  else No membership exists
+    WorkspaceService -> Models: create active member\nwith invited role
+  end
+  WorkspaceService -> Models: mark invite accepted
   WorkspaceService --> InviteUI: success.invite.accepted\nworkspaceId + roleKey
 else New or unverified user
   WorkspaceService -> Models: create/find unverified user
@@ -64,7 +72,7 @@ else New or unverified user
   Routes -> AuthService: verifyEmailAndLogin()
   AuthService -> WorkspaceService: ensureWorkspaceForVerifiedUser(inviteToken)
   WorkspaceService -> Billing: assert member activation allowed
-  WorkspaceService -> Models: activate member,\naccept invite, create session
+  WorkspaceService -> Models: create or restore member,\naccept invite, create session
   AuthService --> InviteUI: tokens + active/invite workspace ids
 end
 

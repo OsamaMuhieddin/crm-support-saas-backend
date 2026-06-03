@@ -65,6 +65,7 @@ Implemented.
 5. Invitee accepts with token and email.
 6. Verified invitees get an active membership immediately and the invite becomes accepted.
 7. New or unverified invitees receive an OTP, then `POST /api/auth/verify-email` with `inviteToken` finalizes membership and creates tokens.
+8. If the invite email belongs to a removed workspace member, acceptance restores the existing membership record instead of creating a duplicate.
 
 ## Important Alternate and Error Paths
 
@@ -72,6 +73,8 @@ Implemented.
 - Unauthorized invite management returns auth/role error envelope responses.
 - Expired, revoked, already accepted, unknown, or email-mismatched tokens return invite errors.
 - Existing active/suspended membership blocks duplicate invite creation.
+- Removed membership does not block invite creation. Removed-member acceptance reuses the existing `WorkspaceMember`, sets status to active, applies the invited role, and clears `removedAt`, `deletedAt`, and `deletedByUserId`.
+- A stale removed-member invite fails with `errors.invite.alreadyMember` if the membership has already become active again before acceptance, and the active member role is not overwritten.
 - Seat capacity can block invite creation or member activation through billing enforcement.
 - Invite acceptance and verification do not auto-switch the active workspace session. The client must call `POST /api/workspaces/switch`.
 

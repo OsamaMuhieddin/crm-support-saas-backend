@@ -1,0 +1,78 @@
+@startuml
+title System Use Case Diagram - Workspace User Management (Masar)
+
+scale 1.45
+left to right direction
+skinparam shadowing false
+skinparam packageStyle rectangle
+skinparam linetype polyline
+skinparam nodesep 28
+skinparam ranksep 38
+skinparam defaultFontName Arial
+skinparam defaultFontSize 16
+skinparam TitleFontSize 28
+skinparam ArrowColor #6F8FC5
+skinparam actor {
+  BorderThickness 2
+  FontSize 16
+}
+skinparam rectangle {
+  BackgroundColor #F8FAFC
+  BorderColor #2D3748
+  BorderThickness 3
+  FontSize 20
+}
+skinparam usecase {
+  BackgroundColor #FFFFFF
+  BorderColor #2D3748
+  BorderThickness 2
+  ArrowColor #6F8FC5
+  FontSize 18
+}
+
+actor "Workspace Member" as WorkspaceMember
+actor "Workspace Manager\n(Owner/Admin)" as WorkspaceManager
+actor "Agent" as Agent
+actor "Viewer" as Viewer
+actor "Invited /\nRemoved User" as InvitedUser
+actor "Email Provider\n(Hostinger SMTP)" as EmailProvider
+
+rectangle "Masar - CRM Support SaaS" as System {
+  (View/List\nWorkspace Members) as UCListMembers
+  (Use Member\nOptions) as UCMemberOptions
+  (View Member\nDetail) as UCMemberDetail
+
+  (Manage Workspace\nMembers) as UCManageMembers
+  (Change Member\nRole) as UCChangeRole
+  (Suspend Member) as UCSuspend
+  (Activate Suspended\nMember) as UCActivate
+  (Remove Member) as UCRemove
+
+  (Manage Workspace\nInvites) as UCManageInvites
+  (Create Workspace\nInvite) as UCCreateInvite
+  (Restore Removed Member\nby Re-Invite) as UCRestoreRemoved
+}
+
+WorkspaceMember -- UCListMembers
+WorkspaceMember -- UCMemberOptions
+WorkspaceMember -- UCMemberDetail
+
+Agent -- UCListMembers
+
+Viewer -- UCListMembers
+
+WorkspaceManager -- UCManageMembers
+WorkspaceManager -- UCManageInvites
+
+InvitedUser -left- UCRestoreRemoved
+EmailProvider -left- UCCreateInvite
+
+UCManageMembers ..> UCChangeRole : <<include>>
+UCManageMembers ..> UCSuspend : <<include>>
+UCManageMembers ..> UCActivate : <<include>>
+UCManageMembers ..> UCRemove : <<include>>
+
+UCManageInvites ..> UCCreateInvite : <<include>>
+UCManageInvites ..> UCRestoreRemoved : <<extend>>
+
+@enduml

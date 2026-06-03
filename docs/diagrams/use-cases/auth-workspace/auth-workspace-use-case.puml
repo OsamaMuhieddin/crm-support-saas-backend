@@ -1,19 +1,29 @@
 @startuml
 title System Use Case Diagram - Auth and Workspace Access (Masar)
 
+scale 2
 left to right direction
 skinparam shadowing false
 skinparam packageStyle rectangle
-skinparam actorStyle awesome
 skinparam defaultFontName Arial
+skinparam defaultFontSize 16
+skinparam TitleFontSize 28
+skinparam actor {
+  BorderThickness 2
+  FontSize 16
+}
 skinparam rectangle {
   BackgroundColor #F8FAFC
   BorderColor #2D3748
+  BorderThickness 3
+  FontSize 20
 }
 skinparam usecase {
   BackgroundColor #FFFFFF
   BorderColor #2D3748
+  BorderThickness 2
   ArrowColor #2D3748
+  FontSize 18
 }
 
 actor "Visitor /\nUnauthenticated User" as Visitor
@@ -53,37 +63,37 @@ rectangle "Masar - CRM Support SaaS" as System {
   (Accept Workspace\nInvite) as UCAcceptInvite
 }
 
-Visitor -right-> UCSignup
-Visitor -right-> UCResendOtp
-Visitor -right-> UCVerifyEmail
-Visitor -right-> UCLogin
-Visitor -right-> UCForgotPassword
-Visitor -right-> UCResetPassword
+Visitor -[#6F8FC5]- UCSignup
+Visitor -[#6F8FC5]- UCResendOtp
+Visitor -[#6F8FC5]- UCVerifyEmail
+Visitor -[#6F8FC5]- UCLogin
+Visitor -[#6F8FC5]- UCForgotPassword
+Visitor -[#6F8FC5]- UCResetPassword
 
-InvitedUser -right-> UCAcceptInvite
-InvitedUser -right-> UCVerifyEmail
+InvitedUser -[#6F8FC5]- UCAcceptInvite
+InvitedUser -[#6F8FC5]- UCVerifyEmail
 
-Member -right-> UCRefresh
-Member -right-> UCMe
-Member -right-> UCProfile
-Member -right-> UCChangePassword
-Member -right-> UCLogout
-Member -right-> UCLogoutAll
-Member -right-> UCListMine
-Member -right-> UCSwitch
+Member -[#6F8FC5]- UCRefresh
+Member -[#6F8FC5]- UCMe
+Member -[#6F8FC5]- UCProfile
+Member -[#6F8FC5]- UCChangePassword
+Member -[#6F8FC5]- UCLogout
+Member -[#6F8FC5]- UCLogoutAll
+Member -[#6F8FC5]- UCListMine
+Member -[#6F8FC5]- UCSwitch
 
-WorkspaceManager -left-> UCCreateInvite
-WorkspaceManager -left-> UCListInvites
-WorkspaceManager -left-> UCViewInvite
-WorkspaceManager -left-> UCResendInvite
-WorkspaceManager -left-> UCRevokeInvite
+WorkspaceManager -[#6F8FC5]- UCCreateInvite
+WorkspaceManager -[#6F8FC5]- UCListInvites
+WorkspaceManager -[#6F8FC5]- UCViewInvite
+WorkspaceManager -[#6F8FC5]- UCResendInvite
+WorkspaceManager -[#6F8FC5]- UCRevokeInvite
 
-EmailProvider -left-> UCSendVerifyOtp
-EmailProvider -left-> UCResendOtp
-EmailProvider -left-> UCForgotPassword
-EmailProvider -left-> UCCreateInvite
-EmailProvider -left-> UCResendInvite
-EmailProvider -left-> UCAcceptInvite
+EmailProvider -[#6F8FC5]- UCSendVerifyOtp
+EmailProvider -[#6F8FC5]- UCResendOtp
+EmailProvider -[#6F8FC5]- UCForgotPassword
+EmailProvider -[#6F8FC5]- UCCreateInvite
+EmailProvider -[#6F8FC5]- UCResendInvite
+EmailProvider -[#6F8FC5]- UCAcceptInvite
 
 UCSignup .right.> UCSendVerifyOtp : <<include>>
 UCResendOtp .up.> UCSendVerifyOtp : <<extend>>
