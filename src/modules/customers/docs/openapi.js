@@ -181,14 +181,14 @@ export const customersOpenApiPaths = {
       errors: ['401', '403', '404', '422', '500'],
     }),
   },
-  '/customers/contacts/{id}/identities': {
+  '/customers/contacts/{contactId}/identities': {
     get: operation({
       tags: 'Contact Identities',
       summary: 'List contact identities',
       operationId: 'listContactIdentities',
       description:
         'Purpose: list identities attached to a contact in the active workspace. Anti-enumeration: cross-workspace contacts collapse to not found.',
-      parameters: [pathIdParam('id', 'Contact id.')],
+      parameters: [pathIdParam('contactId', 'Contact id.')],
       success: {
         payload: {
           identities: arrayOf(ref('ContactIdentity')),
@@ -203,7 +203,7 @@ export const customersOpenApiPaths = {
       security: 'workspaceOwnerAdminAgent',
       description:
         'Purpose: add an email, phone, or WhatsApp identity to a contact. Authorization: owner, admin, or agent roleKey required.',
-      parameters: [pathIdParam('id', 'Contact id.')],
+      parameters: [pathIdParam('contactId', 'Contact id.')],
       requestBody: jsonRequest(
         objectSchema(
           {
